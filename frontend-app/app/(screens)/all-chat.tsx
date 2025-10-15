@@ -65,7 +65,6 @@ export default function ChatsScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      {/* รายการแชต */}
       <FlatList
         data={data}
         keyExtractor={(item) => item.id}
@@ -81,15 +80,12 @@ export default function ChatsScreen() {
         }
       />
 
-      {/* แถบล่าง (Bottom Tab Mock) */}
       <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around">
-        {/* Chats tab (active) */}
         <View className="items-center">
           <Ionicons name="chatbubble" size={22} color="#047857" />
           <Text className="text-xs mt-1 text-emerald-700 font-medium">Chats</Text>
         </View>
 
-        {/* Profile tab (link) */}
         <Link href="/(screens)/profile" asChild>
           <Pressable className="items-center">
             <Ionicons name="person-circle-outline" size={22} color="#9CA3AF" />

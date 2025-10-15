@@ -36,7 +36,6 @@ export default function LoginScreen() {
           />
         </View>
 
-        {/* ✅ ปุ่มกดไปหน้า all-chat */}
         <Link href="/(screens)/all-chat" asChild>
           <TouchableOpacity
             activeOpacity={0.9}
@@ -46,8 +45,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </Link>
 
-        {/* ลิงก์ไปสมัคร */}
-        <View className="flex-row justify-center mt-3">
+\        <View className="flex-row justify-center mt-3">
           <Text className="text-base text-gray-600 mr-1">Don't have an</Text>
           <Link href="/(auth)/sign-up" className="text-base text-blue-600 font-semibold">
             account?

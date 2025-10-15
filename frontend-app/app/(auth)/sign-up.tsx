@@ -10,7 +10,6 @@ export default function SignUpScreen() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
 
-  // ใช้แค่ปรับสีปุ่มให้กดได้/ไม่ได้ (UI state อย่างเดียว)
   const canSubmit =
     name.trim().length > 0 &&
     email.trim().length > 0 &&

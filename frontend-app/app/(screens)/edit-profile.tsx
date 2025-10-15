@@ -16,9 +16,7 @@ export default function ProfileEditScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <SafeAreaView className="flex-1 bg-white">
-        {/* Header */}
         <View className="flex-row items-center px-4 py-3">
-          {/* ✅ Link asChild ครอบ Pressable ตรงๆ */}
           <Link href="/(screens)/profile" asChild>
             <Pressable className="h-10 w-10 items-center justify-center">
               <Ionicons name="chevron-back" size={24} color="#111827" />
@@ -36,14 +34,12 @@ export default function ProfileEditScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Avatar */}
           <View className="items-center mt-2 mb-6">
             <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center">
               <Ionicons name="person" size={48} color="#0f5132" />
             </View>
           </View>
 
-          {/* Form */}
           <View className="space-y-4">
             <View>
               <Text className="mb-2 text-gray-700">Name</Text>
@@ -96,7 +92,6 @@ export default function ProfileEditScreen() {
             </View>
           </View>
 
-          {/* ✅ Save: Link asChild ครอบ Pressable เดียว */}
           <Link href="/(screens)/profile" asChild>
             <Pressable className="mt-6 bg-emerald-700 rounded-xl items-center justify-center py-3">
               <Text className="text-white font-semibold">Save</Text>

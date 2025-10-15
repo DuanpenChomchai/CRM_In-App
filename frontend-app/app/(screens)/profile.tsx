@@ -8,21 +8,17 @@ export default function ProfileScreen() {
   return (
     <>
       <SafeAreaView className="flex-1 bg-white items-center justify-between">
-        {/* เนื้อหาหลัก */}
         <View className="flex-1 items-center justify-center">
-          {/* Avatar */}
           <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center mb-4">
             <Ionicons name="person" size={48} color="#0f5132" />
           </View>
 
-          {/* ข้อมูลผู้ใช้ */}
           <Text className="text-3xl font-bold text-gray-900">John Doe</Text>
           <Text className="text-xl text-gray-600 mt-1">+1 234 567 8900</Text>
           <Text className="text-base text-gray-600 mt-1">
             john.doe@example.com
           </Text>
 
-          {/* ปุ่มแก้ไขโปรไฟล์ */}
           <Link href="/(screens)/edit-profile" asChild>
             <TouchableOpacity
               activeOpacity={0.9}
@@ -35,7 +31,6 @@ export default function ProfileScreen() {
           </Link>
         </View>
 
-        {/* แถบล่าง (Bottom Tab Mock UI) */}
         <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around w-full">
           <Link href="/(screens)/all-chat" asChild>
             <Pressable className="items-center">

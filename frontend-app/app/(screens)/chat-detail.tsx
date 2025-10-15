@@ -60,19 +60,16 @@ export default function ChatDetailScreen() {
   const [messages, setMessages] = useState<Msg[]>(mockMessages);
   const [input, setInput] = useState("");
 
-  // ---- Voice-recording UI state (UI only) ----
   const [isRecording, setIsRecording] = useState(false);
   const [recordSec, setRecordSec] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // start recording (UI only)
   const startRecording = () => {
     if (isRecording) return;
     setIsRecording(true);
     setRecordSec(0);
   };
 
-  // stop & send as audio message (UI only)
   const stopAndSend = () => {
     if (!isRecording) return;
     const duration = recordSec;
@@ -90,13 +87,11 @@ export default function ChatDetailScreen() {
     }
   };
 
-  // cancel (discard)
   const cancelRecording = () => {
     setIsRecording(false);
     setRecordSec(0);
   };
 
-  // ticking timer while recording
   useEffect(() => {
     if (isRecording) {
       timerRef.current = setInterval(() => setRecordSec((s) => s + 1), 1000);
@@ -109,7 +104,6 @@ export default function ChatDetailScreen() {
     };
   }, [isRecording]);
 
-  // send text message (UI only)
   const sendText = () => {
     const text = input.trim();
     if (!text) return;
@@ -191,7 +185,6 @@ export default function ChatDetailScreen() {
           </Text>
           <Text className="text-xs text-gray-500">ID: {id ?? "-"}</Text>
         </View>
-        {/* ปุ่มโทร (UI อย่างเดียว) */}
         <Pressable className="pl-3" onPress={() => {}}>
           <Ionicons name="call-outline" size={20} color="#047857" />
         </Pressable>
@@ -202,10 +195,8 @@ export default function ChatDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      {/* Header */}
       {ListHeader}
 
-      {/* Messages */}
       <FlatList
         data={messages}
         keyExtractor={(m) => m.id}
@@ -213,7 +204,6 @@ export default function ChatDetailScreen() {
         renderItem={renderMessage}
       />
 
-      {/* Recording bar (แถบสถานะตอนอัดเสียง) */}
       {isRecording && (
         <View className="px-3 py-2 bg-rose-50 border-t border-rose-200">
           <View className="flex-row items-center">
@@ -229,7 +219,6 @@ export default function ChatDetailScreen() {
               </Text>
             </View>
 
-            {/* Cancel */}
             <Pressable
               className="px-3 py-2 rounded-xl bg-rose-100 mr-2"
               onPress={cancelRecording}
@@ -237,7 +226,6 @@ export default function ChatDetailScreen() {
               <Ionicons name="trash-outline" size={18} color="#be123c" />
             </Pressable>
 
-            {/* Stop & Send */}
             <Pressable
               className="px-3 py-2 rounded-xl bg-emerald-600"
               onPress={stopAndSend}
@@ -251,17 +239,15 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
-      {/* Composer */}
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white">
-          {/* ปุ่ม + ไฟล์/รูป (UI) */}
+
           <Pressable className="px-2 py-2" onPress={() => {}}>
             <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
           </Pressable>
 
-          {/* ช่องพิมพ์ (disabled ขณะอัดเสียง) */}
           <View
             className={`flex-1 mx-2 rounded-2xl px-3 ${
               isRecording ? "bg-gray-200" : "bg-gray-100"
@@ -279,7 +265,6 @@ export default function ChatDetailScreen() {
             />
           </View>
 
-          {/* ปุ่มส่งข้อความ หรือ ปุ่มไมค์ */}
           {input.trim().length > 0 && !isRecording ? (
             <Pressable
               className="px-3 py-2 rounded-2xl"
