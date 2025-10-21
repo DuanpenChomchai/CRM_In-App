@@ -43,8 +43,10 @@ model User {
   name     String
   email    String  @unique
   password String
-  tol      String?
+  tol      String  @unique
+  img      String? 
   role     Role    @default(CUSTOMER)
+  
 
   // Relations
   customers      Customer[]
@@ -62,6 +64,7 @@ model Product {
   name     String
   price    Decimal @db.Decimal(12, 2)
   property String?
+  img      String? 
 
   proposals Proposal[]
 
@@ -76,6 +79,7 @@ model Customer {
   tol      String?
   email    String  @unique
   password String
+  img      String?
 
   // Relations
   communications Communications[]

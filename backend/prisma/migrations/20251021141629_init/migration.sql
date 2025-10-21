@@ -13,7 +13,8 @@ CREATE TABLE "User" (
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "password" TEXT NOT NULL,
-    "tol" TEXT,
+    "tol" TEXT NOT NULL,
+    "img" TEXT,
     "role" "Role" NOT NULL DEFAULT 'CUSTOMER',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -27,6 +28,7 @@ CREATE TABLE "Product" (
     "name" TEXT NOT NULL,
     "price" DECIMAL(12,2) NOT NULL,
     "property" TEXT,
+    "img" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -40,6 +42,7 @@ CREATE TABLE "Customer" (
     "tol" TEXT,
     "email" TEXT NOT NULL,
     "password" TEXT NOT NULL,
+    "img" TEXT,
     "userId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -164,6 +167,9 @@ CREATE TABLE "KPITracking" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "User_tol_key" ON "User"("tol");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Customer_email_key" ON "Customer"("email");

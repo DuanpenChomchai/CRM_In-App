@@ -29,6 +29,15 @@ export default function ProfileScreen() {
               </Text>
             </TouchableOpacity>
           </Link>
+
+          <TouchableOpacity
+              activeOpacity={0.9}
+              className="mt-6 bg-slate-500 px-6 py-3 rounded-xl"
+            >
+              <Text className="text-white font-semibold text-base">
+                Logout
+              </Text>
+            </TouchableOpacity>
         </View>
 
         <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around w-full">
@@ -45,6 +54,7 @@ export default function ProfileScreen() {
               Profile
             </Text>
           </View>
+
         </View>
       </SafeAreaView>
     </>

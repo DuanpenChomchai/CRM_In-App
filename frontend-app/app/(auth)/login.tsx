@@ -45,7 +45,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </Link>
 
-\        <View className="flex-row justify-center mt-3">
+        <View className="flex-row justify-center mt-3">
           <Text className="text-base text-gray-600 mr-1">Don't have an</Text>
           <Link href="/(auth)/sign-up" className="text-base text-blue-600 font-semibold">
             account?
