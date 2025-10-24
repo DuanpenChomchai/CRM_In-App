@@ -1,14 +1,18 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, TrendingUp, Building2, LogOut } from "lucide-react";
+import { Workflow , Users, UserPlus, Building2, LayoutDashboard , UserCog, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { title } from "process";
 
 const menuItems = [
-  { title: "แดชบอร์ด", url: "/", icon: Home },
-  { title: "ขั้นตอนการขาย", url: "/sales-process", icon: TrendingUp },
-  { title: "Pipeline", url: "/pipeline", icon: Building2 },
-  { title: "รายชื่อลูกค้า", url: "/customers", icon: Users },
+  { title: "ลูกค้า", url: "/", icon: UserPlus },
+  { title: "Stage", url: "/stagebased", icon: Workflow },
+  { title: "รายชื่อลูกค้า", url: "/customerList", icon: Users },
+   { title: "แดชบอร์ด", url: "/dashboard", icon: LayoutDashboard },
   { title: "อสังหาริมทรัพย์", url: "/properties", icon: Building2 },
+  { title: "ใบเสนอราคา", url: "/quotation", icon: FileText },
+  { title: "จัดการผู้ใช้งาน", url: "/userManagement", icon: UserCog },
+  
 ];
 
 export function Sidebar() {

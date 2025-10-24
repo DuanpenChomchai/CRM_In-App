@@ -6,15 +6,18 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Auth from "./src/pages/Login";
 import Dashboard from "./src/pages/Dashboard";
-import SalesProcess from "./src/pages/SalesProcess";
-import Pipeline from "./src/pages/Pipeline";
-import Customers from "./src/pages/Customers";
+import SalesProcess from "./src/pages/CustomerOverview";
+import Pipeline from "./src/pages/StageBased";
+import Customers from "./src/pages/CustomerList";
 import NotFound from "./src/pages/NotFound";
 import Properties from "./src/pages/Properties";
+import UserManagement from "./src/pages/UserManagement";
+
 
 
 import ProtectedRoute from "./src/components/layout/ProtectedRoute";
 import { AppLayout } from "./src/components/layout/AppLayout";
+import Quotation from "./src/pages/Quotation";
 
 const queryClient = new QueryClient();
 
@@ -26,11 +29,11 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           {/* หน้าล็อกอิน */}
-          <Route path="/auth" element={<Auth />} />
+          <Route path="/login" element={<Auth />} />
 
           {/* Dashboard */}
           <Route
-            path="/"
+            path="/dashboard"
             element={
               <ProtectedRoute>
                 <AppLayout>
@@ -40,9 +43,9 @@ const App = () => (
             }
           />
 
-          {/* Sales Process */}
+          {/* แจ้งเตือนลูกค้า */}
           <Route
-            path="/sales-process"
+            path="/"
             element={
               <ProtectedRoute>
                 <AppLayout>
@@ -54,7 +57,7 @@ const App = () => (
 
           {/* Pipeline */}
           <Route
-            path="/pipeline"
+            path="/stagebased"
             element={
               <ProtectedRoute>
                 <AppLayout>
@@ -66,7 +69,7 @@ const App = () => (
 
           {/* รายชื่อลูกค้า */}
           <Route
-            path="/customers"
+            path="/customerlist"
             element={
               <ProtectedRoute>
                 <AppLayout>
@@ -86,10 +89,32 @@ const App = () => (
               </ProtectedRoute>
             }
           />
-
             }
 
+          {/* จัดการผู้ใช้งาน */}
+          <Route
+            path="/usermanagement"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <UserManagement />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
 
+          {/*ใบเสนอราคาดีล */}
+          <Route
+            path="/quotation"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Quotation />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          
           {/* หน้าหาไม่เจอ */}
           <Route path="*" element={<NotFound />} />
         </Routes>

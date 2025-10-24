@@ -32,6 +32,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 const properties = [
@@ -118,6 +119,7 @@ export default function Properties() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [selected, setSelected] = useState<any>(null);
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
 
   const filtered = properties.filter((p) => {
     const matchType = filterType === "all" || p.type === filterType;
@@ -339,14 +341,14 @@ export default function Properties() {
                 >
                   ปิด
                 </Button>
-                <Button
+                 <Button
                   className="flex-1 bg-gradient-to-r from-green-400 to-pink-400 text-white hover:opacity-90"
                   onClick={() => {
-                    toast.success("ส่งข้อมูลติดต่อสำเร็จ");
                     setOpen(false);
+                    navigate("/quotation");
                   }}
                 >
-                  สนใจติดต่อ
+                  ขอใบเสนอราคา
                 </Button>
               </div>
             </div>
