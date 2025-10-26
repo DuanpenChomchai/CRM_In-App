@@ -1,13 +1,15 @@
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import authRoutes from "./routes/authroute";
-import customerRoutes from "./routes/customersroute";
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import authRoutes from './routes/auth.route';
+import {checkBucket} from './config/minioclient';
 
 dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use('/api', authRoutes);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/customers", customerRoutes);

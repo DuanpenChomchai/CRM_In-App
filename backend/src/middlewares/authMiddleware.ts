@@ -1,16 +1,10 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-// เพิ่ม interface ให้ req มี user
 export interface AuthRequest extends Request {
   user?: { id: number; email: string; role: string };
 }
 
-/**
- * Middleware: ตรวจสอบ JWT token
- * - อ่านจาก Header: Authorization: Bearer <token>
- * - ถ้า token ถูกต้อง → req.user จะมีข้อมูลผู้ใช้
- */
 export const authMiddleware = (
   req: AuthRequest,
   res: Response,
@@ -20,7 +14,9 @@ export const authMiddleware = (
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "ไม่ได้รับอนุญาต (token หายหรือไม่ถูกต้อง)" });
+      return res.status(401).json({
+        message: "ไม่ได้รับอนุญาต (token หายหรือไม่ถูกต้อง)",
+      });
     }
 
     const token = authHeader.split(" ")[1];
@@ -32,10 +28,29 @@ export const authMiddleware = (
       role: string;
     };
 
-    req.user = decoded; // บันทึกข้อมูล user ลงใน req
+    req.user = decoded;
     next();
   } catch (error) {
     console.error("Auth Middleware Error:", error);
     return res.status(401).json({ message: "Token ไม่ถูกต้องหรือหมดอายุ" });
   }
+};
+
+/** ตรวจ role ว่าต้องเป็น ADMIN */
+export const verifyAdmin = (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  if (!req.user) {
+    return res.status(401).json({ message: "กรุณาเข้าสู่ระบบก่อน" });
+  }
+
+  if (req.user.role !== "ADMIN") {
+    return res.status(403).json({
+      message: "เฉพาะผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถทำรายการนี้ได้",
+    });
+  }
+
+  next();
 };
