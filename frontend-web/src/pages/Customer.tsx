@@ -19,7 +19,7 @@ interface Customer {
   status: "new" | "contacted" | "negotiating" | "closed";
   assignedTo?: string;
 }
-const   CustomerOverview = () => {
+const SalesProcess = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -37,16 +37,16 @@ const   CustomerOverview = () => {
     name: "คุณสมศักดิ์ เจริญสุข",
     phone: "081-234-5678",
     email: "somsak@email.com",
-    propertyType: "",
-    //budget: 0, 
+    propertyType: "คอนโด",
+    budget: 3500000,
     status: "new"
   }, {
     id: 2,
     name: "คุณวิภา สวยงาม",
     phone: "082-345-6789",
     email: "wipa@email.com",
-    propertyType: "",
-    //budget: 0,
+    propertyType: "บ้านเดี่ยว",
+    budget: 8500000,
     status: "contacted",
     assignedTo: "สมชาย ใจดี"
   }, {
@@ -117,18 +117,45 @@ const   CustomerOverview = () => {
   };
   const handleUpdateCustomer = () => {
     if (!editCustomer) return;
-    setCustomers(prev => prev.map(c => c.id === editCustomer.id ? editCustomer : c));
+    
+    const wasNew = editCustomer.status === "new";
+    
+    // Update status to "contacted" if it was "new"
+    const updatedCustomer = {
+      ...editCustomer,
+      status: editCustomer.status === "new" ? "contacted" as const : editCustomer.status
+    };
+    
+    setCustomers(prev => prev.map(c => c.id === editCustomer.id ? updatedCustomer : c));
     setIsEditDialogOpen(false);
     setEditCustomer(null);
-    toast.success("อัพเดทข้อมูลลูกค้าสำเร็จ");
+    
+    // If customer was new, add to Pipeline
+    if (wasNew) {
+      const pipelineDeals = JSON.parse(localStorage.getItem('pipelineDeals') || '[]');
+      const newDeal = {
+        id: Date.now(),
+        customerId: updatedCustomer.id,
+        customerName: updatedCustomer.name,
+        phone: updatedCustomer.phone,
+        propertyType: updatedCustomer.propertyType || "ไม่ระบุ",
+        budget: updatedCustomer.budget || 0,
+        stage: "contacted",
+        status: "กำลังติดต่อ",
+        startDate: new Date(),
+        assignedSales: updatedCustomer.assignedTo
+      };
+      pipelineDeals.push(newDeal);
+      localStorage.setItem('pipelineDeals', JSON.stringify(pipelineDeals));
+      toast.success("อัพเดทข้อมูลลูกค้าและเพิ่มไปยัง Pipeline สำเร็จ");
+    } else {
+      toast.success("อัพเดทข้อมูลลูกค้าสำเร็จ");
+    }
   };
   return <div className="container mx-auto p-6 space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">ลูกค้า</h1>
-        <Button onClick={() => setIsAddDialogOpen(true)} className="gradient-primary text-white hover:opacity-90">
-          <UserPlus className="w-4 h-4 mr-2" />
-          เพิ่มลูกค้าใหม่
-        </Button>
+     
       </div>
 
       {/* การแจ้งเตือนลูกค้าใหม่ */}
@@ -230,6 +257,7 @@ const   CustomerOverview = () => {
                   <TableHead>งบประมาณ</TableHead>
                   <TableHead>สถานะ</TableHead>
                   <TableHead>พนักงานที่ดูแล</TableHead>
+                  <TableHead className="text-center">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -271,6 +299,18 @@ const   CustomerOverview = () => {
                               </SelectItem>)}
                           </SelectContent>
                         </Select>}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditCustomer(customer);
+                          setIsEditDialogOpen(true);
+                        }}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>)}
               </TableBody>
@@ -452,6 +492,22 @@ const   CustomerOverview = () => {
               budget: Number(e.target.value)
             } : null)} placeholder="0" />
             </div>
+            <div>
+              <Label>พนักงานที่ดูแล</Label>
+              <Select value={editCustomer?.assignedTo || ""} onValueChange={value => setEditCustomer(editCustomer ? {
+              ...editCustomer,
+              assignedTo: value
+            } : null)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกพนักงาน" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesTeam.map(sales => <SelectItem key={sales} value={sales}>
+                      {sales}
+                    </SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
@@ -465,4 +521,4 @@ const   CustomerOverview = () => {
       </Dialog>
     </div>;
 };
-export default CustomerOverview;
+export default SalesProcess;

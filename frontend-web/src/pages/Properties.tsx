@@ -84,6 +84,118 @@ const properties = [
     description:
       "ทาวน์เฮ้าส์ 3 ชั้นสไตล์มินิมอล พร้อมเฟอร์นิเจอร์ครบ ทำเลใกล้ MRT.",
   },
+  {
+      id: 4,
+      name: "The Emerald Condo",
+      type: "คอนโด",
+      price: 3500000,
+      discount: 5,
+      size: 45,
+      location: "สุขุมวิท 77, กรุงเทพฯ",
+      bedrooms: 2,
+      bathrooms: 1,
+      description: "คอนโดหรูใจกลางเมือง พร้อมสระว่ายน้ำและฟิตเนส วิวสวยงาม ทำเลดีเยี่ยม ใกล้ BTS",
+      image: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800",
+      status: "available",
+    },
+    {
+      id: 5,
+      name: "Luxury Villa Paradise",
+      type: "บ้านเดี่ยว",
+      price: 15800000,
+      discount: 10,
+      size: 250,
+      location: "บางนา-ตราด กม.12",
+      bedrooms: 4,
+      bathrooms: 3,
+      description: "บ้านเดี่ยวหรูหรา 2 ชั้น พร้อมสวนส่วนตัว จอดรถได้ 3 คัน ออกแบบโดยสถาปนิกชั้นนำ",
+      image: "https://i.pinimg.com/originals/e2/f6/f0/e2f6f0e0f6db2ac806ef4a55ee4192bc.png",
+      status: "available",
+    },
+    {
+      id: 6,
+      name: "Silk Residence",
+      type: "คอนโด",
+      price: 2800000,
+      discount: 0,
+      size: 32,
+      location: "รามอินทรา กม.8",
+      bedrooms: 1,
+      bathrooms: 1,
+      description: "คอนโดใหม่ใจกลางรามอินทรา ราคาสบายกระเป๋า ใกล้ห้างสรรพสินค้า โรงพยาบาล",
+      image: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800",
+      status: "available",
+    },
+    {
+      id: 7,
+      name: "Golden House",
+      type: "บ้านเดี่ยว",
+      price: 8900000,
+      discount: 8,
+      size: 180,
+      location: "ปิ่นเกล้า-พุทธมณฑล",
+      bedrooms: 3,
+      bathrooms: 2,
+      description: "บ้านเดี่ยวสไตล์โมเดิร์น พร้อมลานจอดรถกว้างขวาง สวนหน้าบ้านสวยงาม",
+      image: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800",
+      status: "available",
+    },
+    {
+      id: 8,
+      name: "Modern Townhome",
+      type: "ทาวน์เฮ้าส์",
+      price: 4200000,
+      discount: 5,
+      size: 120,
+      location: "รังสิต-นครนายก กม.5",
+      bedrooms: 3,
+      bathrooms: 2,
+      description: "ทาวน์เฮ้าส์ 3 ชั้น ออกแบบทันสมัย พื้นที่ใช้สอยเยอะ ใกล้โรงเรียนนานาชาติ",
+      image: "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800",
+      status: "available",
+    },
+    {
+      id: 9,
+      name: "Sky View Residence",
+      type: "คอนโด",
+      price: 5500000,
+      discount: 12,
+      size: 65,
+      location: "ลาดพร้าว 101",
+      bedrooms: 2,
+      bathrooms: 2,
+      description: "คอนโดหรู วิวเมืองสวยงาม ตกแต่งครบพร้อมอยู่ ระบบรักษาความปลอดภัยดีเยี่ยม",
+      image: "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=800",
+      status: "reserved",
+    },
+    {
+      id: 10,
+      name: "Green Valley House",
+      type: "บ้านเดี่ยว",
+      price: 12500000,
+      discount: 15,
+      size: 220,
+      location: "เชียงใหม่ ดอยสะเก็ด",
+      bedrooms: 4,
+      bathrooms: 3,
+      description: "บ้านเดี่ยวท่ามกลางธรรมชาติ วิวภูเขา อากาศดี เหมาะสำหรับครอบครัว",
+      image: "https://images.unsplash.com/photo-1572120360610-d971b9d7767c?w=800",
+      status: "available",
+    },
+    {
+      id: 11,
+      name: "Smart Townhouse",
+      type: "ทาวน์เฮ้าส์",
+      price: 3800000,
+      discount: 7,
+      size: 100,
+      location: "ถนนกาญจนาภิเษก",
+      bedrooms: 2,
+      bathrooms: 2,
+      description: "ทาวน์เฮ้าส์สมาร์ทโฮม ระบบอัตโนมัติ ประหยัดพลังงาน เข้า-ออกสะดวก",
+      image: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=800",
+      status: "available",
+    },
 ];
 
 const formatPrice = (price: number) => (price / 1000000).toFixed(1) + "M ฿";
@@ -341,7 +453,7 @@ export default function Properties() {
                 >
                   ปิด
                 </Button>
-                 <Button
+                 {/* <Button
                   className="flex-1 bg-gradient-to-r from-green-400 to-pink-400 text-white hover:opacity-90"
                   onClick={() => {
                     setOpen(false);
@@ -349,7 +461,7 @@ export default function Properties() {
                   }}
                 >
                   ขอใบเสนอราคา
-                </Button>
+                </Button> */}
               </div>
             </div>
           )}

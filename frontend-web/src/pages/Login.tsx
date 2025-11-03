@@ -77,7 +77,7 @@ const Login = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10" // ✅ เว้นช่องให้ icon
+                  className="pl-10" 
                   required
                 />
               </div>

@@ -6,18 +6,15 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Auth from "./src/pages/Login";
 import Dashboard from "./src/pages/Dashboard";
-import SalesProcess from "./src/pages/CustomerOverview";
-import Pipeline from "./src/pages/StageBased";
-import Customers from "./src/pages/CustomerList";
+import Customeroverview from "./src/pages/Customer";
+import Quotationlist from "./src/pages/QuotationList";
 import NotFound from "./src/pages/NotFound";
 import Properties from "./src/pages/Properties";
 import UserManagement from "./src/pages/UserManagement";
-
-
-
 import ProtectedRoute from "./src/components/layout/ProtectedRoute";
 import { AppLayout } from "./src/components/layout/AppLayout";
 import Quotation from "./src/pages/Quotation";
+import StageBased from "./src/pages/StageBased";
 
 const queryClient = new QueryClient();
 
@@ -33,7 +30,7 @@ const App = () => (
 
           {/* Dashboard */}
           <Route
-            path="/dashboard"
+            path="/"
             element={
               <ProtectedRoute>
                 <AppLayout>
@@ -45,11 +42,11 @@ const App = () => (
 
           {/* แจ้งเตือนลูกค้า */}
           <Route
-            path="/"
+            path="/customer"
             element={
               <ProtectedRoute>
                 <AppLayout>
-                  <SalesProcess />
+                  < Customeroverview />
                 </AppLayout>
               </ProtectedRoute>
             }
@@ -61,23 +58,27 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AppLayout>
-                  <Pipeline />
+                  <StageBased />
                 </AppLayout>
               </ProtectedRoute>
             }
           />
 
-          {/* รายชื่อลูกค้า */}
+          {/* รายการใบเสนอราคา */}
           <Route
-            path="/customerlist"
+            path="/quotationlist"
             element={
               <ProtectedRoute>
                 <AppLayout>
-                  <Customers />
+                  < Quotationlist/>
                 </AppLayout>
               </ProtectedRoute>
             }
+    
           />
+
+          
+
           {/* อสังหาริมทรัพย์ */
           <Route
             path="/properties"

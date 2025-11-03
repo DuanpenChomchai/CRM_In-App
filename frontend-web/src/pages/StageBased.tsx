@@ -26,6 +26,17 @@ import { th } from "date-fns/locale";
 import { CalendarIcon, Upload, User, Phone, Home, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { DraggableDealCard } from "@/components/layout/DraggableDealCard";
+import { DroppableStageColumn } from "@/components/layout/DroppableStageColumn";
 
 interface Deal {
   id: number;
@@ -48,10 +59,19 @@ interface Deal {
   closingDate?: Date;
 }
 
-const Pipeline = () => {
+const StageBased = () => {
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentStage, setCurrentStage] = useState<Deal["stage"]>("contacted");
+  const [activeDeal, setActiveDeal] = useState<Deal | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   const [deals, setDeals] = useState<Deal[]>([
     {
@@ -88,7 +108,7 @@ const Pipeline = () => {
       budget: 350000000,
       stage: "quotation",
       startDate: new Date(2025, 8, 17),
-      assignedSales: "Duanpen",
+      assignedSales: "สมจิต ใจเย็น",
       priceOffered: 3450000,
       terms: "15 y",
       quotationNumbers: ["KT-2025-045", "KT-2025-046"],
@@ -102,7 +122,7 @@ const Pipeline = () => {
       budget: 350000000,
       stage: "closed",
       startDate: new Date(2025, 8, 18),
-      assignedSales: "Duanpen",
+      assignedSales: "สมหมาย ใจดี",
       priceOffered: 3450000,
       terms: "15 y",
       quotationNumbers: ["KT-2025-045"],
@@ -128,9 +148,55 @@ const Pipeline = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    setSelectedDeal(deal);
+    
+    setSelectedDeal({ ...deal }); 
     setCurrentStage(stage);
     setIsDialogOpen(true);
+  };
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const deal = deals.find(d => d.id === Number(event.active.id));
+    setActiveDeal(deal || null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    
+    if (!over) {
+      setActiveDeal(null);
+      return;
+    }
+
+    const dealId = Number(active.id);
+    const newStage = over.id as Deal["stage"];
+    
+    if (newStage && ["contacted", "negotiation", "quotation", "closed"].includes(newStage)) {
+      setDeals(prevDeals =>
+        prevDeals.map(deal =>
+          deal.id === dealId
+            ? { ...deal, stage: newStage }
+            : deal
+        )
+      );
+      toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} แล้ว`);
+    }
+    
+    setActiveDeal(null);
+  };
+
+  
+  const handleSaveChanges = () => {
+    if (!selectedDeal) return;
+
+
+    setDeals(prevDeals =>
+      prevDeals.map(deal =>
+        deal.id === selectedDeal.id ? selectedDeal : deal
+      )
+    );
+
+    toast.success("บันทึกข้อมูลสำเร็จ");
+    setIsDialogOpen(false);
   };
 
   const DealCard = ({ deal }: { deal: Deal }) => {
@@ -350,32 +416,45 @@ const Pipeline = () => {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6 animate-fade-in">
-      <h1 className="text-3xl font-bold">Pipeline</h1>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="container mx-auto p-6 space-y-6 animate-fade-in">
+        <h1 className="text-3xl font-bold">Pipeline</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stages.map((stage) => (
-          <Card key={stage.id} className="shadow-card">
-            <CardHeader className={`${stage.color} text-white rounded-t-lg`}>
-              <CardTitle className="flex items-center justify-between">
-                <span>{stage.title}</span>
-                <span className="text-sm font-normal">
-                  {deals.filter((d) => d.stage === stage.id).length} ดีล
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3 min-h-[400px]">
-              {deals
-                .filter((d) => d.stage === stage.id)
-                .map((deal) => (
-                  <DealCard key={deal.id} deal={deal} />
-                ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {stages.map((stage) => (
+            <Card key={stage.id} className="shadow-card">
+              <CardHeader className={`${stage.color} text-white rounded-t-lg`}>
+                <CardTitle className="flex items-center justify-between">
+                  <span>{stage.title}</span>
+                  <span className="text-sm font-normal">
+                    {deals.filter((d) => d.stage === stage.id).length} ดีล
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3">
+                <DroppableStageColumn id={stage.id}>
+                  {deals
+                    .filter((d) => d.stage === stage.id)
+                    .map((deal) => (
+                      <DraggableDealCard key={deal.id} id={deal.id}>
+                        <DealCard deal={deal} />
+                      </DraggableDealCard>
+                    ))}
+                </DroppableStageColumn>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
-      {/* Dialog สำหรับแก้ไขข้อมูล */}
+        <DragOverlay>
+          {activeDeal ? <DealCard deal={activeDeal} /> : null}
+        </DragOverlay>
+
+      
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -386,23 +465,44 @@ const Pipeline = () => {
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* ข้อมูลพื้นฐาน */}
+  
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>ชื่อลูกค้า</Label>
-                <Input value={selectedDeal?.customerName} disabled />
+                <Input 
+                  value={selectedDeal?.customerName || ""}
+                  onChange={(e) => {
+                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, customerName: e.target.value });
+                  }}
+                />
               </div>
               <div>
                 <Label>เบอร์โทร</Label>
-                <Input value={selectedDeal?.phone} disabled />
+                <Input 
+                  value={selectedDeal?.phone || ""}
+                  onChange={(e) => {
+                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, phone: e.target.value });
+                  }}
+                />
               </div>
               <div>
                 <Label>ประเภทอสังหา</Label>
-                <Input value={selectedDeal?.propertyType} disabled />
+                <Input 
+                  value={selectedDeal?.propertyType || ""}
+                  onChange={(e) => {
+                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, propertyType: e.target.value });
+                  }}
+                />
               </div>
               <div>
                 <Label>งบประมาณ</Label>
-                <Input value={selectedDeal ? formatCurrency(selectedDeal.budget) : ""} disabled />
+                <Input 
+                  type="number"
+                  value={selectedDeal?.budget || ""}
+                  onChange={(e) => {
+                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, budget: Number(e.target.value) });
+                  }}
+                />
               </div>
             </div>
 
@@ -429,6 +529,7 @@ const Pipeline = () => {
                       locale={th}
                       className="pointer-events-auto"
                     />
+                
                   </PopoverContent>
                 </Popover>
               </div>
@@ -467,6 +568,7 @@ const Pipeline = () => {
                 }}>
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกพนักงานขาย" />
+                  
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="สมชาย ใจดี">สมชาย ใจดี</SelectItem>
@@ -476,7 +578,9 @@ const Pipeline = () => {
                 </Select>
               </div>
             )}
-             {/* Quotation Stage */}
+
+
+            {/* Quotation Stage */}
             {(currentStage === "quotation" || currentStage === "closed") && (
               <>
                 <div>
@@ -574,6 +678,7 @@ const Pipeline = () => {
                     <SelectContent>
                       <SelectItem value="won">ปิดการขายสำเร็จ</SelectItem>
                       <SelectItem value="lost">ไม่สำเร็จ</SelectItem>
+                    
                     </SelectContent>
                   </Select>
                 </div>
@@ -611,6 +716,7 @@ const Pipeline = () => {
                 <Upload className="w-4 h-4 mr-2" />
                 อัพโหลดไฟล์
               </Button>
+              
             </div>
           </div>
 
@@ -620,18 +726,16 @@ const Pipeline = () => {
             </Button>
             <Button 
               className="gradient-primary text-white hover:opacity-90"
-              onClick={() => {
-                toast.success("บันทึกข้อมูลสำเร็จ");
-                setIsDialogOpen(false);
-              }}
+              onClick={handleSaveChanges} 
             >
               บันทึก
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </DndContext>
   );
 };
 
-export default Pipeline;
+export default StageBased;

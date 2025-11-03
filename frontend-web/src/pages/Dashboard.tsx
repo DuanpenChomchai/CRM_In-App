@@ -1,52 +1,140 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, DollarSign, Users, CheckCircle, Clock } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import { 
+  DollarSign, 
+  Users, 
+  Clock, 
+  CheckCircle, 
+  TrendingUp, 
+  TrendingDown,
+  Home,
+  Trophy
+} from "lucide-react";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Legend 
+} from "recharts";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
+// Import สำหรับ Dropdown
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+
+interface Kpi {
+  title: string;
+  value: number;
+  trend: number;
+  isUp: boolean;
+  icon: React.ElementType;
+  format: "number" | "currency";
+}
+
+interface ChartData {
+  month: string;
+  value: number; 
+}
+
+interface Sale {
+  rank: number;
+  name: string;
+  phone: string;
+  total: number;
+  dealCount: number;
+}
+
+interface Property {
+  rank: number;
+  name: string;
+  price: number;
+  deals: number;
+}
+
+interface YearData {
+  topKpis: Kpi[];
+  dealChartData: ChartData[];
+  topSales: Sale[];
+  topProperties: Property[];
+}
+
+const dashboardData: Record<string, YearData> = {
+  "2024": {
+    topKpis: [
+      { title: "จำนวนลูกค้าทั้งหมด", value: 856, trend: 10, isUp: true, icon: Users, format: "number" },
+      { title: "ดีลที่กำลังดีลอยู่", value: 100, trend: 22, isUp: true, icon: Clock, format: "number" },
+      { title: "ดีลที่ปิดไป (ปีนี้)", value: 200, trend: 48, isUp: true, icon: CheckCircle, format: "number" },
+      { title: "ราคาปิดดีลเฉลี่ย", value: 1953000, trend: -7, isUp: false, icon: DollarSign, format: "currency" },
+    ],
+    dealChartData: [
+      { month: "ม.ค.", value: 1.2 }, { month: "ก.พ.", value: 1.5 },
+      { month: "มี.ค.", value: 1.8 }, { month: "เม.ย.", value: 2.1 },
+      { month: "พ.ค.", value: 1.9 }, { month: "มิ.ย.", value: 2.4 },
+      { month: "ก.ค.", value: 2.2 }, { month: "ส.ค.", value: 2.8 },
+      { month: "ก.ย.", value: 2.5 }, { month: "ต.ค.", value: 3.0 },
+      { month: "พ.ย.", value: 3.1 }, { month: "ธ.ค.", value: 3.5 },
+    ],
+    topSales: [
+      { rank: 1, name: "สมชาย ใจดี", phone: "081-234-5678", total: 2400000, dealCount: 8 },
+      { rank: 2, name: "สมหญิง รักงาน", phone: "082-345-6789", total: 2100000, dealCount: 7 },
+      { rank: 3, name: "ประยุทธ์ ขยัน", phone: "083-456-7890", total: 1850000, dealCount: 6 },
+      { rank: 4, name: "วิไล มานะ", phone: "084-567-8901", total: 1650000, dealCount: 5 },
+      { rank: 5, name: "สุนทร พยายาม", phone: "085-678-9012", total: 1450000, dealCount: 4 },
+    ],
+    topProperties: [
+      { rank: 1, name: "Sky View Residence", price: 7500000, deals: 5 },
+      { rank: 2, name: "Golden House", price: 4200000, deals: 3 },
+      { rank: 3, name: "Luxury Villa Paradise", price: 5800000, deals: 3 },
+      { rank: 4, name: "ทาวน์เฮ้าส์ 3 ชั้น", price: 2500000, deals: 2 },
+      { rank: 5, name: "The Emerald Condo", price: 8900000, deals: 1 },
+    ],
+  },
+  "2023": {
+    topKpis: [
+      { title: "จำนวนลูกค้าทั้งหมด", value: 750, trend: 8, isUp: true, icon: Users, format: "number" },
+      { title: "ดีลที่กำลังดีลอยู่", value: 80, trend: 15, isUp: true, icon: Clock, format: "number" },
+      { title: "ดีลที่ปิดไป (ปีนี้)", value: 180, trend: 40, isUp: true, icon: CheckCircle, format: "number" },
+      { title: "ราคาปิดดีลเฉลี่ย", value: 1750000, trend: -2, isUp: false, icon: DollarSign, format: "currency" },
+    ],
+    dealChartData: [
+      { month: "ม.ค.", value: 1.0 }, { month: "ก.พ.", value: 1.1 },
+      { month: "มี.ค.", value: 1.4 }, { month: "เม.ย.", value: 1.8 },
+      { month: "พ.ค.", value: 1.7 }, { month: "มิ.ย.", value: 2.0 },
+      { month: "ก.ค.", value: 2.1 }, { month: "ส.ค.", value: 2.5 },
+      { month: "ก.ย.", value: 2.3 }, { month: "ต.ค.", value: 2.8 },
+      { month: "พ.ย.", value: 2.9 }, { month: "ธ.ค.", value: 3.0 },
+    ],
+    topSales: [
+      { rank: 1, name: "สมหญิง รักงาน", phone: "082-345-6789", total: 2200000, dealCount: 9 },
+      { rank: 2, name: "สมชาย ใจดี", phone: "081-234-5678", total: 2000000, dealCount: 7 },
+      { rank: 3, name: "วิไล มานะ", phone: "084-567-8901", total: 1950000, dealCount: 6 },
+      { rank: 4, name: "ประยุทธ์ ขยัน", phone: "083-456-7890", total: 1500000, dealCount: 5 },
+      { rank: 5, name: "สุนทร พยายาม", phone: "085-678-9012", total: 1300000, dealCount: 4 },
+    ],
+    topProperties: [
+      { rank: 1, name: "Luxury Villa Paradise", price: 5800000, deals: 4 },
+      { rank: 2, name: "The Emerald Condo", price: 8900000, deals: 3 },
+      { rank: 3, name: "Sky View Residence", price: 7500000, deals: 2 },
+      { rank: 4, name: "Golden House", price: 4200000, deals: 2 },
+      { rank: 5, name: "บ้านแฝด สไตล์มินิมอล", price: 3800000, deals: 1 },
+    ],
+  },
+};
+
 const Dashboard = () => {
-  const [period, setPeriod] = useState<"monthly" | "yearly">("monthly");
+  const [selectedYear, setSelectedYear] = useState("2024");
 
-  // ข้อมูล Pipeline Overview
-  const pipelineStats = [
-    { title: "Contacted", value: 24, trend: 12, isUp: true },
-    { title: "Negotiation", value: 18, trend: 8, isUp: true },
-    { title: "Quotation", value: 12, trend: -5, isUp: false },
-    { title: "Closed Deal", value: 8, trend: 15, isUp: true },
-  ];
-
-  // ข้อมูลกราฟ Total Deal Value
-  const monthlyData = [
-    { month: "ม.ค.", value: 1200000 },
-    { month: "ก.พ.", value: 1500000 },
-    { month: "มี.ค.", value: 1800000 },
-    { month: "เม.ย.", value: 2100000 },
-    { month: "พ.ค.", value: 1900000 },
-    { month: "มิ.ย.", value: 2400000 },
-  ];
-
-  const yearlyData = [
-    { month: "2020", value: 15000000 },
-    { month: "2021", value: 18000000 },
-    { month: "2022", value: 22000000 },
-    { month: "2023", value: 28000000 },
-    { month: "2024", value: 32000000 },
-  ];
-
-  // Top 5 Sales Performance
-  const topSales = [
-    { rank: 1, name: "สมชาย ใจดี", phone: "081-234-5678", total: 2400000 },
-    { rank: 2, name: "สมหญิง รักงาน", phone: "082-345-6789", total: 2100000 },
-    { rank: 3, name: "ประยุทธ์ ขยัน", phone: "083-456-7890", total: 1850000 },
-    { rank: 4, name: "วิไล มานะ", phone: "084-567-8901", total: 1650000 },
-    { rank: 5, name: "สุนทร พยายาม", phone: "085-678-9012", total: 1450000 },
-  ];
-
-  // ข้อมูลลูกค้าใหม่ vs เก่า
-  const customerData = [
-    { name: "ลูกค้าใหม่", value: 65, color: "hsl(135, 35%, 55%)" },
-    { name: "ลูกค้าเก่า", value: 35, color: "hsl(340, 75%, 75%)" },
-  ];
+  const currentData = dashboardData[selectedYear];
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('th-TH', {
@@ -55,93 +143,100 @@ const Dashboard = () => {
       minimumFractionDigits: 0,
     }).format(value);
   };
+  
+  const formatYAxis = (value: number) => `${value}M`;
 
   return (
     <div className="container mx-auto p-6 space-y-6 animate-fade-in">
+     
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">แดชบอร์ด</h1>
+        <div className="w-[120px]">
+          <Select value={selectedYear} onValueChange={setSelectedYear}>
+            <SelectTrigger>
+              <SelectValue placeholder="เลือกปี" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="2024">ปี 2024</SelectItem>
+              <SelectItem value="2023">ปี 2023</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {/* Pipeline Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {pipelineStats.map((stat, index) => (
-          <Card key={index} className="shadow-card hover:shadow-elegant transition-all">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {stat.title}
-              </CardTitle>
-              {stat.isUp ? (
-                <TrendingUp className="w-4 h-4 text-primary" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-destructive" />
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-baseline justify-between">
-                <div className="text-3xl font-bold">{stat.value}</div>
-                <div className={`flex items-center text-sm ${stat.isUp ? 'text-primary' : 'text-destructive'}`}>
-                  {stat.isUp ? '+' : ''}{stat.trend}%
+        {currentData.topKpis.map((kpi) => {
+          const CurrentIcon = kpi.icon;
+          const TrendIcon = kpi.isUp ? TrendingUp : TrendingDown;
+          const trendColor = kpi.isUp ? 'text-green-500' : 'text-red-500';
+          const displayValue = kpi.format === 'currency' ? formatCurrency(kpi.value) : kpi.value.toLocaleString();
+
+          return (
+            <Card key={kpi.title} className="shadow-card hover:shadow-elegant transition-all">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {kpi.title}
+                </CardTitle>
+                <CurrentIcon className="w-5 h-5 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-bold">{displayValue}</div>
+                <div className={`flex items-center text-sm ${trendColor} mt-1`}>
+                  <TrendIcon className="w-4 h-4 mr-1" />
+                  {kpi.isUp ? '+' : ''}{kpi.trend}%
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      {/* Total Deal Value Chart */}
       <Card className="shadow-card">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>มูลค่าดีลทั้งหมด</CardTitle>
-            <div className="flex gap-2">
-              <Button
-                variant={period === "monthly" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setPeriod("monthly")}
-                className={period === "monthly" ? "gradient-primary text-white" : ""}
-              >
-                รายเดือน
-              </Button>
-              <Button
-                variant={period === "yearly" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setPeriod("yearly")}
-                className={period === "yearly" ? "gradient-primary text-white" : ""}
-              >
-                รายปี
-              </Button>
-            </div>
+            <CardTitle>มูลค่าดีลทั้งหมด (หน่วย: ล้านบาท)</CardTitle>
+         
           </div>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={period === "monthly" ? monthlyData : yearlyData}>
+            <BarChart data={currentData.dealChartData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="month" />
-              <YAxis tickFormatter={(value) => formatCurrency(value)} />
-              <Tooltip formatter={(value: number) => formatCurrency(value)} />
-              <Bar dataKey="value" fill="hsl(135, 35%, 55%)" radius={[8, 8, 0, 0]} />
+              <YAxis tickFormatter={formatYAxis} />
+              
+              <Tooltip formatter={(value: number) => [`${value} ล้านบาท`, "ยอดขายจริง"]} />
+              
+              <Legend verticalAlign="top" />
+              
+             
+              <Bar dataKey="value" name="ยอดขายจริง" fill="#6B9A75" radius={[8, 8, 0, 0]} />
+              
             </BarChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 Sales Performance */}
+      
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle>อันดับพนักงานขาย Top 5</CardTitle>
+            <CardTitle className="flex items-center">
+                <Trophy className="w-5 h-5 mr-2 text-yellow-500" />
+                อันดับพนักงานขาย Top 5
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {topSales.map((sale) => (
+              {currentData.topSales.map((sale) => (
                 <div
                   key={sale.rank}
                   className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-white ${
-                      sale.rank === 1 ? 'gradient-primary' : 'bg-muted-foreground'
+                      sale.rank === 1 ? 'bg-gradient-to-br from-pink-400 to-green-500' : 
+                      (sale.rank === 2 ? 'bg-gray-500' : 'bg-gray-400')
                     }`}>
                       {sale.rank}
                     </div>
@@ -152,6 +247,7 @@ const Dashboard = () => {
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-primary">{formatCurrency(sale.total)}</div>
+                    <div className="text-sm text-muted-foreground">{sale.dealCount} ดีล</div>
                   </div>
                 </div>
               ))}
@@ -159,33 +255,41 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Customer Distribution */}
         <Card className="shadow-card">
           <CardHeader>
-            <CardTitle>สัดส่วนลูกค้า</CardTitle>
+            <CardTitle className="flex items-center">
+                <Home className="w-5 h-5 mr-2 text-primary" />
+                อสังหาฯ ที่ขายดีที่สุด Top 5
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={customerData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="value"
+            <div className="space-y-4">
+              {currentData.topProperties.map((prop) => (
+                <div
+                  key={prop.rank}
+                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                 >
-                  {customerData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-white ${
+                      prop.rank === 1 ? 'bg-gradient-to-br from-pink-400 to-green-500' : 
+                      (prop.rank === 2 ? 'bg-gray-500' : (prop.rank === 3 ? 'bg-gray-400' : 'bg-gray-300'))
+                    }`}>
+                      {prop.rank}
+                    </div>
+                    <div>
+                      <div className="font-medium">{prop.name}</div>
+                      <div className="text-sm text-muted-foreground">ราคา: {formatCurrency(prop.price)}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-primary">{prop.deals} ดีล</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
+
       </div>
     </div>
   );
