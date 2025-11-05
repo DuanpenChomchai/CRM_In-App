@@ -40,8 +40,19 @@ export const register = async (req: Request, res: Response) => {
         email: emailNorm,
         password: hashedPassword,
         role: "CUSTOMER",
+        customers: {
+          create: {
+            name,
+            tol: tolNorm,
+            email: emailNorm,
+            password: hashedPassword,
+          },
+        },
       },
-      select: { id: true, name: true, email: true, tol: true, role: true },
+      select: {
+         id: true, name: true, email: true, tol: true, role: true ,
+         customers: { select: { id: true } },
+        },
     });
 
     return res.status(201).json({
