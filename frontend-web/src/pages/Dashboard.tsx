@@ -73,7 +73,7 @@ const dashboardData: Record<string, YearData> = {
     topKpis: [
       { title: "จำนวนลูกค้าทั้งหมด", value: 856, trend: 10, isUp: true, icon: Users, format: "number" },
       { title: "ดีลที่กำลังดีลอยู่", value: 100, trend: 22, isUp: true, icon: Clock, format: "number" },
-      { title: "ดีลที่ปิดไป (ปีนี้)", value: 200, trend: 48, isUp: true, icon: CheckCircle, format: "number" },
+      { title: "ดีลที่ปิดไป", value: 200, trend: 48, isUp: true, icon: CheckCircle, format: "number" },
       { title: "ราคาปิดดีลเฉลี่ย", value: 1953000, trend: -7, isUp: false, icon: DollarSign, format: "currency" },
     ],
     dealChartData: [

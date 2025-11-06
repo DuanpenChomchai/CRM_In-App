@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"; // 1. เพิ่ม useEffect
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, FileText, Download, List, Save } from "lucide-react"; // 2. เพิ่มไอคอน Save
+import { Plus, Trash2, FileText, Download, List, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -53,7 +53,7 @@ const dummyQuotationDatabase = [
     quotationNumber: "QT-2025-002",
     customer: { name: "คุณวิภา สวยงาม", email: "vipa@example.com", phone: "082-345-6789", address: "567 นนทบุรี" },
     items: [
-      { id: 102, productName: "Luxury Villa Paradise", quantity: 1, price: 8500000, discount: 10 } // สมมติข้อมูล
+      { id: 102, productName: "Luxury Villa Paradise", quantity: 1, price: 8500000, discount: 10 }
     ],
   },
   {
@@ -61,7 +61,7 @@ const dummyQuotationDatabase = [
     quotationNumber: "QT-2025-003",
     customer: { name: "คุณประเสริฐ มั่งคั่ง", email: "prasert@example.com", phone: "083-456-7890", address: "890 ปทุมธานี" },
     items: [
-      { id: 103, productName: "Modern Townhome", quantity: 1, price: 4200000, discount: 5 } // สมมติข้อมูล
+      { id: 103, productName: "Modern Townhome", quantity: 1, price: 4200000, discount: 5 }
     ],
   },
 ];
@@ -100,9 +100,10 @@ const Quotation = () => {
     { name: "Smart Townhouse", price: 3800000, discount: 7 },
   ];
 
-
+  
   useEffect(() => {
     if (editId) {
+      // โหมดแก้ไข: โหลดข้อมูลเดิม
       const dataToEdit = dummyQuotationDatabase.find(q => q.id === Number(editId));
       if (dataToEdit) {
         setQuotationNumber(dataToEdit.quotationNumber);
@@ -112,9 +113,26 @@ const Quotation = () => {
         toast.error("ไม่พบใบเสนอราคาที่ต้องการแก้ไข");
         navigate("/quotationlist");
       }
+    } else {
+      // โหมดสร้างใหม่: สร้างเลขที่เอกสารอัตโนมัติ
+      const generateQuotationNumber = () => {
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0'); // เดือนเริ่มที่ 0
+        const d = String(today.getDate()).padStart(2, '0');
+        const formattedDate = `${y}${m}${d}`;
+        
+        // หมายเหตุ: ในแอปจริง ควรดึงลำดับล่าสุดจากฐานข้อมูล
+        // ในตัวอย่างนี้ เราจะใช้จำนวนข้อมูลที่มีอยู่ + 1
+        const nextSequence = String(dummyQuotationDatabase.length + 1).padStart(3, '0');
+        
+        return `QUE-${formattedDate}-${nextSequence}`;
+      };
+
+      setQuotationNumber(generateQuotationNumber());
     }
   }, [editId, navigate]);
-
+  
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('th-TH', {
@@ -157,15 +175,12 @@ const Quotation = () => {
   };
 
   const handleProductSelect = (productName: string) => {
-    const product = availableProducts.find(p => p.name === productName);
-    if (product) {
       setNewItem({
         ...newItem,
-        productName: product.name,
-        price: product.price,
-        discount: product.discount,
+        productName: productName, // อัปเดตเฉพาะชื่อสินค้า
+        price: 0, // รีเซ็ตราคาเป็น 0
+        discount: 0, // รีเซ็ตส่วนลดเป็น 0
       });
-    }
   };
 
   const handleGenerateQuotation = () => {
@@ -215,15 +230,16 @@ const Quotation = () => {
         <CardContent>
      
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
             <div>
               <Label>เลขที่ใบเสนอราคา *</Label>
               <Input
                 value={quotationNumber}
-                onChange={(e) => setQuotationNumber(e.target.value)}
-                placeholder="เช่น QT-2025-004"
-                disabled={!!editId} 
+                disabled 
+                placeholder="กำลังสร้าง..." 
               />
             </div>
+            
             <div>
               <Label>ชื่อลูกค้า *</Label>
               <Input
@@ -295,15 +311,16 @@ const Quotation = () => {
                 onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 1 })}
               />
             </div>
+            
             <div>
               <Label>ราคา (บาท)</Label>
               <Input
                 type="number"
                 value={newItem.price}
                 onChange={(e) => setNewItem({ ...newItem, price: parseFloat(e.target.value) || 0 })}
-                disabled
               />
             </div>
+
             <div>
               <Label>ส่วนลด (%)</Label>
               <Input
@@ -395,18 +412,12 @@ const Quotation = () => {
         </CardContent>
       </Card>
 
-      {/* Actions */}
+      
       <div className="flex gap-3 justify-end">
         <Button variant="outline" onClick={() => navigate("/quotationlist")}>
           ยกเลิก
         </Button>
-        <Button 
-          variant="outline"
-          onClick={handleGenerateQuotation}
-        >
-          <Download className="w-4 h-4 mr-2" />
-          ส่งออก PDF
-        </Button>
+        
         <Button 
           className="gradient-primary text-white"
           onClick={handleGenerateQuotation}
@@ -425,6 +436,7 @@ const Quotation = () => {
           )}
         </Button>
       </div>
+    
     </div>
   );
 };

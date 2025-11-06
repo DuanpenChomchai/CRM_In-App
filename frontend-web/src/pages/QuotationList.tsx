@@ -29,10 +29,11 @@ const QuotationList = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
 
+  // --- [START] การเปลี่ยนแปลง ---
   const [quotations] = useState<Quotation[]>([
     {
       id: 1,
-      quotationNumber: "QT-2025-001",
+      quotationNumber: "QUE-20250115-001", // แก้ไขจาก QT-2025-001
       customerName: "คุณสมศักดิ์ เจริญสุข",
       date: new Date(2025, 0, 15),
       total: 3500000,
@@ -41,7 +42,7 @@ const QuotationList = () => {
     },
     {
       id: 2,
-      quotationNumber: "QT-2025-002",
+      quotationNumber: "QUE-20250118-002", // แก้ไขจาก QT-2025-002
       customerName: "คุณวิภา สวยงาม",
       date: new Date(2025, 0, 18),
       total: 8500000,
@@ -50,7 +51,7 @@ const QuotationList = () => {
     },
     {
       id: 3,
-      quotationNumber: "QT-2025-003",
+      quotationNumber: "QUE-20250120-003", // แก้ไขจาก QT-2025-003
       customerName: "คุณประเสริฐ มั่งคั่ง",
       date: new Date(2025, 0, 20),
       total: 4200000,
@@ -58,6 +59,7 @@ const QuotationList = () => {
       items: 1,
     },
   ]);
+  // --- [END] การเปลี่ยนแปลง ---
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('th-TH', {

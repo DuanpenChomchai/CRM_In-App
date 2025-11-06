@@ -24,6 +24,7 @@ import {
   Bed,
   Maximize2,
   Building,
+  Plus,
 } from "lucide-react";
 import {
   Dialog,
@@ -31,9 +32,12 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 const properties = [
   {
@@ -225,6 +229,21 @@ const statusBadge = (status: string) => {
   }
 };
 
+const initialNewPropertyState = {
+  name: "",
+  type: "บ้านเดี่ยว",
+  location: "",
+  address: "",
+  price: 0,
+  bedrooms: 1,
+  bathrooms: 1,
+  size: 0,
+  status: "available",
+  image: "",
+  description: "",
+  discount: 0,
+};
+
 export default function Properties() {
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
@@ -232,6 +251,9 @@ export default function Properties() {
   const [selected, setSelected] = useState<any>(null);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newProperty, setNewProperty] = useState(initialNewPropertyState);
 
   const filtered = properties.filter((p) => {
     const matchType = filterType === "all" || p.type === filterType;
@@ -242,16 +264,47 @@ export default function Properties() {
     return matchType && matchStatus && matchSearch;
   });
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setNewProperty((prev) => ({
+      ...prev,
+      [name]: name === 'price' || name === 'bedrooms' || name === 'bathrooms' || name === 'size' || name === 'discount' 
+               ? Number(value) 
+               : value,
+    }));
+  };
+
+  const handleSelectChange = (name: string, value: string) => {
+    setNewProperty((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleSaveProperty = () => {
+    toast.success(`เพิ่ม ${newProperty.name} สำเร็จ!`);
+    setIsAddModalOpen(false);
+    setNewProperty(initialNewPropertyState);
+  };
+
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">อสังหาริมทรัพย์</h1>
-        <p className="text-muted-foreground mt-1">
-          รายการบ้านและคอนโดทั้งหมด
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">อสังหาริมทรัพย์</h1>
+          <p className="text-muted-foreground mt-1">
+            รายการบ้านและคอนโดทั้งหมด
+          </p>
+        </div>
+        <Button 
+          onClick={() => setIsAddModalOpen(true)}
+          className="bg-green-600 hover:bg-green-700 text-white"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          เพิ่มอสังหาฯ
+        </Button>
       </div>
-
-      {/* 🔍 Filter */}
       <Card className="shadow-card">
         <CardHeader>
           <CardTitle>กรองข้อมูล</CardTitle>
@@ -298,7 +351,6 @@ export default function Properties() {
         </CardContent>
       </Card>
 
-      {/* 🏡 Property Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {filtered.map((p) => (
           <Card key={p.id} className="shadow-card hover:shadow-lg transition">
@@ -368,7 +420,6 @@ export default function Properties() {
         ))}
       </div>
 
-      {/* 🪟 Modal */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -400,7 +451,6 @@ export default function Properties() {
                 </p>
               </div>
 
-              {/* รายละเอียด */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="p-4 bg-card rounded-lg border text-center">
                   <Maximize2 className="w-6 h-6 mx-auto mb-2 text-primary" />
@@ -424,7 +474,6 @@ export default function Properties() {
                 </div>
               </div>
 
-              {/* ที่อยู่ */}
               <div className="p-4 bg-card rounded-lg border">
                 <div className="flex items-start gap-3">
                   <MapPin className="w-5 h-5 text-primary mt-1" />
@@ -437,7 +486,6 @@ export default function Properties() {
                 </div>
               </div>
 
-              {/* รายละเอียด */}
               <div className="p-4 bg-card rounded-lg border">
                 <p className="font-semibold mb-2">รายละเอียด</p>
                 <p className="text-muted-foreground leading-relaxed">
@@ -453,20 +501,105 @@ export default function Properties() {
                 >
                   ปิด
                 </Button>
-                 {/* <Button
-                  className="flex-1 bg-gradient-to-r from-green-400 to-pink-400 text-white hover:opacity-90"
-                  onClick={() => {
-                    setOpen(false);
-                    navigate("/quotation");
-                  }}
-                >
-                  ขอใบเสนอราคา
-                </Button> */}
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              เพิ่มอสังหาริมทรัพย์ใหม่
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <Label htmlFor="name">ชื่ออสังหาฯ</Label>
+                <Input id="name" name="name" value={newProperty.name} onChange={handleInputChange} placeholder="เช่น คอนโด ใกล้ BTS..." />
+              </div>
+              
+              <div>
+                <Label htmlFor="type">ประเภท</Label>
+                <Select name="type" value={newProperty.type} onValueChange={(value) => handleSelectChange('type', value)}>
+                  <SelectTrigger id="type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="บ้านเดี่ยว">บ้านเดี่ยว</SelectItem>
+                    <SelectItem value="คอนโด">คอนโด</SelectItem>
+                    <SelectItem value="ทาวน์เฮ้าส์">ทาวน์เฮ้าส์</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="status">สถานะ</Label>
+                <Select name="status" value={newProperty.status} onValueChange={(value) => handleSelectChange('status', value)}>
+                  <SelectTrigger id="status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">พร้อมขาย</SelectItem>
+                    <SelectItem value="reserved">จอง</SelectItem>
+                    <SelectItem value="sold">ขายแล้ว</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="price">ราคา (บาท)</Label>
+                <Input id="price" name="price" type="number" value={newProperty.price} onChange={handleInputChange} />
+              </div>
+
+              <div>
+                <Label htmlFor="size">ขนาด (ตร.ม.)</Label>
+                <Input id="size" name="size" type="number" value={newProperty.size} onChange={handleInputChange} />
+              </div>
+
+              <div>
+                <Label htmlFor="bedrooms">ห้องนอน</Label>
+                <Input id="bedrooms" name="bedrooms" type="number" min="0" value={newProperty.bedrooms} onChange={handleInputChange} />
+              </div>
+
+              <div>
+                <Label htmlFor="bathrooms">ห้องน้ำ</Label>
+                <Input id="bathrooms" name="bathrooms" type="number" min="0" value={newProperty.bathrooms} onChange={handleInputChange} />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label htmlFor="location">ทำเล (ย่าน)</Label>
+                <Input id="location" name="location" value={newProperty.location} onChange={handleInputChange} placeholder="เช่น สุขุมวิท, รัตนาธิเบศร์" />
+              </div>
+
+              <div className="md:col-span-2">
+                <Label htmlFor="address">ที่อยู่ (เต็ม)</Label>
+                <Input id="address" name="address" value={newProperty.address} onChange={handleInputChange} placeholder="123/45 ถนน..." />
+              </div>
+
+     
+              <div className="md:col-span-2">
+                <Label htmlFor="image">แนบรูปภาพ</Label>
+                <Input id="image" name="image" type="file" onChange={handleInputChange} />
+              </div>
+              
+
+              <div className="md:col-span-2">
+                <Label htmlFor="description">รายละเอียด</Label>
+                <Textarea id="description" name="description" value={newProperty.description} onChange={handleInputChange} placeholder="อธิบายเกี่ยวกับอสังหาฯ นี้..." />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>ยกเลิก</Button>
+            <Button onClick={handleSaveProperty} className="bg-green-600 hover:bg-green-700 text-white">
+              บันทึก
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-}
+};
