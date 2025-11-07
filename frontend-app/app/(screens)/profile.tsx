@@ -2,9 +2,15 @@ import React from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
+import { useAuthStore } from "../store/useAuthStore";
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
+
+  if (!user) return null; // (กรณี token หมดอายุ)
+
   return (
     <>
       <SafeAreaView className="flex-1 bg-white items-center justify-between">
@@ -33,6 +39,10 @@ export default function ProfileScreen() {
           <TouchableOpacity
               activeOpacity={0.9}
               className="mt-6 bg-slate-500 px-6 py-3 rounded-xl"
+              onPress={async () => {
+                  await logout();
+                  router.replace("/(auth)/login");
+                }}
             >
               <Text className="text-white font-semibold text-base">
                 Logout
