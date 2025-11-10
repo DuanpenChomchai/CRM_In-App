@@ -1,4 +1,3 @@
-// src/ws.ts
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 
@@ -7,7 +6,7 @@ type JoinPayload   = { roomId: string; user: string };
 type MessagePayload= { roomId: string; text: string; user: string; cid?: string };
 type TypingPayload = { roomId: string; user: string; typing: boolean };
 
-const rooms = new Map<string, ChatMessage[]>(); // roomId -> messages
+const rooms = new Map<string, ChatMessage[]>(); 
 const HISTORY_LIMIT = 200;
 
 let io: Server | null = null;
@@ -15,7 +14,7 @@ let io: Server | null = null;
 export const initWs = (server: HttpServer) => {
   io = new Server(server, {
     cors: { origin: "*" },
-    transports: ["websocket"], // ถ้าเน็ตบางที่บล็อก WS ให้ลบบรรทัดนี้เพื่อ fallback เป็น polling
+    transports: ["websocket"], 
   });
 
   io.on("connection", (socket) => {
@@ -42,7 +41,7 @@ export const initWs = (server: HttpServer) => {
 
     socket.on("message", (payload: MessagePayload) => {
       try {
-        const { roomId, text, user, cid } = payload || ({} as MessagePayload); // ✅ ดึง cid
+        const { roomId, text, user, cid } = payload || ({} as MessagePayload); 
         const t = (text || "").trim();
         if (!roomId || !user || !t) return;
 

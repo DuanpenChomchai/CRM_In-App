@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 export const WS_SERVER = "http://10.222.113.26:3000"; // ← แก้เป็น IP คอมคุณ
 
-// รับ cid จาก server เพื่อ de-dup optimistic bubble
 export type ChatMsg = { id: string; text: string; user: string; ts: number; cid?: string };
 
 let socketInstance: Socket | null = null;
@@ -19,11 +18,9 @@ export const getSocket = () => {
   return socketInstance;
 };
 
-// ช่วยสร้าง cid เวลาส่งข้อความ (ถ้าอยากใช้จาก UI)
 export const generateCid = () =>
   `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-// Hook ใช้ในหน้าห้องแชท
 export const useSocketRoom = (roomId: string, username: string) => {
   const socket = useMemo(getSocket, []);
   const [connected, setConnected] = useState<boolean>(socket.connected);
@@ -79,7 +76,6 @@ export const useSocketRoom = (roomId: string, username: string) => {
     typingTimer.current = setTimeout(() => stopTyping(), 800);
   };
 
-  // ✅ รองรับ cid เพื่อให้ UI ฝั่งผู้ส่ง de-dup ข้อความ optimistic ได้
   const sendText = (text: string, cid?: string) => {
     const t = text.trim();
     if (!t) return;
