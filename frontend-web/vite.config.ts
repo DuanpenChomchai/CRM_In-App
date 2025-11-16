@@ -6,7 +6,7 @@ export default defineConfig({
   root: ".", // ✅ ให้เริ่มที่โฟลเดอร์นี้
   server: {
     host: false,
-    port: 8080,
+    port: 5173,
   },
   plugins: [react()],
   resolve: {

@@ -17,10 +17,9 @@ const Navbar = () => {
   const userEmail = localStorage.getItem("userEmail") || "admin@crm.com";
 
   const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("userEmail");
-    toast.success("ออกจากระบบสำเร็จ");
-    navigate("/auth");
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  navigate("/login");
   };
 
   return (

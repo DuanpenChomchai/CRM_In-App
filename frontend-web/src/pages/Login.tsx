@@ -1,37 +1,98 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, Mail, Lock } from "lucide-react"; 
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Mail, Lock, Building2 } from "lucide-react";
 import { toast } from "sonner";
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  // โหลด Google Script
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    document.body.appendChild(script);
+  }, []);
 
-    if (email && password) {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("userEmail", email);
-      toast.success("เข้าสู่ระบบสำเร็จ");
+  // ล็อกอินปกติ
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("http://localhost:3000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier: email,
+          password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) return toast.error(data.message);
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+
+      toast.success("เข้าสู่ระบบสำเร็จ 🎉");
       navigate("/");
-    } else {
-      toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
+    } catch {
+      toast.error("เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์");
     }
   };
 
+  // ล็อกอินด้วย Google
   const handleGoogleLogin = () => {
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("userEmail", "googleuser@gmail.com");
-    toast.success("เข้าสู่ระบบด้วย Google สำเร็จ ✅");
-    navigate("/");
+    if (!window.google || !window.google.accounts) {
+      return toast.error("Google Login ยังโหลดไม่เสร็จ");
+    }
+    const clientId = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID as string;
+
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (response: any) => {
+        const res = await fetch("http://localhost:3000/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) return toast.error("เข้าสู่ระบบด้วย Google ไม่สำเร็จ");
+
+        localStorage.setItem("token", data.token);
+        localStorage.setItem("user", JSON.stringify(data.user));
+
+        toast.success("เข้าสู่ระบบด้วย Google สำเร็จ 🎉");
+        navigate("/");
+      },
+    });
+
+    window.google.accounts.id.prompt();
   };
 
+  /* ----------------------------------------------
+      🌈 UI ตรงตามรูปเดิม 100%
+  ----------------------------------------------- */
   return (
     <div className="min-h-screen flex items-center justify-center gradient-soft p-4">
       <Card className="w-full max-w-md shadow-elegant animate-fade-in">
@@ -77,7 +138,7 @@ const Login = () => {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="pl-10" 
+                  className="pl-10"
                   required
                 />
               </div>

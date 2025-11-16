@@ -24,11 +24,10 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("userEmail");
-    toast.success("ออกจากระบบสำเร็จ");
-    navigate("/auth");
+   const handleLogout = () => {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  navigate("/login");
   };
 
   return (
