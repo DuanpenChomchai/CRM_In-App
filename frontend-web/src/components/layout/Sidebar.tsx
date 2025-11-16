@@ -6,33 +6,44 @@ import {
   Building2,
   LayoutDashboard,
   UserCog,
-  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 
-const menuItems = [
-  { title: "แดชบอร์ด", url: "/", icon: LayoutDashboard },
-  { title: "ลูกค้า", url: "/customer", icon: UserPlus },
-  { title: "Stage", url: "/stagebased", icon: Workflow },
-  { title: "อสังหาริมทรัพย์", url: "/properties", icon: Building2 },
-  { title: "รายการใบเสนอราคา", url: "/quotationlist", icon: Users },
-  { title: "จัดการผู้ใช้งาน", url: "/userManagement", icon: UserCog },
-];
-
-export function Sidebar() {
+const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-   const handleLogout = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-  navigate("/login");
+  // ดึง user จาก localStorage
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  const role = user?.role || "GUEST";
+
+  // เมนูทั้งหมด
+  let menuItems = [
+    { title: "แดชบอร์ด", url: "/", icon: LayoutDashboard },
+    { title: "ลูกค้า", url: "/customer", icon: UserPlus },
+    { title: "Stage", url: "/stagebased", icon: Workflow },
+    { title: "อสังหาริมทรัพย์", url: "/properties", icon: Building2 },
+    { title: "รายการใบเสนอราคา", url: "/quotationlist", icon: Users },
+  ];
+
+  // เฉพาะ ADMIN เห็นเมนูจัดการผู้ใช้
+  if (role === "ADMIN") {
+    menuItems.push({
+      title: "จัดการผู้ใช้งาน",
+      url: "/userManagement",
+      icon: UserCog,
+    });
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
   };
 
   return (
     <aside className="w-56 bg-white border-r flex flex-col justify-between h-full">
-      {/* เมนูหลัก */}
       <nav className="flex flex-col gap-1 p-4">
         {menuItems.map((item) => {
           const isQuotationMenu = item.url === "/quotationlist";
@@ -61,4 +72,6 @@ export function Sidebar() {
       </nav>
     </aside>
   );
-}
+};
+
+export { Sidebar };

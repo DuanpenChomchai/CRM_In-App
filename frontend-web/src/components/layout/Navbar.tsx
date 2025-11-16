@@ -10,16 +10,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 
 const Navbar = () => {
   const navigate = useNavigate();
-  const userEmail = localStorage.getItem("userEmail") || "admin@crm.com";
+
+  // ดึง user จริงจาก localStorage
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  const userEmail = user?.email || "ไม่พบอีเมล";
 
   const handleLogout = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-  navigate("/login");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/login");
   };
 
   return (
@@ -42,7 +45,7 @@ const Navbar = () => {
             >
               <Avatar>
                 <AvatarFallback className="bg-gradient-to-r from-green-400 to-pink-400 text-white font-bold">
-                  {userEmail[0].toUpperCase()}
+                  {userEmail[0]?.toUpperCase() || "?"}
                 </AvatarFallback>
               </Avatar>
             </Button>

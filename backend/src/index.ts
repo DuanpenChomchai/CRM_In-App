@@ -1,38 +1,49 @@
+import "dotenv/config";
 import express from "express";
-
-import dotenv from "dotenv";
+import cors from "cors";
+import http from "http";                     
 import authRoutes from "./routes/authroute";
-const cors = require('cors');
+import { checkBucket } from "./config/minioclient";
+import { initWs } from "./ws";              
+
+function createWebSocketServer(app: express.Express) {
+  const server = http.createServer(app);
+  initWs(server);
+  return server;
+}
 
 async function main() {
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
-const app = express();
+  app.use(cors({ origin: "*", methods: ["GET","POST","PUT","DELETE","OPTIONS"] }));
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
-// ถ้าอยากยืดหยุ่นหน่อยก็ไปเซตใน .env ได้
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+  app.get("/", (_req, res) => res.json({ ok: true }));
+  app.use("/api", authRoutes);
 
-// ✅ เปิด CORS แบบกำหนด origin ชัดเจน
-app.use(
-  cors({
-    origin: FRONTEND_URL,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  })
-);
+  console.log("SERVER START with JWT_SECRET =", process.env.JWT_SECRET ? "[SET]" : "[MISSING]");
 
-// ให้ express อ่าน json ได้
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+  try {
+    await checkBucket();
+  } catch (e) {
+    console.error("MinIO checkBucket failed:", e);
+  }
 
-// ✅ เปลี่ยน prefix ให้ตรงกับที่ frontend ใช้
-// จะได้มี /api/auth/login, /api/auth/google, /api/auth/me ฯลฯ
-app.use("/api/auth", authRoutes);
+  const server = createWebSocketServer(app);
 
-// start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`HTTP + WebSocket running on http://localhost:${port}`);
+  });
+
+  process.on("SIGINT", () => {
+    console.log("Shutting down…");
+    server.close(() => process.exit(0));
+  });
+}
+
+main().catch((err) => {
+  console.error("Fatal startup error:", err);
+  process.exit(1);
 });

@@ -1,19 +1,60 @@
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const token = localStorage.getItem("token");
-  const user = localStorage.getItem("user");
+  const [loading, setLoading] = useState(true);
+  const [allowedAccess, setAllowedAccess] = useState(false);
 
-  if (!token || !user) return <Navigate to="/login" replace />;
+  useEffect(() => {
+    const token = localStorage.getItem("token");
 
-  const parsed = JSON.parse(user);
+    if (!token) {
+      setAllowedAccess(false);
+      setLoading(false);
+      return;
+    }
 
-  // อนุญาตเฉพาะ 3 role เท่านั้น
-  const allowed = ["ADMIN", "SALE", "MANAGER"];
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("http://localhost:3000/api/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-  if (!allowed.includes(parsed.role)) {
-    return <Navigate to="/login" replace />;
-  }
+        if (!res.ok) {
+          localStorage.clear();
+          setAllowedAccess(false);
+          setLoading(false);
+          return;
+        }
+
+        const data = await res.json();
+
+        // อนุญาตเฉพาะ 3 role
+        const allowed = ["ADMIN", "SALE", "MANAGER"];
+
+        if (!allowed.includes(data.user.role)) {
+          setAllowedAccess(false);
+        } else {
+          // อัปเดต user ใหม่ (token เดิมใช้ได้)
+          localStorage.setItem("user", JSON.stringify(data.user));
+          setAllowedAccess(true);
+        }
+      } catch (e) {
+        localStorage.clear();
+        setAllowedAccess(false);
+      }
+
+      setLoading(false);
+    };
+
+    checkAuth();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+
+  if (!allowedAccess) return <Navigate to="/login" replace />;
 
   return children;
 };
