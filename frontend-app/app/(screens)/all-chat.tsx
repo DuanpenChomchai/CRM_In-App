@@ -1,10 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, TextInput, FlatList, Pressable } from "react-native";
+import { View, Text, TextInput, FlatList, Pressable, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Link } from "expo-router";
+import { Link, router } from "expo-router";
+import { getSocket } from "../store/socket";
 
 type ChatItem = { id: string; name: string; time: string };
+
+const baseRooms: ChatItem[] = [
+  { id: "general", name: "General", time: "Now" },
+  { id: "dev", name: "Developers", time: "Now" },
+  { id: "sales", name: "Sales Team", time: "Now" },
+];
 
 const mockChats: ChatItem[] = [
   { id: "1", name: "Sale Alex", time: "15:00" },
@@ -12,12 +19,28 @@ const mockChats: ChatItem[] = [
 ];
 
 export default function ChatsScreen() {
+  const socket = getSocket();
+  const [connected, setConnected] = useState<boolean>(socket.connected);
   const [query, setQuery] = useState("");
+  const [customRoomName, setCustomRoomName] = useState("");
 
+  const allRooms = useMemo<ChatItem[]>(() => [...baseRooms, ...mockChats], []);
   const data = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? mockChats.filter((c) => c.name.toLowerCase().includes(q)) : mockChats;
-  }, [query]);
+    return q ? allRooms.filter((c) => c.name.toLowerCase().includes(q)) : allRooms;
+  }, [query, allRooms]);
+
+  useEffect(() => {
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    if (!socket.connected) socket.connect();
+    return () => {
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+    };
+  }, [socket]);
 
   const renderItem = ({ item }: { item: ChatItem }) => (
     <Link
@@ -38,11 +61,22 @@ export default function ChatsScreen() {
     </Link>
   );
 
+  const handleCreateRoom = () => {
+    const name = customRoomName.trim();
+    if (!name) return;
+    const roomId = name.toLowerCase().replace(/[^a-z0-9\- ]/g, "").replace(/\s+/g, "-").slice(0, 40)
+      || `room-${Date.now()}`;
+    setCustomRoomName("");
+    router.push({ pathname: "/(screens)/chat-detail", params: { id: roomId, name } });
+  };
+
   const ListHeader = (
     <>
       <View className="flex-row items-center px-4 bg-white pt-2">
         <View className="flex-1 items-center -ml-6 py-2">
-          <Text className="text-lg font-semibold text-gray-900 text-center">Chats</Text>
+          <Text className="text-lg font-semibold text-gray-900 text-center">
+            Chats {connected ? "🟢" : "🔴"}
+          </Text>
         </View>
         <View className="w-6" />
       </View>
@@ -58,6 +92,24 @@ export default function ChatsScreen() {
             onChangeText={setQuery}
             returnKeyType="search"
           />
+        </View>
+      </View>
+
+      <View className="px-4 pb-2 bg-white">
+        <View className="flex-row items-center bg-emerald-50 rounded-2xl px-3 py-2 border border-emerald-100">
+          <Ionicons name="chatbox-ellipses-outline" size={18} color="#047857" />
+          <TextInput
+            className="flex-1 px-2 py-1 text-gray-800"
+            placeholder="Create or join a room (e.g. support-TH)"
+            placeholderTextColor="#6EE7B7"
+            value={customRoomName}
+            onChangeText={setCustomRoomName}
+            returnKeyType="go"
+            onSubmitEditing={handleCreateRoom}
+          />
+          <Pressable onPress={handleCreateRoom} className="pl-2" style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <Ionicons name="add-circle" size={22} color="#10B981" />
+          </Pressable>
         </View>
       </View>
     </>
