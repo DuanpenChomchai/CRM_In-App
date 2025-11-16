@@ -23,4 +23,6 @@ router.post("/register-manager", authMiddleware, verifyAdmin, registerManager);
 router.post("/login", login);
 router.post("/logout", logout);
 
+
+
 export default router;

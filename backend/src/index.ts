@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import http from "http";                     
 import authRoutes from "./routes/auth.route";
+import userRoutes from "./routes/user.route";
+import communicationRoutes from "./routes/communication.route";
 import { checkBucket } from "./config/minioclient";
 import { initWs } from "./ws";              
 
@@ -21,7 +23,11 @@ async function main() {
   app.use(express.urlencoded({ extended: true }));
 
   app.get("/", (_req, res) => res.json({ ok: true }));
+
   app.use("/api", authRoutes);
+  app.use("/api/users", userRoutes);
+  app.use("/api/communications", communicationRoutes);
+
 
   console.log("SERVER START with JWT_SECRET =", process.env.JWT_SECRET ? "[SET]" : "[MISSING]");
 

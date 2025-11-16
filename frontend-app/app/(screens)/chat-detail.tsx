@@ -5,8 +5,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, useLocalSearchParams } from "expo-router";          
-import { useSocketRoom, generateCid } from "../store/socket"; 
+import { Link, useLocalSearchParams } from "expo-router";
+import { useSocketRoom, generateCid } from "../store/socket";
 
 type Msg =
   | { id: string; fromMe: boolean; type: "text"; text: string; time: string; cid?: string }
@@ -28,7 +28,15 @@ export default function ChatDetailScreen() {
   const idParam = Array.isArray(params.id) ? params.id[0] : (params.id as string | undefined);
   const nameParam = Array.isArray(params.name) ? params.name[0] : (params.name as string | undefined);
 
-  const roomId = idParam ?? "general";
+  // (ถ้ามี customerId สามารถใช้เป็น roomId แบบ cust:<id> ได้)
+  const customerIdParam = Array.isArray(params.customerId)
+    ? Number(params.customerId[0])
+    : params.customerId
+    ? Number(params.customerId as string)
+    : undefined;
+
+  // ใช้ได้ทั้งสองแบบ: ถ้ามี customerId จะใช้ cust:<id>, ไม่งั้นใช้ idParam เดิม
+  const roomId = customerIdParam ? `cust:${customerIdParam}` : (idParam ?? "general");
   const username = nameParam || "User_" + Math.floor(Math.random() * 1000);
 
   const {
@@ -83,11 +91,12 @@ export default function ChatDetailScreen() {
     [socketMessages, username]
   );
 
+  // #BUGFIX: ลบ temp-bubble โดยเทียบ cid ให้ถูก
   useEffect(() => {
     if (socketMessages.length === 0) return;
     const last = socketMessages[socketMessages.length - 1];
     if (last.user === username && last.cid) {
-      setLocalTextBuf((prev) => prev.filter((t) => t.id !== last.cid));
+      setLocalTextBuf((prev) => prev.filter((t) => t.id !== last.cid)); 
     }
   }, [socketMessages, username]);
 
@@ -97,16 +106,27 @@ export default function ChatDetailScreen() {
   );
 
   const [input, setInput] = useState("");
+
+  const listRef = useRef<FlatList<Msg>>(null);
+  useEffect(() => {
+    // delay เล็กน้อยเพื่อให้ FlatList render เสร็จก่อน
+    const t = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [mergedMessages.length]);
+
   const onSend = () => {
     const t = input.trim();
     if (!t) return;
 
-    const cid = generateCid(); 
+    const cid = generateCid();
 
     setLocalTextBuf((prev) => [
       ...prev,
       { id: `temp-${cid}`, cid, fromMe: true, type: "text", text: t, time: formatClock(new Date()) },
     ]);
+
     sendSocketText(t, cid);
     setInput("");
   };
@@ -170,6 +190,7 @@ export default function ChatDetailScreen() {
       {ListHeader}
 
       <FlatList
+        ref={listRef}
         data={mergedMessages}
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ padding: 12 }}
@@ -182,6 +203,7 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
+      {/* Recording banner */}
       {isRecording && (
         <View className="px-3 py-2 bg-rose-50 border-t border-rose-200">
           <View className="flex-row items-center">
@@ -236,7 +258,7 @@ export default function ChatDetailScreen() {
               delayLongPress={120}
               style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
             >
-              <Ionicons name={isRecording ? "mic" : "mic-outline"} size={20} color={isRecording ? "#be123c" : "#6B7280"} />
+              <Ionicons name="mic" size={20} color={isRecording ? "#be123c" : "#6B7280"} />
             </Pressable>
           )}
         </View>

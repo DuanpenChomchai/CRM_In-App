@@ -9,7 +9,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
 
-  if (!user) return null; // (กรณี token หมดอายุ)
+  if (!user) return null;
 
   return (
     <>
