@@ -60,6 +60,10 @@ export const initWs = (server: HttpServer) => {
 
         io!.to(roomId).emit("message", msg);
         console.log(`[message] room=${roomId} user=${user} text="${t.substring(0, 80)}" cid=${cid ?? "-"}`);
+
+        // to database
+        
+        
       } catch (err) {
         console.error("message error:", err);
         socket.emit("error", "Message failed");
