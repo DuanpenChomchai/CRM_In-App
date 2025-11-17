@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { UserPlus, Shield, Users, Briefcase, Edit, Trash2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +46,19 @@ interface User {
   role: UserRole;
   phone: string;
 }
+
+// ---------- Map Role (กันพัง 100%) ----------
+const mapRole = (r: string | undefined): UserRole => {
+  if (!r) return "sale"; // default กันพัง
+  const lower = r.toLowerCase();
+
+  if (lower === "admin") return "admin";
+  if (lower === "manager") return "manager";
+  if (lower === "sale") return "sale";
+
+  // กัน CUSTOMER หรือ undefined
+  return "sale";
+};
 
 // ---------- Component ----------
 const UserManagement = () => {
@@ -83,7 +102,7 @@ const UserManagement = () => {
             name: u.name,
             email: u.email,
             phone: u.tol,
-            role: u.role.toLowerCase(),
+            role: mapRole(u.role),
           }));
           setUsers(mapped);
         }
@@ -93,7 +112,12 @@ const UserManagement = () => {
 
   // ---------- Add User (POST) ----------
   const handleAddUser = async () => {
-    if (!newUser.name || !newUser.email || !newUser.phone || !newUser.password) {
+    if (
+      !newUser.name ||
+      !newUser.email ||
+      !newUser.phone ||
+      !newUser.password
+    ) {
       toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
@@ -106,7 +130,7 @@ const UserManagement = () => {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:3000/api/users", {
+      const res = await fetch("http://localhost:3000/api/users?role=NOT_CUSTOMER", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -133,22 +157,27 @@ const UserManagement = () => {
         name: data.name,
         email: data.email,
         phone: data.tol,
-        role: data.role.toLowerCase(),
+        role: mapRole(data.role),
       };
 
       setUsers((prev) => [...prev, formatted]);
 
       toast.success("เพิ่มผู้ใช้งานสำเร็จ");
 
-      setNewUser({ name: "", email: "", role: "sale", phone: "", password: "" });
+      setNewUser({
+        name: "",
+        email: "",
+        role: "sale",
+        phone: "",
+        password: "",
+      });
       setIsAddDialogOpen(false);
-
     } catch (err) {
       toast.error("เกิดข้อผิดพลาด");
     }
   };
 
-  // ---------- Open Edit Dialog ----------
+  // ---------- Edit User ----------
   const openEditDialog = (user: User) => {
     setEditingUser(user);
     setEditData({
@@ -160,26 +189,28 @@ const UserManagement = () => {
     setIsEditDialogOpen(true);
   };
 
-  // ---------- Edit User (PATCH) ----------
   const handleEditUser = async () => {
     if (!editingUser) return;
 
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch(`http://localhost:3000/api/users/${editingUser.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + token,
-        },
-        body: JSON.stringify({
-          name: editData.name,
-          email: editData.email,
-          tol: editData.phone,
-          role: editData.role.toUpperCase(),
-        }),
-      });
+      const res = await fetch(
+        `http://localhost:3000/api/users/${editingUser.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + token,
+          },
+          body: JSON.stringify({
+            name: editData.name,
+            email: editData.email,
+            tol: editData.phone,
+            role: editData.role.toUpperCase(),
+          }),
+        }
+      );
 
       const data = await res.json();
 
@@ -202,27 +233,29 @@ const UserManagement = () => {
         )
       );
 
-      toast.success("แก้ไขข้อมูลผู้ใช้สำเร็จ");
+      toast.success("แก้ไขข้อมูลสำเร็จ");
       setIsEditDialogOpen(false);
-
-    } catch (error) {
+    } catch {
       toast.error("เกิดข้อผิดพลาด");
     }
   };
 
-  // ---------- Delete User (DELETE) ----------
+  // ---------- Delete User ----------
   const handleDeleteUser = async () => {
     if (!deleteUserId) return;
 
     const token = localStorage.getItem("token");
 
     try {
-      const res = await fetch(`http://localhost:3000/api/users/${deleteUserId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: "Bearer " + token,
-        },
-      });
+      const res = await fetch(
+        `http://localhost:3000/api/users/${deleteUserId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: "Bearer " + token,
+          },
+        }
+      );
 
       const data = await res.json();
 
@@ -232,20 +265,20 @@ const UserManagement = () => {
       }
 
       setUsers((prev) => prev.filter((u) => u.id !== deleteUserId));
+
       toast.success("ลบผู้ใช้สำเร็จ");
       setIsDeleteDialogOpen(false);
-
-    } catch (error) {
+    } catch {
       toast.error("เกิดข้อผิดพลาด");
     }
   };
 
-  // ---------- Badge role UI ----------
+  // ---------- Badge UI ----------
   const getRoleBadge = (role: UserRole) => {
-    const roleConfig = {
-      admin: { label: "ผู้ดูแลระบบ", variant: "destructive" as const, icon: Shield },
-      manager: { label: "ผู้จัดการ", variant: "default" as const, icon: Briefcase },
-      sale: { label: "พนักงานขาย", variant: "secondary" as const, icon: Users },
+    const roleConfig: Record<UserRole, any> = {
+      admin: { label: "ผู้ดูแลระบบ", variant: "destructive", icon: Shield },
+      manager: { label: "ผู้จัดการ", variant: "default", icon: Briefcase },
+      sale: { label: "พนักงานขาย", variant: "secondary", icon: Users },
     };
 
     const config = roleConfig[role];
@@ -261,7 +294,6 @@ const UserManagement = () => {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
@@ -318,7 +350,7 @@ const UserManagement = () => {
         </Card>
       </div>
 
-      {/* TABLE */}
+      {/* USER TABLE */}
       <Card>
         <CardHeader>
           <CardTitle>รายชื่อผู้ใช้งาน</CardTitle>
@@ -339,7 +371,7 @@ const UserManagement = () => {
             <TableBody>
               {users.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell>{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.phone}</TableCell>
                   <TableCell>{getRoleBadge(user.role)}</TableCell>
@@ -367,14 +399,14 @@ const UserManagement = () => {
                 </TableRow>
               ))}
             </TableBody>
-
           </Table>
         </CardContent>
       </Card>
 
-      {/* ADD DIALOG */}
+     
+      {/* ADD USER DIALOG */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg w-full rounded-xl">
           <DialogHeader>
             <DialogTitle>เพิ่มผู้ใช้งานใหม่</DialogTitle>
             <DialogDescription>
@@ -383,40 +415,57 @@ const UserManagement = () => {
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* ชื่อ */}
             <div>
               <Label>ชื่อ-นามสกุล</Label>
               <Input
                 value={newUser.name}
-                onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                onChange={(e) =>
+                  setNewUser({ ...newUser, name: e.target.value })
+                }
+                placeholder="เช่น สมชาย ใจดี"
               />
             </div>
 
+            {/* อีเมล */}
             <div>
               <Label>อีเมล</Label>
               <Input
                 type="email"
                 value={newUser.email}
-                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                onChange={(e) =>
+                  setNewUser({ ...newUser, email: e.target.value })
+                }
+                placeholder="email@example.com"
               />
             </div>
 
+            {/* เบอร์โทร */}
             <div>
               <Label>เบอร์โทร</Label>
               <Input
                 value={newUser.phone}
-                onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                onChange={(e) =>
+                  setNewUser({ ...newUser, phone: e.target.value })
+                }
+                placeholder="081-234-5678"
               />
             </div>
 
+            {/* รหัสผ่าน */}
             <div>
               <Label>รหัสผ่าน</Label>
               <Input
                 type="password"
                 value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                onChange={(e) =>
+                  setNewUser({ ...newUser, password: e.target.value })
+                }
+                placeholder="รหัสผ่านอย่างน้อย 6 ตัวอักษร"
               />
             </div>
 
+            {/* บทบาท */}
             <div>
               <Label>บทบาท</Label>
               <Select
@@ -426,9 +475,8 @@ const UserManagement = () => {
                 }
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="เลือกบทบาทผู้ใช้งาน" />
                 </SelectTrigger>
-
                 <SelectContent>
                   <SelectItem value="sale">พนักงานขาย</SelectItem>
                   <SelectItem value="manager">ผู้จัดการ</SelectItem>
@@ -459,7 +507,9 @@ const UserManagement = () => {
               <Label>ชื่อ</Label>
               <Input
                 value={editData.name}
-                onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                onChange={(e) =>
+                  setEditData({ ...editData, name: e.target.value })
+                }
               />
             </div>
 
@@ -468,7 +518,9 @@ const UserManagement = () => {
               <Input
                 type="email"
                 value={editData.email}
-                onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                onChange={(e) =>
+                  setEditData({ ...editData, email: e.target.value })
+                }
               />
             </div>
 
@@ -476,7 +528,9 @@ const UserManagement = () => {
               <Label>เบอร์โทร</Label>
               <Input
                 value={editData.phone}
-                onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                onChange={(e) =>
+                  setEditData({ ...editData, phone: e.target.value })
+                }
               />
             </div>
 
@@ -501,7 +555,10 @@ const UserManagement = () => {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+            >
               ยกเลิก
             </Button>
             <Button onClick={handleEditUser}>บันทึก</Button>
@@ -514,21 +571,24 @@ const UserManagement = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="text-red-600">ยืนยันการลบ</DialogTitle>
-            <DialogDescription>หลังจากลบแล้วไม่สามารถกู้คืนได้</DialogDescription>
+            <DialogDescription>
+              ลบผู้ใช้แล้วไม่สามารถกู้คืนได้
+            </DialogDescription>
           </DialogHeader>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
               ยกเลิก
             </Button>
-
             <Button variant="destructive" onClick={handleDeleteUser}>
               ลบผู้ใช้งาน
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 };

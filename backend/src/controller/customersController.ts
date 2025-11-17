@@ -1,105 +1,91 @@
 import { Request, Response } from "express";
-import { prisma } from "../config/prismaclient";
+import prisma from "../config/prismaclient";
 
-/**
- * ดึงข้อมูลลูกค้าทั้งหมด
- */
-export const getCustomers = async (req: Request, res: Response): Promise<void> => {
+// ดึงลูกค้าทั้งหมด
+// ดึงลูกค้าทั้งหมด (ที่ role = CUSTOMER)
+// GET /api/customers
+export const getAllCustomers = async (req: Request, res: Response) => {
   try {
-    const customers = await prisma.customer.findMany({
-      include: {
-        quotations: true,
-        closedDeals: true,
-      },
+    const customers = await prisma.user.findMany({
+      where: { role: "CUSTOMER" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        tol: true,
+        img: true,
+        role: true,
+      }
     });
-    res.json(customers);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: message });
+
+    return res.json(customers);
+  } catch (err) {
+    console.error("getAllCustomers error:", err);
+    return res.status(500).json({ message: "ดึงข้อมูลลูกค้าล้มเหลว" });
   }
 };
 
-/**
- * เพิ่มลูกค้าใหม่
- */
-export const createCustomer = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, email, password, tol, userId } = req.body;
 
-    if (!name || !email || !password) {
-      res.status(400).json({ error: "Missing required fields" });
-      return;
-    }
+// เพิ่มลูกค้าใหม่ (ถ้าต้องการ)
+export const createCustomer = async (req: Request, res: Response) => {
+  try {
+    const { name, phone, email } = req.body;
 
     const newCustomer = await prisma.customer.create({
-      data: { name, email, password, tol, userId },
+      data: {
+        name,
+        tol: phone,
+        email,
+        password: "TEMP1234", // ถ้าเว็บไม่ได้ใช้ password ก็ใส่ dummy
+      },
     });
 
-    res.json({
-      message: "✅ Customer created successfully",
-      data: newCustomer,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(400).json({ error: message });
+    res.json(newCustomer);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "สร้างลูกค้าไม่สำเร็จ" });
   }
 };
 
-/**
- * แก้ไขข้อมูลลูกค้า
- */
-export const updateCustomer = async (req: Request, res: Response): Promise<void> => {
+// อัปเดทข้อมูลลูกค้า
+export const updateCustomer = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
-    const { name, email, password, tol } = req.body;
-
-    const existing = await prisma.customer.findUnique({
-      where: { id: Number(id) },
-    });
-
-    if (!existing) {
-      res.status(404).json({ error: "Customer not found" });
-      return;
-    }
+    const id = Number(req.params.id);
+    const { name, phone, email, propertyType, budget, assignedTo } = req.body;
 
     const updated = await prisma.customer.update({
-      where: { id: Number(id) },
-      data: { name, email, password, tol },
+      where: { id },
+      data: {
+        name,
+        tol: phone,
+        email,
+        // propertyType,
+        // budget,
+        userId: assignedTo ? Number(assignedTo) : null,
+      },
     });
 
-    res.json({
-      message: "✅ Customer updated successfully",
-      data: updated,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(400).json({ error: message });
+    res.json(updated);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "อัปเดทข้อมูลไม่สำเร็จ" });
   }
 };
 
-/**
- * ลบลูกค้า
- */
-export const deleteCustomer = async (req: Request, res: Response): Promise<void> => {
+// มอบหมายพนักงานขาย
+export const assignSales = async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    const { saleId } = req.body;
 
-    const existing = await prisma.customer.findUnique({
-      where: { id: Number(id) },
+    const updated = await prisma.customer.update({
+      where: { id },
+      data: { userId: saleId },
     });
 
-    if (!existing) {
-      res.status(404).json({ error: "Customer not found" });
-      return;
-    }
-
-    await prisma.customer.delete({
-      where: { id: Number(id) },
-    });
-
-    res.json({ message: "🗑️ Customer deleted successfully" });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(400).json({ error: message });
+    res.json(updated);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "มอบหมายไม่สำเร็จ" });
   }
 };
