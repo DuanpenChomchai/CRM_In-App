@@ -29,7 +29,7 @@ const Login = () => {
   // ============================
   // 🚀 NORMAL LOGIN (EMAIL/PASSWORD)
   // ============================
-   const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const res = await fetch("http://localhost:3000/api/login", {
@@ -55,7 +55,6 @@ const Login = () => {
     }
   };
 
-
   // ============================
   // 🚀 GOOGLE LOGIN
   // ============================
@@ -72,11 +71,11 @@ const Login = () => {
       client_id: clientId,
       callback: async (response: any) => {
         try {
-      const res = await fetch("http://localhost:3000/api/login", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ credential: response.credential }),
-});
+          const res = await fetch("http://localhost:3000/api/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: response.credential }),
+          });
 
           const data = await res.json();
 
@@ -101,9 +100,9 @@ const Login = () => {
   }, []);
 
   // ============================
-  // 🔥 UI 
+  // 🔥 UI
   // ============================
-   return (
+  return (
     <div className="min-h-screen flex items-center justify-center gradient-soft p-4">
       <Card className="w-full max-w-md shadow-elegant animate-fade-in">
         <CardHeader className="space-y-1 text-center">
@@ -173,7 +172,7 @@ const Login = () => {
           </div>
 
           {/* ปุ่ม Google Login */}
-        <div id="googleBtn" className="w-full flex justify-center"></div>
+          <div id="googleBtn" className="w-full flex justify-center"></div>
         </CardContent>
       </Card>
     </div>

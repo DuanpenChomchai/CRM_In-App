@@ -136,38 +136,59 @@ export const googleLogin = async (req: Request, res: Response) => {
   try {
     const { credential } = req.body;
 
+    // 1. verify Google token
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
 
     const payload = ticket.getPayload();
-    if (!payload?.email) return res.status(400).json({ message: "google login failed" });
+    if (!payload) return res.status(400).json({ message: "Google token invalid" });
 
-    let user = await prisma.user.findUnique({
-      where: { email: payload.email },
+    const email = payload.email;
+
+    // 2. หาในฐานข้อมูล
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
     });
 
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          name: payload.name || "Google User",
-          email: payload.email,
-          tol: "",
-          password: "",
-          role: "CUSTOMER",
-        },
+    // ❌ 3. ไม่อนุญาตให้ user ที่ไม่ใช่ ADMIN/SALE/MANAGER เข้า
+    if (!existingUser) {
+      return res.status(403).json({
+        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
       });
     }
 
-    const token = createToken(user);
+    // 4. เฉพาะ ADMIN, SALE, MANAGER เท่านั้น
+    const allowed = ["ADMIN", "SALE", "MANAGER"];
+    if (!allowed.includes(existingUser.role)) {
+      return res.status(403).json({
+        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
+      });
+    }
 
-    res.json({ message: "google login success", token, user });
-  } catch (err) {
-    res.status(500).json({ message: "server error" });
+    // 5. ออก token พร้อม role
+    const token = jwt.sign(
+      {
+        id: existingUser.id,
+        email: existingUser.email,
+        role: existingUser.role,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "3h" }
+    );
+
+    return res.json({
+      message: "Google login success",
+      token,
+      user: existingUser,
+    });
+  } catch (error) {
+    console.error("Google Login Error:", error);
+    return res.status(500).json({ message: "Google login failed" });
   }
 };
-
+    
 // ====================== ME ======================
 export const me = async (req: any, res: Response) => {
   try {
