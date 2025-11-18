@@ -1,10 +1,10 @@
-// src/routes/customer.routes.ts
 import { Router } from "express";
 import {
   getAllCustomers,
   createCustomer,
   updateCustomer,
   assignSales,
+  deleteCustomer,
 } from "../controller/customersController";
 
 // ถ้ามี middleware เช็ค token / role อยู่แล้ว ให้ import มาใช้ด้วย
@@ -61,4 +61,15 @@ router.patch(
   assignSales
 );
 
+/**
+ * ลบลูกค้า
+ * DELETE /api/customers/:id
+ * จำกัดสิทธิ์: MANAGER, ADMIN
+ */
+router.delete(
+  "/:id",
+  verifyToken,
+  requireRoles("MANAGER", "ADMIN"),
+  deleteCustomer
+);
 export default router;

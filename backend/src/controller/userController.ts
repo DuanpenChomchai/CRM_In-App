@@ -316,6 +316,58 @@ export const getMe = async (req: AuthRequest, res: Response) => {
 };
 
 /* =======================
+   GET: listSales (ดึงเฉพาะผู้ใช้ที่เป็น SALE)
+   ======================= */
+export const listSales = async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(parseInt(String(req.query.page ?? "1"), 10), 1);
+    const pageSize = Math.min(
+      Math.max(parseInt(String(req.query.pageSize ?? "20"), 10), 1),
+      100
+    );
+
+    const q = String(req.query.q ?? "");
+
+    // ใช้ buildWhere เหมือนเดิม
+    const where: any = buildWhere(q);
+
+    // บังคับ role เป็น SALE อย่างเดียว
+    where.role = "SALE";
+
+    const [items, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          tol: true,
+          img: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    return res.json({
+      data: items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    });
+  } catch (err) {
+    console.error("listSales error:", err);
+    return res.status(500).json({ message: "ดึงรายการเซลล์ล้มเหลว" });
+  }
+};
+
+/* =======================
    PUT: updateMe (ให้ user แก้โปรไฟล์ตัวเอง)
    ======================= */
 export const updateMe = async (req: AuthRequest, res: Response) => {
@@ -332,7 +384,6 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       password?: string;
       tol?: string;
       img?: string | null;
-      // ❌ ไม่รับ role จาก client เพื่อกันลูกค้าอัป role ตัวเอง
     };
 
     const data: any = {};
@@ -376,4 +427,6 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
 
     return res.status(500).json({ message: "อัปเดตโปรไฟล์ล้มเหลว" });
   }
+
+  
 };

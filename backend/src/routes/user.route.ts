@@ -8,33 +8,38 @@ import {
   deleteUser,
   getMe,
   updateMe,
+  listSales,
 } from "../controller/userController";
 import { authMiddleware, verifyAdmin } from "../middlewares/authMiddleware";
 
 const router = Router();
 
 /* ============================
-   ส่วนที่ใช้ใน Mobile App / ผู้ใช้ทั่วไป
+   Mobile App / ผู้ใช้ทั่วไป
    ============================ */
-
-// ดึงข้อมูล user จาก token
 router.get("/me", authMiddleware, getMe);
-
-// แก้ไขโปรไฟล์ตัวเอง
 router.put("/me", authMiddleware, updateMe);
 
 /* ============================
-   ส่วนที่ใช้ใน Web CRM (Admin / Manager)
+   Web CRM (Admin / Manager)
    ============================ */
 
-// list users (default ไม่เอา CUSTOMER ถ้าไม่ได้ส่ง role)
-router.get("/", authMiddleware, verifyAdmin, listUsers);
+// ⭐ ต้องวาง /sales ก่อน /:id เสมอ
+router.get(
+  "/sales",
+  authMiddleware,
+  verifyAdmin,   // หรือถ้าอยากให้ SALE ดูด้วย เดี๋ยวค่อยเปลี่ยนทีหลัง
+  listSales
+);
 
-// สร้าง user ใหม่ (ใช้ใน backend / CRM)
-router.post("/", authMiddleware, verifyAdmin, createUser);
+// list users (default ไม่เอา CUSTOMER ถ้าไม่ส่ง role)
+router.get("/", authMiddleware, verifyAdmin, listUsers);
 
 // get user by id
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);
+
+// create user
+router.post("/", authMiddleware, verifyAdmin, createUser);
 
 // update user by id
 router.put("/:id", authMiddleware, verifyAdmin, updateUser);
