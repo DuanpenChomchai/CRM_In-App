@@ -2,6 +2,9 @@ import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { OAuth2Client } from "google-auth-library";
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const normalizePhoneTH = (raw: string) => {
   const digits = String(raw).replace(/\D/g, "");
@@ -12,153 +15,89 @@ const normalizePhoneTH = (raw: string) => {
   return raw;
 };
 
-/** ========== Register Customer ========== */
+const createToken = (user: any) => {
+  const secret = process.env.JWT_SECRET || "dev_secret";
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role },
+    secret,
+    { expiresIn: "1d" }
+  );
+};
+
+// ====================== REGISTER ======================
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, tol, email, password } = req.body;
 
-    if (!name || !tol || !email || !password) {
-      return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบทุกช่อง" });
-    }
+    const hashed = await bcrypt.hash(password, 10);
 
-    const emailNorm = String(email).trim().toLowerCase();
-    const tolNorm = normalizePhoneTH(tol);
-
-    const existingUser = await prisma.user.findFirst({
-      where: { OR: [{ email: emailNorm }, { tol: tolNorm }] },
-    });
-    if (existingUser) {
-      return res.status(400).json({ message: "อีเมลหรือเบอร์นี้ถูกใช้งานแล้ว" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name,
-        tol: tolNorm,
-        email: emailNorm,
-        password: hashedPassword,
+        tol: normalizePhoneTH(tol),
+        email: email.toLowerCase(),
+        password: hashed,
         role: "CUSTOMER",
-        customers: {
-          create: {
-            name,
-            tol: tolNorm,
-            email: emailNorm,
-            password: hashedPassword,
-          },
-        },
       },
-      select: {
-         id: true, name: true, email: true, tol: true, role: true ,
-         customers: { select: { id: true } },
-        },
     });
 
-    return res.status(201).json({
-      message: "สมัครสมาชิกสำเร็จ",
-      user: newUser,
-    });
-  } catch (error) {
-    console.error("Register Error:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในระบบ" });
+    res.json({ message: "register success", user });
+  } catch (err) {
+    res.status(500).json({ message: "server error" });
   }
 };
 
-/** ========== Register SALE ========== */
+// ====================== REGISTER SALES ======================
 export const registerSales = async (req: Request, res: Response) => {
   try {
     const { name, tol, email, password } = req.body;
 
-    if (!name || !tol || !email || !password) {
-      return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบทุกช่อง" });
-    }
+    const hashed = await bcrypt.hash(password, 10);
 
-    const emailNorm = String(email).trim().toLowerCase();
-    const tolNorm = normalizePhoneTH(tol);
-
-    const existingUser = await prisma.user.findFirst({
-      where: { OR: [{ email: emailNorm }, { tol: tolNorm }] },
-    });
-    if (existingUser) {
-      return res.status(400).json({ message: "อีเมลหรือเบอร์นี้ถูกใช้งานแล้ว" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name,
-        tol: tolNorm,
-        email: emailNorm,
-        password: hashedPassword,
+        tol: normalizePhoneTH(tol),
+        email: email.toLowerCase(),
+        password: hashed,
         role: "SALE",
       },
-      select: { id: true, name: true, email: true, tol: true, role: true },
     });
 
-    return res.status(201).json({
-      message: "สมัครสมาชิกพนักงานขายสำเร็จ",
-      user: newUser,
-    });
-  } catch (error) {
-    console.error("Register Sales Error:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในระบบ" });
+    res.json({ message: "register sale success", user });
+  } catch (err) {
+    res.status(500).json({ message: "server error" });
   }
 };
 
-/** ========== Register MANAGER ========== */
+// ====================== REGISTER MANAGER ======================
 export const registerManager = async (req: Request, res: Response) => {
   try {
     const { name, tol, email, password } = req.body;
 
-    if (!name || !tol || !email || !password) {
-      return res.status(400).json({ message: "กรุณากรอกข้อมูลให้ครบทุกช่อง" });
-    }
+    const hashed = await bcrypt.hash(password, 10);
 
-    const emailNorm = String(email).trim().toLowerCase();
-    const tolNorm = normalizePhoneTH(tol);
-
-    const existingUser = await prisma.user.findFirst({
-      where: { OR: [{ email: emailNorm }, { tol: tolNorm }] },
-    });
-    if (existingUser) {
-      return res.status(400).json({ message: "อีเมลหรือเบอร์นี้ถูกใช้งานแล้ว" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name,
-        tol: tolNorm,
-        email: emailNorm,
-        password: hashedPassword,
+        tol: normalizePhoneTH(tol),
+        email: email.toLowerCase(),
+        password: hashed,
         role: "MANAGER",
       },
-      select: { id: true, name: true, email: true, tol: true, role: true },
     });
 
-    return res.status(201).json({
-      message: "สมัครสมาชิกผู้จัดการสำเร็จ",
-      user: newUser,
-    });
-  } catch (error) {
-    console.error("Register Manager Error:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในระบบ" });
+    res.json({ message: "register manager success", user });
+  } catch (err) {
+    res.status(500).json({ message: "server error" });
   }
 };
 
+// ====================== LOGIN ======================
 export const login = async (req: Request, res: Response) => {
   try {
     const { identifier, email, password } = req.body;
-    const idRaw = (identifier ?? email) as string | undefined;
-
-    if (!idRaw || !password) {
-      return res
-        .status(400)
-        .json({ message: "กรุณากรอก identifier/email และรหัสผ่าน" });
-    }
+    const idRaw = (identifier ?? email) as string;
 
     const looksLikeEmail = idRaw.includes("@");
 
@@ -168,59 +107,120 @@ export const login = async (req: Request, res: Response) => {
         })
       : await prisma.user.findFirst({
           where: {
-            OR: [{ tol: normalizePhoneTH(idRaw) }, { tol: idRaw }],
+            OR: [
+              { tol: normalizePhoneTH(idRaw) },
+              { tol: idRaw },
+            ],
           },
         });
 
-    if (!user) {
-      return res.status(404).json({ message: "ไม่พบบัญชีผู้ใช้" });
-    }
+    if (!user) return res.status(404).json({ message: "ไม่พบบัญชีผู้ใช้" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "รหัสผ่านไม่ถูกต้อง" });
-    }
+    // ❗ block CUSTOMER
+    if (user.role === "CUSTOMER")
+      return res.status(403).json({ message: "บัญชีนี้ไม่มีสิทธิ์เข้าสู่ระบบเว็บ CRM" });
 
-    const secret = process.env.JWT_SECRET || "dev_secret"; 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      secret,
-      { expiresIn: "1d" } 
-    );
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ message: "รหัสผ่านผิด!" });
 
-    return res.status(200).json({
-      message: "เข้าสู่ระบบสำเร็จ",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        tol: user.tol,
-        role: user.role,
-      },
-    });
-  } catch (error) {
-    console.error("Login Error:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในระบบ" });
+    const token = createToken(user);
+
+    res.json({ message: "login success", token, user });
+  } catch (err) {
+    res.status(500).json({ message: "server error" });
   }
 };
 
-
-/** ========== Logout ========== */
-export const logout = async (req: Request, res: Response) => {
+// ====================== GOOGLE LOGIN ======================
+export const googleLogin = async (req: Request, res: Response) => {
   try {
-    if ((req as any).cookies?.access_token) {
-      res.clearCookie("access_token", {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-        path: "/",
+    const { credential } = req.body;
+
+    // 1. verify Google token
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload) return res.status(400).json({ message: "Google token invalid" });
+
+    const email = payload.email;
+
+    // 2. หาในฐานข้อมูล
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    // ❌ 3. ไม่อนุญาตให้ user ที่ไม่ใช่ ADMIN/SALE/MANAGER เข้า
+    if (!existingUser) {
+      return res.status(403).json({
+        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
       });
     }
 
-    return res.status(200).json({ message: "ออกจากระบบสำเร็จ" });
+    // 4. เฉพาะ ADMIN, SALE, MANAGER เท่านั้น
+    const allowed = ["ADMIN", "SALE", "MANAGER"];
+    if (!allowed.includes(existingUser.role)) {
+      return res.status(403).json({
+        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
+      });
+    }
+
+    // 5. ออก token พร้อม role
+    const token = jwt.sign(
+      {
+        id: existingUser.id,
+        email: existingUser.email,
+        role: existingUser.role,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "3h" }
+    );
+
+    return res.json({
+      message: "Google login success",
+      token,
+      user: existingUser,
+    });
   } catch (error) {
-    console.error("Logout Error:", error);
-    return res.status(500).json({ message: "เกิดข้อผิดพลาดในระบบ" });
+    console.error("Google Login Error:", error);
+    return res.status(500).json({ message: "Google login failed" });
   }
+};
+    
+// ====================== ME ======================
+export const me = async (req: any, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ message: "server error" });
+  }
+};
+
+// ====================== REFRESH TOKEN ======================
+export const refreshToken = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+    const decoded: any = jwt.verify(token, process.env.JWT_SECRET || "dev_secret");
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
+
+    const newToken = createToken(user);
+
+    res.json({ token: newToken });
+  } catch (err) {
+    res.status(401).json({ message: "token invalid" });
+  }
+};
+
+// ====================== LOGOUT ======================
+export const logout = async (req: Request, res: Response) => {
+  res.json({ message: "logout success" });
 };

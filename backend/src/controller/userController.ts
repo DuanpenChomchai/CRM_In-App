@@ -2,24 +2,40 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import prisma from "../config/prismaclient";
 
+/* =======================
+   Utility: Normalize Phone
+   ======================= */
 const normalizePhoneTH = (raw?: string | null) => {
   if (!raw) return raw ?? null;
   const digits = String(raw).replace(/\D/g, "");
-  if (!digits) return raw;
-  if (digits.length === 10 && digits.startsWith("0")) return `+66${digits.slice(1)}`;
-  if (digits.length === 11 && digits.startsWith("66")) return `+${digits}`;
-  if (digits.length === 11 && raw.startsWith("+66")) return `+${digits}`;
+
+  if (digits.length === 10 && digits.startsWith("0"))
+    return `+66${digits.slice(1)}`;
+
+  if (digits.length === 11 && digits.startsWith("66"))
+    return `+${digits}`;
+
+  if (digits.length === 11 && raw.startsWith("+66"))
+    return `+${digits}`;
+
   return raw;
 };
 
+/* =======================
+   Remove Sensitive Fields
+   ======================= */
 const stripSensitive = <T extends any>(u: T) => {
   if (!u) return u;
   const { password, ...safe } = u as any;
   return safe;
 };
 
-const buildWhere = (q?: string, role?: string) => {
+/* =======================
+   Build Search Condition
+   ======================= */
+const buildWhere = (q?: string) => {
   const where: any = {};
+
   if (q && q.trim()) {
     where.OR = [
       { name: { contains: q, mode: "insensitive" } },
@@ -27,10 +43,13 @@ const buildWhere = (q?: string, role?: string) => {
       { tol: { contains: q, mode: "insensitive" } },
     ];
   }
-  if (role) where.role = role as any;
+
   return where;
 };
 
+/* =======================
+   GET: listUsers
+   ======================= */
 export const listUsers = async (req: Request, res: Response) => {
   try {
     const page = Math.max(parseInt(String(req.query.page ?? "1"), 10), 1);
@@ -38,11 +57,36 @@ export const listUsers = async (req: Request, res: Response) => {
       Math.max(parseInt(String(req.query.pageSize ?? "20"), 10), 1),
       100
     );
+
     const q = String(req.query.q ?? "");
-    const role = req.query.role ? String(req.query.role) : undefined;
+    const reqRole = req.query.role ? String(req.query.role) : undefined;
 
-    const where = buildWhere(q, role);
+    const where: any = buildWhere(q);
 
+    /* ------------------------------
+       ROLE FILTER LOGIC (สำคัญมาก)
+       ------------------------------ */
+
+    // 1) ถ้า role=NOT_CUSTOMER → ไม่เอา CUSTOMER
+    if (reqRole === "NOT_CUSTOMER") {
+      where.role = { not: "CUSTOMER" };
+    }
+
+    // 2) ถ้าระบุ role ปกติ เช่น SALE / MANAGER / ADMIN
+    else if (
+      reqRole === "SALE" ||
+      reqRole === "MANAGER" ||
+      reqRole === "ADMIN"
+    ) {
+      where.role = reqRole;
+    }
+
+    // 3) ถ้าไม่ส่ง role มาเลย → default = ไม่เอาลูกค้า
+    else {
+      where.role = { not: "CUSTOMER" };
+    }
+
+    /* Query */
     const [items, total] = await Promise.all([
       prisma.user.findMany({
         where,
@@ -58,7 +102,6 @@ export const listUsers = async (req: Request, res: Response) => {
           role: true,
           createdAt: true,
           updatedAt: true,
-          // ไม่ select password
         },
       }),
       prisma.user.count({ where }),
@@ -77,10 +120,13 @@ export const listUsers = async (req: Request, res: Response) => {
   }
 };
 
-
+/* =======================
+   GET: getUserById
+   ======================= */
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -94,7 +140,9 @@ export const getUserById = async (req: Request, res: Response) => {
         updatedAt: true,
       },
     });
+
     if (!user) return res.status(404).json({ message: "ไม่พบผู้ใช้" });
+
     return res.json(user);
   } catch (err) {
     console.error("getUserById error:", err);
@@ -102,6 +150,9 @@ export const getUserById = async (req: Request, res: Response) => {
   }
 };
 
+/* =======================
+   POST: createUser
+   ======================= */
 export const createUser = async (req: Request, res: Response) => {
   try {
     const { name, email, password, tol, img, role } = req.body as {
@@ -114,12 +165,13 @@ export const createUser = async (req: Request, res: Response) => {
     };
 
     if (!name || !email || !password) {
-      return res.status(400).json({ message: "กรุณากรอก name, email, password" });
+      return res
+        .status(400)
+        .json({ message: "กรุณากรอก name, email, password" });
     }
 
-    const emailNorm = String(email).trim().toLowerCase();
-    const tolNorm = normalizePhoneTH(tol);
-
+    const emailNorm = email.trim().toLowerCase();
+    const phoneNorm = normalizePhoneTH(tol);
     const hashed = await bcrypt.hash(password, 10);
 
     const created = await prisma.user.create({
@@ -127,28 +179,32 @@ export const createUser = async (req: Request, res: Response) => {
         name: name.trim(),
         email: emailNorm,
         password: hashed,
-        tol: tolNorm ?? "",
+        tol: phoneNorm ?? "",
         img: img ?? null,
-        role: role ?? "CUSTOMER", 
+        role: role ?? "CUSTOMER", // default ลูกค้าจาก mobile app
       },
     });
 
     return res.status(201).json(stripSensitive(created));
   } catch (err: any) {
     console.error("createUser error:", err);
+
     if (err?.code === "P2002") {
       const fields = (err?.meta?.target as string[])?.join(", ");
-      return res
-        .status(409)
-        .json({ message: `ข้อมูลซ้ำ (unique): ${fields || "email/tol"}` });
+      return res.status(409).json({ message: `ข้อมูลซ้ำ: ${fields}` });
     }
+
     return res.status(500).json({ message: "สร้างผู้ใช้ล้มเหลว" });
   }
 };
 
+/* =======================
+   PUT: updateUser
+   ======================= */
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+
     const { name, email, password, tol, img, role } = req.body as {
       name?: string;
       email?: string;
@@ -159,12 +215,14 @@ export const updateUser = async (req: Request, res: Response) => {
     };
 
     const data: any = {};
-    if (typeof name === "string") data.name = name.trim();
-    if (typeof email === "string") data.email = email.trim().toLowerCase();
-    if (typeof tol === "string") data.tol = normalizePhoneTH(tol);
-    if (typeof img !== "undefined") data.img = img ?? null;
-    if (typeof role === "string") data.role = role;
-    if (typeof password === "string" && password.trim().length > 0) {
+
+    if (name) data.name = name.trim();
+    if (email) data.email = email.trim().toLowerCase();
+    if (tol) data.tol = normalizePhoneTH(tol);
+    if (img !== undefined) data.img = img ?? null;
+    if (role) data.role = role;
+
+    if (password && password.trim().length > 0) {
       data.password = await bcrypt.hash(password, 10);
     }
 
@@ -186,28 +244,37 @@ export const updateUser = async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (err: any) {
     console.error("updateUser error:", err);
+
     if (err?.code === "P2002") {
       const fields = (err?.meta?.target as string[])?.join(", ");
-      return res.status(409).json({ message: `ข้อมูลซ้ำ (unique): ${fields}` });
+      return res.status(409).json({ message: `ข้อมูลซ้ำ: ${fields}` });
     }
+
     if (err?.code === "P2025") {
       return res.status(404).json({ message: "ไม่พบผู้ใช้" });
     }
+
     return res.status(500).json({ message: "อัปเดตผู้ใช้ล้มเหลว" });
   }
 };
 
-
+/* =======================
+   DELETE: deleteUser
+   ======================= */
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+
     await prisma.user.delete({ where: { id } });
+
     return res.json({ message: "ลบผู้ใช้สำเร็จ" });
   } catch (err: any) {
     console.error("deleteUser error:", err);
+
     if (err?.code === "P2025") {
       return res.status(404).json({ message: "ไม่พบผู้ใช้" });
     }
+
     return res.status(500).json({ message: "ลบผู้ใช้ล้มเหลว" });
   }
 };

@@ -1,7 +1,17 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
 
-// https://vite.dev/config/
 export default defineConfig({
+  root: ".", // ✅ ให้เริ่มที่โฟลเดอร์นี้
+  server: {
+    host: false,
+    port: 5173,
+  },
   plugins: [react()],
-})
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+});

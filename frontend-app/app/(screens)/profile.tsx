@@ -9,7 +9,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
 
-  if (!user) return null;
+  if (!user) return null; 
 
   return (
     <>

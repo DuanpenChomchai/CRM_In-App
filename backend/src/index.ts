@@ -3,10 +3,12 @@ import express from "express";
 import cors from "cors";
 import http from "http";                     
 import authRoutes from "./routes/auth.route";
-import userRoutes from "./routes/user.route";
-import communicationRoutes from "./routes/communication.route";
 import { checkBucket } from "./config/minioclient";
-import { initWs } from "./ws";              
+import { initWs } from "./ws";      
+import userRoutes from "./routes/user.route";  // ← ชื่อไฟล์ของเพื่อน
+import communicationRoutes from "./routes/communication.route"; // ถ้ามีไฟล์นี้
+import customerRoutes from "./routes/customers.route"; 
+
 
 function createWebSocketServer(app: express.Express) {
   const server = http.createServer(app);
@@ -27,6 +29,7 @@ async function main() {
   app.use("/api", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
+  app.use("/api/customers", customerRoutes); // ⭐ ผูก API ลูกค้าแบบเต็มระบบ
 
 
   console.log("SERVER START with JWT_SECRET =", process.env.JWT_SECRET ? "[SET]" : "[MISSING]");
