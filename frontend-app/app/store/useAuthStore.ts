@@ -1,19 +1,21 @@
+// app/store/useAuthStore.ts
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persist, createJSONStorage } from "zustand/middleware";
 
-type UserPayload = {
+export type UserPayload = {
   id: number;
   name: string;
   email: string;
   tol: string;
-  role: string;
+  role: "CUSTOMER" | "SALE" | "MANAGER" | "ADMIN";
 };
 
 type AuthState = {
   user: UserPayload | null;
   token: string | null;
   setAuthAfterLogin: (user: UserPayload, token: string) => Promise<void>;
+  setUser: (user: UserPayload | null) => void;   // 👈 เพิ่ม
   logout: () => Promise<void>;
 };
 
@@ -23,8 +25,14 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
 
+      // ใช้ตอน login ปกติ
       setAuthAfterLogin: async (user, token) => {
         set({ user, token });
+      },
+
+      // ใช้ตอนแก้โปรไฟล์ (อัปเดตเฉพาะ user ไม่ยุ่งกับ token)
+      setUser: (user) => {
+        set({ user });
       },
 
       logout: async () => {

@@ -1,15 +1,22 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, TouchableOpacity, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { useAuthStore } from "../store/useAuthStore";
 
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
 
-  if (!user) return null; 
+  useEffect(() => {
+    if (!user) {
+      router.replace("/(auth)/login");
+    }
+  }, [user]);
+
+  if (!user) return null;
 
   return (
     <>
@@ -19,10 +26,16 @@ export default function ProfileScreen() {
             <Ionicons name="person" size={48} color="#0f5132" />
           </View>
 
-          <Text className="text-3xl font-bold text-gray-900">John Doe</Text>
-          <Text className="text-xl text-gray-600 mt-1">+1 234 567 8900</Text>
+          <Text className="text-3xl font-bold text-gray-900">
+            {user.name}
+          </Text>
+
+          <Text className="text-xl text-gray-600 mt-1">
+            {user.tol}
+          </Text>
+
           <Text className="text-base text-gray-600 mt-1">
-            john.doe@example.com
+            {user.email}
           </Text>
 
           <Link href="/(screens)/edit-profile" asChild>
@@ -37,19 +50,24 @@ export default function ProfileScreen() {
           </Link>
 
           <TouchableOpacity
-              activeOpacity={0.9}
-              className="mt-6 bg-slate-500 px-6 py-3 rounded-xl"
-              onPress={async () => {
-                  await logout();
-                  router.replace("/(auth)/login");
-                }}
-            >
-              <Text className="text-white font-semibold text-base">
-                Logout
-              </Text>
-            </TouchableOpacity>
+            activeOpacity={0.9}
+            className="mt-6 bg-slate-500 px-6 py-3 rounded-xl"
+            onPress={async () => {
+              try {
+                await logout(); 
+                router.replace("/(auth)/login");
+              } catch (e) {
+                console.log("Logout error:", e);
+              }
+            }}
+          >
+            <Text className="text-white font-semibold text-base">
+              Logout
+            </Text>
+          </TouchableOpacity>
         </View>
 
+        {/* Bottom bar */}
         <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around w-full">
           <Link href="/(screens)/all-chat" asChild>
             <Pressable className="items-center">
@@ -64,7 +82,6 @@ export default function ProfileScreen() {
               Profile
             </Text>
           </View>
-
         </View>
       </SafeAreaView>
     </>
