@@ -1,3 +1,6 @@
+// ===========================================================
+// DATABASE & GENERATOR
+// ===========================================================
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -7,9 +10,9 @@ generator client {
   provider = "prisma-client-js"
 }
 
-/**
- * ==== Enums ====
- */
+// ===========================================================
+// ENUMS
+// ===========================================================
 enum Role {
   CUSTOMER
   SALE
@@ -26,93 +29,110 @@ enum KpiStage {
 }
 
 enum KpiMetric {
-  TIME_TO_FIRST_CONTACT // เวลาตั้งแต่สร้างลูกค้าจนติดต่อสำเร็จ
-  TIME_IN_STAGE // เวลาที่ค้างอยู่ในสเตจใดสเตจหนึ่ง
-  TIME_TO_QUOTATION // เวลาก่อนออกใบเสนอราคาแรก
-  TIME_TO_CLOSE // เวลาตั้งแต่เริ่มโอกาสขายจนปิดดีล
-  RESPONSE_TIME // เวลาในการตอบกลับ
-  CUSTOM // เมตริกกำหนดเอง
+  TIME_TO_FIRST_CONTACT
+  TIME_IN_STAGE
+  TIME_TO_QUOTATION
+  TIME_TO_CLOSE
+  RESPONSE_TIME
+  CUSTOM
 }
 
-/**
- * ==== Models ====
- */
-
+// ===========================================================
+// USER (ลูกค้า/เซลล์/ผู้จัดการ/แอดมิน)
+// ===========================================================
 model User {
   id       Int     @id @default(autoincrement())
   name     String
   email    String  @unique
   password String
   tol      String  @unique
-  img      String? 
+  img      String?
   role     Role    @default(CUSTOMER)
-  
 
-  // Relations
-  customers      Customer[]
+  // ลูกค้าที่ user นี้เป็นเจ้าของ (สมัครจากแอป)
+  customers Customer[]              @relation("CustomerOwner")
+
+  // ลูกค้าที่ user นี้เป็นเซลล์ดูแล
+  salesCustomers Customer[]         @relation("SaleCustomers")
+
+  // ความสัมพันธ์อื่น ๆ
   closedDeals    ClosedDeal[]
   communications Communications[]
+  KPITracking    KPITracking[]
 
-  // Audit
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  KPITracking KPITracking[]
-}
-
-model Product {
-  id       Int     @id @default(autoincrement())
-  name     String
-  price    Decimal @db.Decimal(12, 2)
-  property String?
-  img      String? 
-
-  proposals Proposal[]
-
-  // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// ===========================================================
+// PRODUCT
+// ===========================================================
+model Product {
+  id       Int      @id @default(autoincrement())
+  name     String
+  price    Decimal  @db.Decimal(12, 2)
+  property String?
+  img      String?
+
+  proposals Proposal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ===========================================================
+// CUSTOMER (ตัวจริงของ CRM)
+// ===========================================================
 model Customer {
   id       Int     @id @default(autoincrement())
   name     String
   tol      String?
   email    String  @unique
-  password String
   img      String?
+  password String?
 
-  // Relations
+  // --- Preferred Product Info ---
+  productType String?                     // ประเภทของสินค้า เช่น บ้านเดี่ยว คอนโด ฯลฯ
+  priceBudget Decimal? @db.Decimal(12, 2) // งบประมาณ/ช่วงราคาที่สนใจ
+
+  // --- Owner (User role=CUSTOMER) ---
+  userId Int?
+  user   User?      @relation("CustomerOwner", fields: [userId], references: [id])
+
+  // --- Assigned Sale ---
+  saleId Int?
+  sale   User?      @relation("SaleCustomers", fields: [saleId], references: [id])
+
+  // --- Related Stages ---
   communications Communications[]
   contacted      Contacted?
   quotations     Quotation[]
   negotiations   Negotiation[]
   closedDeals    ClosedDeal[]
+  KPITracking    KPITracking[]
 
-  userId Int?
-  user   User? @relation(fields: [userId], references: [id])
-
-  // Audit
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  KPITracking KPITracking[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([saleId])
 }
 
+// ===========================================================
+// COMMUNICATIONS (โทร/แชท/วอยซ์โน้ต)
+// ===========================================================
 model Communications {
   id        Int     @id @default(autoincrement())
   phone     String?
   chat      String?
   voiceNote String?
 
-  // Relations
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
   userId Int?
-  user   User? @relation(fields: [userId], references: [id])
+  user   User?       @relation(fields: [userId], references: [id])
 
-  // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -120,61 +140,64 @@ model Communications {
   @@index([userId])
 }
 
+// ===========================================================
+// CONTACTED (สเตจ CONTACTED)
+// ===========================================================
 model Contacted {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   status    String
   topic     String?
   note      String?
-  stateDate DateTime  @default(now())
+  stateDate DateTime @default(now())
   endDate   DateTime?
 
-  // Relations
-  customerId Int      @unique
+  customerId Int    @unique
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// ===========================================================
+// QUOTATION (ใบเสนอราคา)
+// ===========================================================
 model Quotation {
-  id              Int       @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   status          String
-  stateDate       DateTime  @default(now())
+  stateDate       DateTime @default(now())
   terms           String?
-  quotationNumber String    @unique
-  totalAmount     Decimal   @db.Decimal(12, 2)
+  quotationNumber String   @unique
+  totalAmount     Decimal  @db.Decimal(12, 2)
   note            String?
   endDate         DateTime?
 
-  // Relations
   customerId Int
-  customer   Customer   @relation(fields: [customerId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
   proposals  Proposal[]
-
-  // Audit
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
   KPITracking KPITracking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([stateDate])
 }
 
+// ===========================================================
+// PROPOSAL (รายการข้อเสนอ)
+// ===========================================================
 model Proposal {
-  id           Int     @id @default(autoincrement())
-  quotation    String // ชื่อ/หัวข้อรายการข้อเสนอ
+  id           Int      @id @default(autoincrement())
+  quotation    String
   terms        String?
-  priceOffered Decimal @db.Decimal(12, 2)
+  priceOffered Decimal   @db.Decimal(12, 2)
 
-  // Relations
-  productId Int?
-  product   Product? @relation(fields: [productId], references: [id])
+  productId   Int?
+  product     Product?  @relation(fields: [productId], references: [id])
 
   quotationId Int
   quotationDb Quotation @relation(fields: [quotationId], references: [id])
 
-  // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -182,72 +205,73 @@ model Proposal {
   @@index([quotationId])
 }
 
+// ===========================================================
+// NEGOTIATION (ต่อรองราคา)
+// ===========================================================
 model Negotiation {
-  id        Int       @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   status    String
-  stateDate DateTime  @default(now())
+  stateDate DateTime @default(now())
   note      String?
   endDate   DateTime?
 
-  // Relations
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
-
-  // Audit
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
   KPITracking KPITracking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([stateDate])
 }
 
+// ===========================================================
+// CLOSED DEAL (ปิดดีล)
+// ===========================================================
 model ClosedDeal {
-  id          Int       @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   status      String
-  stateDate   DateTime  @default(now())
-  finalValue  Decimal?  @db.Decimal(12, 2)
-  discount    Decimal?  @db.Decimal(12, 2)
+  stateDate   DateTime @default(now())
+  finalValue  Decimal? @db.Decimal(12, 2)
+  discount    Decimal? @db.Decimal(12, 2)
   dealStatus  String?
   closingDate DateTime?
   note        String?
   endDate     DateTime?
 
-  // Relations
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
   userId Int?
-  user   User? @relation(fields: [userId], references: [id])
+  user   User?       @relation(fields: [userId], references: [id])
 
-  // Audit
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
   KPITracking KPITracking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([userId])
   @@index([closingDate])
 }
 
-/**
- * ==== KPI Tracking ====
- */
+// ===========================================================
+// KPI TRACKING
+// ===========================================================
 model KPITracking {
   id Int @id @default(autoincrement())
 
   stage  KpiStage
   metric KpiMetric
 
-  // Window / Values
   startedAt     DateTime
   endedAt       DateTime?
-  valueSeconds  Int? // ค่าที่คำนวณเมื่อปิดช่วง (endedAt - startedAt เป็นวินาที)
+  valueSeconds  Int?
   targetSeconds Int?
-  breached      Boolean   @default(false)
+  breached      Boolean @default(false)
   note          String?
 
-  // Relations (ใส่เฉพาะที่เกี่ยวข้องในแต่ละเรคอร์ด)
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
@@ -263,7 +287,6 @@ model KPITracking {
   userId Int?
   user   User? @relation(fields: [userId], references: [id])
 
-  // Audit
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
