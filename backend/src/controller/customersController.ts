@@ -1,21 +1,39 @@
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
+import { Prisma } from "@prisma/client";
 
-// ดึงลูกค้าทั้งหมด
-// ดึงลูกค้าทั้งหมด (ที่ role = CUSTOMER)
-// GET /api/customers
+/**
+ * ดึงลูกค้าทั้งหมด
+ * GET /api/customers
+ */
 export const getAllCustomers = async (req: Request, res: Response) => {
   try {
-    const customers = await prisma.user.findMany({
-      where: { role: "CUSTOMER" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        tol: true,
-        img: true,
-        role: true,
-      }
+    const customers = await prisma.customer.findMany({
+      include: {
+        // โปรไฟล์ user ที่สมัครผ่านแอป (ถ้ามี)
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        // เซลล์ที่ดูแลลูกค้า (ถ้ามี)
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
     });
 
     return res.json(customers);
@@ -25,33 +43,212 @@ export const getAllCustomers = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * ดึงลูกค้าที่ "ยังไม่ถูก assign sale"
+ * GET /api/customers/new
+ */
+export const getNewCustomers = async (req: Request, res: Response) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: {
+        saleId: null, // ยังไม่ถูกมอบหมายเซลล์
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-// เพิ่มลูกค้าใหม่ (ถ้าต้องการ)
+    return res.json(customers);
+  } catch (err) {
+    console.error("getNewCustomers error:", err);
+    return res
+      .status(500)
+      .json({ message: "ดึงข้อมูลลูกค้าใหม่ที่ยังไม่ assign ล้มเหลว" });
+  }
+};
+
+/**
+ * ดึงลูกค้าตามเซลล์
+ * GET /api/customers/sale/:saleId
+ */
+export const getCustomersBySale = async (req: Request, res: Response) => {
+  try {
+    const saleId = Number(req.params.saleId);
+    if (Number.isNaN(saleId)) {
+      return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
+    }
+
+    const customers = await prisma.customer.findMany({
+      where: { saleId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return res.json(customers);
+  } catch (err) {
+    console.error("getCustomersBySale error:", err);
+    return res
+      .status(500)
+      .json({ message: "ดึงข้อมูลลูกค้าตามเซลล์ล้มเหลว" });
+  }
+};
+
+/**
+ * ดึงข้อมูลลูกค้ารายคน
+ * GET /api/customers/:id
+ */
+export const getCustomerById = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "id ไม่ถูกต้อง" });
+    }
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      return res.status(404).json({ message: "ไม่พบลูกค้า" });
+    }
+
+    return res.json(customer);
+  } catch (err) {
+    console.error("getCustomerById error:", err);
+    return res.status(500).json({ message: "ดึงข้อมูลลูกค้าล้มเหลว" });
+  }
+};
+
+/**
+ * เพิ่มลูกค้าใหม่จากฝั่งเว็บ (สร้างเฉพาะ Customer record)
+ * POST /api/customers
+ */
 export const createCustomer = async (req: Request, res: Response) => {
   try {
-    const { name, phone, email } = req.body;
+    const {
+      name,
+      phone,
+      email,
+      img,
+      productType,
+      budget,
+      saleId,
+    } = req.body;
 
-    const newCustomer = await prisma.customer.create({
+    if (!name || !phone || !email) {
+      return res
+        .status(400)
+        .json({ message: "กรุณากรอกชื่อ เบอร์โทร และอีเมล" });
+    }
+
+    const customer = await prisma.customer.create({
       data: {
         name,
         tol: phone,
         email,
-        password: "TEMP1234", // ถ้าเว็บไม่ได้ใช้ password ก็ใส่ dummy
+        img: img ?? null,
+        productType: productType ?? null,
+        priceBudget:
+          budget !== undefined && budget !== null && budget !== ""
+            ? new Prisma.Decimal(budget)
+            : null,
+        saleId: saleId ? Number(saleId) : null,
+        // userId: null // จากฝั่งเว็บยังไม่สร้าง user ให้ลูกค้า
+      },
+      include: {
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
       },
     });
 
-    res.json(newCustomer);
+    return res.status(201).json(customer);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "สร้างลูกค้าไม่สำเร็จ" });
+    console.error("createCustomer error:", error);
+    return res.status(500).json({ message: "สร้างลูกค้าไม่สำเร็จ" });
   }
 };
 
-// อัปเดทข้อมูลลูกค้า
+/**
+ * อัปเดทข้อมูลลูกค้า
+ * PUT /api/customers/:id
+ */
 export const updateCustomer = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { name, phone, email, propertyType, budget, assignedTo } = req.body;
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "id ไม่ถูกต้อง" });
+    }
+
+    const {
+      name,
+      phone,
+      email,
+      img,
+      productType,
+      budget,
+      saleId, // ถ้าอยากเปลี่ยนเซลล์ตรงนี้ก็ได้
+    } = req.body;
 
     const updated = await prisma.customer.update({
       where: { id },
@@ -59,33 +256,128 @@ export const updateCustomer = async (req: Request, res: Response) => {
         name,
         tol: phone,
         email,
-        // propertyType,
-        // budget,
-        userId: assignedTo ? Number(assignedTo) : null,
+        img,
+        productType,
+        priceBudget:
+          budget !== undefined && budget !== null && budget !== ""
+            ? new Prisma.Decimal(budget)
+            : undefined, // undefined = ไม่เปลี่ยนค่าเดิม
+        saleId: saleId !== undefined ? Number(saleId) : undefined,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
       },
     });
 
-    res.json(updated);
+    return res.json(updated);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "อัปเดทข้อมูลไม่สำเร็จ" });
+    console.error("updateCustomer error:", error);
+    return res.status(500).json({ message: "อัปเดทข้อมูลไม่สำเร็จ" });
   }
 };
 
-// มอบหมายพนักงานขาย
+/**
+ * มอบหมายพนักงานขายให้ลูกค้า
+ * PATCH /api/customers/:id/assign-sale
+ */
 export const assignSales = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "id ไม่ถูกต้อง" });
+    }
+
     const { saleId } = req.body;
+
+    if (!saleId) {
+      return res.status(400).json({ message: "กรุณาระบุ saleId" });
+    }
+
+    const saleUserId = Number(saleId);
+    if (Number.isNaN(saleUserId)) {
+      return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
+    }
+
+    // เช็คว่า saleId เป็น user ที่ role = SALE จริงไหม
+    const saleUser = await prisma.user.findFirst({
+      where: { id: saleUserId, role: "SALE" },
+    });
+
+    if (!saleUser) {
+      return res.status(400).json({ message: "ไม่พบพนักงานขายที่เลือก" });
+    }
 
     const updated = await prisma.customer.update({
       where: { id },
-      data: { userId: saleId },
+      data: { saleId: saleUserId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
     });
 
-    res.json(updated);
+    return res.json(updated);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "มอบหมายไม่สำเร็จ" });
+    console.error("assignSales error:", error);
+    return res.status(500).json({ message: "มอบหมายไม่สำเร็จ" });
+  }
+};
+
+/**
+ * ลบลูกค้า
+ * DELETE /api/customers/:id
+ */
+export const deleteCustomer = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "id ไม่ถูกต้อง" });
+    }
+
+    await prisma.customer.delete({
+      where: { id },
+    });
+
+    return res.json({ message: "ลบลูกค้าสำเร็จ" });
+  } catch (error) {
+    console.error("deleteCustomer error:", error);
+    return res.status(500).json({ message: "ลบลูกค้าไม่สำเร็จ" });
   }
 };
