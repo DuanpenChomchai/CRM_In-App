@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View, Text, TextInput, FlatList, Pressable,
-  KeyboardAvoidingView, Platform,
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  Pressable,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,7 +14,7 @@ import { Link, useLocalSearchParams } from "expo-router";
 import { useSocketRoom, generateCid } from "../store/socket";
 
 type Msg =
-  | { id: string; fromMe: boolean; type: "text"; text: string; time: string; cid?: string }
+  | { id: string; fromMe: boolean; type: "text"; text: string; time: string; cid?: string | number }
   | { id: string; fromMe: boolean; type: "audio"; durationSec: number; time: string };
 
 function formatClock(t = new Date()) {
@@ -26,7 +31,9 @@ function formatDuration(sec: number) {
 export default function ChatDetailScreen() {
   const params = useLocalSearchParams();
   const idParam = Array.isArray(params.id) ? params.id[0] : (params.id as string | undefined);
-  const nameParam = Array.isArray(params.name) ? params.name[0] : (params.name as string | undefined);
+  const nameParam = Array.isArray(params.name)
+    ? params.name[0]
+    : (params.name as string | undefined);
 
   // (ถ้ามี customerId สามารถใช้เป็น roomId แบบ cust:<id> ได้)
   const customerIdParam = Array.isArray(params.customerId)
@@ -39,13 +46,8 @@ export default function ChatDetailScreen() {
   const roomId = customerIdParam ? `cust:${customerIdParam}` : (idParam ?? "general");
   const username = nameParam || "User_" + Math.floor(Math.random() * 1000);
 
-  const {
-    connected,
-    messages: socketMessages,
-    sendText: sendSocketText,
-    startTyping,
-    othersTyping,
-  } = useSocketRoom(roomId, username);
+  const { connected, messages: socketMessages, sendText: sendSocketText, startTyping, othersTyping } =
+    useSocketRoom(roomId, username);
 
   // ===== Voice recording (UI only) =====
   const [isRecording, setIsRecording] = useState(false);
@@ -65,38 +67,53 @@ export default function ChatDetailScreen() {
     if (duration > 0) {
       setLocalAudio((prev) => [
         ...prev,
-        { id: `a-${Date.now()}`, fromMe: true, type: "audio", durationSec: duration, time: formatClock(new Date()) },
+        {
+          id: `a-${Date.now()}`,
+          fromMe: true,
+          type: "audio",
+          durationSec: duration,
+          time: formatClock(new Date()),
+        },
       ]);
     }
   };
-  const cancelRecording = () => { setIsRecording(false); setRecordSec(0); };
+  const cancelRecording = () => {
+    setIsRecording(false);
+    setRecordSec(0);
+  };
 
   useEffect(() => {
-    if (isRecording) timerRef.current = setInterval(() => setRecordSec((s) => s + 1), 1000);
-    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+    if (isRecording)
+      timerRef.current = setInterval(() => setRecordSec((s) => s + 1), 1000);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [isRecording]);
 
   const [localAudio, setLocalAudio] = useState<Msg[]>([]);
   const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
 
   const textMsgs: Msg[] = useMemo(
-    () => socketMessages.map((m) => ({
-      id: m.id,
-      fromMe: m.user === username,
-      type: "text",
-      text: m.text,
-      time: formatClock(new Date(m.ts)),
-      cid: m.cid,
-    })),
+    () =>
+      socketMessages.map((m) => ({
+        id: m.id,
+        fromMe: m.user === username,
+        type: "text",
+        text: m.text,
+        time: formatClock(new Date(m.ts)),
+        cid: m.cid,
+      })),
     [socketMessages, username]
   );
 
-  // #BUGFIX: ลบ temp-bubble โดยเทียบ cid ให้ถูก
   useEffect(() => {
     if (socketMessages.length === 0) return;
     const last = socketMessages[socketMessages.length - 1];
-    if (last.user === username && last.cid) {
-      setLocalTextBuf((prev) => prev.filter((t) => t.id !== last.cid)); 
+    if (last.user === username && last.cid != null) {
+      setLocalTextBuf((prev) => prev.filter((t: any) => t.cid !== last.cid));
     }
   }, [socketMessages, username]);
 
@@ -109,7 +126,6 @@ export default function ChatDetailScreen() {
 
   const listRef = useRef<FlatList<Msg>>(null);
   useEffect(() => {
-    // delay เล็กน้อยเพื่อให้ FlatList render เสร็จก่อน
     const t = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: true });
     }, 50);
@@ -122,11 +138,20 @@ export default function ChatDetailScreen() {
 
     const cid = generateCid();
 
+    // temp bubble ฝั่ง client
     setLocalTextBuf((prev) => [
       ...prev,
-      { id: `temp-${cid}`, cid, fromMe: true, type: "text", text: t, time: formatClock(new Date()) },
+      {
+        id: `temp-${cid}`,
+        cid,
+        fromMe: true,
+        type: "text",
+        text: t,
+        time: formatClock(new Date()),
+      },
     ]);
 
+    // ส่งไปที่ WS server (จะ broadcast กลับมาพร้อม cid ตัวเดิม)
     sendSocketText(t, cid);
     setInput("");
   };
@@ -149,12 +174,18 @@ export default function ChatDetailScreen() {
           ) : (
             <>
               <View className="flex-row items-center">
-                <View className={`w-8 h-8 rounded-full ${isMe ? "bg-emerald-700" : "bg-gray-200"} items-center justify-center mr-2`}>
+                <View
+                  className={`w-8 h-8 rounded-full ${
+                    isMe ? "bg-emerald-700" : "bg-gray-200"
+                  } items-center justify-center mr-2`}
+                >
                   <Ionicons name="play" size={16} color={isMe ? "#ffffff" : "#111827"} />
                 </View>
                 <View className="flex-1">
                   <Text className={`${textColor} text-[15px]`}>Voice message</Text>
-                  <Text className={`${subColor} text-[11px]`}>{formatDuration((item as any).durationSec)}</Text>
+                  <Text className={`${subColor} text-[11px]`}>
+                    {formatDuration((item as any).durationSec)}
+                  </Text>
                 </View>
               </View>
               <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
@@ -174,8 +205,12 @@ export default function ChatDetailScreen() {
           </Pressable>
         </Link>
         <View className="flex-1">
-          <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>{nameParam ?? "Chat"}</Text>
-          <Text className="text-xs text-gray-500">ID: {roomId} · {connected ? "🟢 Online" : "🔴 Offline"}</Text>
+          <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
+            {nameParam ?? "Chat"}
+          </Text>
+          <Text className="text-xs text-gray-500">
+            ID: {roomId} · {connected ? "🟢 Online" : "🔴 Offline"}
+          </Text>
         </View>
         <Pressable className="pl-3" onPress={() => {}}>
           <Ionicons name="call-outline" size={20} color="#047857" />
@@ -199,7 +234,9 @@ export default function ChatDetailScreen() {
 
       {othersTyping.length > 0 && (
         <View className="px-4 py-2 bg-emerald-50 border-t border-emerald-100">
-          <Text className="text-emerald-700 text-xs">{othersTyping.join(", ")} is typing…</Text>
+          <Text className="text-emerald-700 text-xs">
+            {othersTyping.join(", ")} is typing…
+          </Text>
         </View>
       )}
 
@@ -211,8 +248,12 @@ export default function ChatDetailScreen() {
               <Ionicons name="mic" size={16} color="#be123c" />
             </View>
             <View className="flex-1">
-              <Text className="text-rose-700 font-medium">Recording... {formatDuration(recordSec)}</Text>
-              <Text className="text-rose-400 text-xs">UI only — no audio file saved</Text>
+              <Text className="text-rose-700 font-medium">
+                Recording... {formatDuration(recordSec)}
+              </Text>
+              <Text className="text-rose-400 text-xs">
+                UI only — no audio file saved
+              </Text>
             </View>
 
             <Pressable className="px-3 py-2 rounded-xl bg-rose-100 mr-2" onPress={cancelRecording}>
@@ -229,17 +270,28 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white">
-          <Pressable className="px-2 py-2"><Ionicons name="add-circle-outline" size={22} color="#6B7280" /></Pressable>
+          <Pressable className="px-2 py-2">
+            <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
+          </Pressable>
 
-          <View className={`flex-1 mx-2 rounded-2xl px-3 ${isRecording ? "bg-gray-200" : "bg-gray-100"}`}>
+          <View
+            className={`flex-1 mx-2 rounded-2xl px-3 ${
+              isRecording ? "bg-gray-200" : "bg-gray-100"
+            }`}
+          >
             <TextInput
               className="py-2"
               placeholder={isRecording ? "Recording..." : "Message"}
               placeholderTextColor="#9CA3AF"
               value={input}
-              onChangeText={(v) => { setInput(v); if (v.trim().length > 0) startTyping(); }}
+              onChangeText={(v) => {
+                setInput(v);
+                if (v.trim().length > 0) startTyping();
+              }}
               editable={!isRecording}
               returnKeyType="send"
               onSubmitEditing={onSend}
@@ -247,12 +299,18 @@ export default function ChatDetailScreen() {
           </View>
 
           {input.trim().length > 0 && !isRecording ? (
-            <Pressable className="px-3 py-2 rounded-2xl" onPress={onSend} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <Pressable
+              className="px-3 py-2 rounded-2xl"
+              onPress={onSend}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+            >
               <Ionicons name="send" size={20} color="#047857" />
             </Pressable>
           ) : (
             <Pressable
-              className={`px-3 py-2 rounded-2xl ${isRecording ? "bg-rose-100" : ""}`}
+              className={`px-3 py-2 rounded-2xl ${
+                isRecording ? "bg-rose-100" : ""
+              }`}
               onPress={isRecording ? stopAndSend : startRecording}
               onLongPress={startRecording}
               delayLongPress={120}
