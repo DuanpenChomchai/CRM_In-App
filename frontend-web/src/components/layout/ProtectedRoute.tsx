@@ -31,16 +31,11 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
         const data = await res.json();
 
-        // อนุญาตเฉพาะ 3 role
-        const allowed = ["ADMIN", "SALE", "MANAGER"];
+        // ⭐ อนุญาตทุก role เลย
+        setAllowedAccess(true);
 
-        if (!allowed.includes(data.user.role)) {
-          setAllowedAccess(false);
-        } else {
-          // อัปเดต user ใหม่ (token เดิมใช้ได้)
-          localStorage.setItem("user", JSON.stringify(data.user));
-          setAllowedAccess(true);
-        }
+        // เก็บ user ลง localStorage
+        localStorage.setItem("user", JSON.stringify(data.user));
       } catch (e) {
         localStorage.clear();
         setAllowedAccess(false);

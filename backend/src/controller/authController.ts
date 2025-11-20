@@ -329,33 +329,24 @@ export const googleLogin = async (req: Request, res: Response) => {
 
     const email = payload.email;
 
-    // 2. หาในฐานข้อมูล
-    const existingUser = await prisma.user.findUnique({
+    // 2. ต้องมี user ก่อน → หา user ในระบบ
+    const user = await prisma.user.findUnique({
       where: { email },
     });
 
-    // 3. ต้องมี user ในระบบก่อน
-    if (!existingUser) {
+    // ❌ ถ้าไม่มี user → ห้ามเข้า
+    if (!user) {
       return res.status(403).json({
-        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
+        message: "อีเมลนี้ไม่มีอยู่ในระบบ ไม่สามารถเข้าสู่ระบบได้",
       });
     }
 
-    // 4. เฉพาะ ADMIN, SALE, MANAGER เท่านั้น
-    const allowed = ["ADMIN", "SALE", "MANAGER"];
-    if (!allowed.includes(existingUser.role)) {
-      return res.status(403).json({
-        message: "บัญชีนี้ไม่มีสิทธิ์เข้าระบบ CRM",
-      });
-    }
+    // ❌ ไม่เช็ค role แล้ว — ให้เข้าได้ทุกคน
+    // ✔ ADMIN / SALE / MANAGER / CUSTOMER เข้าด้วย Google ได้หมด
 
-    // 5. ออก token พร้อม role
+    // 3. ออก token
     const token = jwt.sign(
-      {
-        id: existingUser.id,
-        email: existingUser.email,
-        role: existingUser.role,
-      },
+      { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET || "dev_secret",
       { expiresIn: "3h" }
     );
@@ -363,8 +354,9 @@ export const googleLogin = async (req: Request, res: Response) => {
     return res.json({
       message: "Google login success",
       token,
-      user: existingUser,
+      user,
     });
+
   } catch (error) {
     console.error("Google Login Error:", error);
     return res.status(500).json({ message: "Google login failed" });

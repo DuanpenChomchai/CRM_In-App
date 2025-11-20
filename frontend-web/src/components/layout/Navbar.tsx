@@ -28,7 +28,6 @@ const Navbar = () => {
   return (
     <nav className="w-full bg-gradient-to-r from-pink-400 to-green-400 shadow-md">
       <div className="flex items-center justify-between h-16 px-6">
-        
         <div className="flex items-center gap-2">
           <div className="bg-white/20 p-2 rounded-lg">
             <Building2 className="w-6 h-6 text-white" />
@@ -58,10 +57,11 @@ const Navbar = () => {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/profile")}>
               <User className="mr-2 h-4 w-4" />
               โปรไฟล์
             </DropdownMenuItem>
+
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleLogout}

@@ -16,6 +16,7 @@ import ProtectedRoute from "@/components/layout/ProtectedRoute";
 import { AppLayout } from "@/components/layout/AppLayout";
 import Quotation from "@/pages/Quotation";
 import StageBased from "@/pages/StageBased";
+import Profile from "@/pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -119,6 +120,18 @@ const App = () => (
               </ProtectedRoute>
             }
           />
+          {/* Profile */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Profile />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />  
+          
 
           {/* Not Found */}
           <Route path="*" element={<NotFound />} />

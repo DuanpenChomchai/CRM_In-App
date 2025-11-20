@@ -226,9 +226,10 @@ const Dashboard = () => {
     const token = localStorage.getItem("token");
     if (!token) return;
 
-    fetch("http://localhost:3000/api/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+   fetch("http://localhost:3000/api/me", {
+  headers: { Authorization: `Bearer ${token}` },
+  })
+
       .then((res) => res.json())
       .then((data) => setUser(data.user))
       .catch((err) => console.error(err));
