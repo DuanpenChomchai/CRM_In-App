@@ -1,4 +1,4 @@
-// src/routes/userRoutes.ts
+// src/routes/user.route.ts
 import { Router } from "express";
 import {
   listUsers,
@@ -10,7 +10,8 @@ import {
   updateMe,
   listSales,
 } from "../controller/userController";
-import { authMiddleware, verifyAdmin } from "../middlewares/authMiddleware";
+import { authMiddleware, verifyAdmin, AuthRequest } from "../middlewares/authMiddleware";
+import prisma from "../config/prismaclient";
 
 const router = Router();
 
@@ -21,18 +22,73 @@ router.get("/me", authMiddleware, getMe);
 router.put("/me", authMiddleware, updateMe);
 
 /* ============================
+   Web CRM — PROFILE (เพิ่มใหม่)
+   ============================ */
+
+// ดึงโปรไฟล์สำหรับหน้าเว็บ
+router.get("/profile", authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        tol: true,
+        img: true,
+        role: true,
+      },
+    });
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+    return res.json({ user });
+  } catch (err) {
+    console.error("GET /profile error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// อัปเดตโปรไฟล์บนเว็บ
+router.put("/profile", authMiddleware, async (req: AuthRequest, res) => {
+  try {
+    const { name, email, tol, img } = req.body;
+
+    const updated = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { name, email, tol, img },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        tol: true,
+        img: true,
+        role: true,
+      },
+    });
+
+    return res.json({
+      message: "Profile updated",
+      user: updated,
+    });
+  } catch (err) {
+    console.error("PUT /profile error:", err);
+    return res.status(400).json({ message: "Update failed" });
+  }
+});
+
+/* ============================
    Web CRM (Admin / Manager)
    ============================ */
 
-// ⭐ ต้องวาง /sales ก่อน /:id เสมอ
+// ⭐ ต้องวาง /sales ก่อน /:id
 router.get(
   "/sales",
   authMiddleware,
-  verifyAdmin,   // หรือถ้าอยากให้ SALE ดูด้วย เดี๋ยวค่อยเปลี่ยนทีหลัง
+  verifyAdmin,
   listSales
 );
 
-// list users (default ไม่เอา CUSTOMER ถ้าไม่ส่ง role)
+// list users
 router.get("/", authMiddleware, verifyAdmin, listUsers);
 
 // get user by id
@@ -41,7 +97,7 @@ router.get("/:id", authMiddleware, verifyAdmin, getUserById);
 // create user
 router.post("/", authMiddleware, verifyAdmin, createUser);
 
-// update user by id
+// update user
 router.put("/:id", authMiddleware, verifyAdmin, updateUser);
 
 // delete user
