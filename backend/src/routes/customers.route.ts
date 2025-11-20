@@ -1,6 +1,10 @@
+// src/routes/customersRoutes.ts
 import { Router } from "express";
 import {
   getAllCustomers,
+  getNewCustomers,
+  getCustomersBySale,
+  getCustomerById,
   createCustomer,
   updateCustomer,
   assignSales,
@@ -12,11 +16,7 @@ import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
 
 const router = Router();
 
-/**
- * ดึงลูกค้าทั้งหมด
- * GET /api/customers
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN เท่านั้น
- */
+/** ดึงลูกค้าทั้งหมด */
 router.get(
   "/",
   verifyToken,
@@ -24,11 +24,23 @@ router.get(
   getAllCustomers
 );
 
-/**
- * >>> ดึง "เซลล์ที่ดูแลลูกค้าที่ล็อกอิน"  <<<
- * GET /api/customers/my-sale
- * จำกัดสิทธิ์: CUSTOMER เท่านั้น
- */
+/** ลูกค้าใหม่ที่ยังไม่ assign */
+router.get(
+  "/new",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getNewCustomers
+);
+
+/** ✅ ลูกค้าตามเซลล์ (ใช้ในแอป role=SALE) */
+router.get(
+  "/sale/:saleId",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getCustomersBySale
+);
+
+/** ✅ เซลล์ที่ดูแลลูกค้าที่ล็อกอิน (ใช้ในแอป role=CUSTOMER) */
 router.get(
   "/my-sale",
   verifyToken,
@@ -36,11 +48,15 @@ router.get(
   getMyAssignedSale
 );
 
-/**
- * สร้างลูกค้าใหม่จากฝั่ง Web CRM
- * POST /api/customers
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN
- */
+/** รายละเอียดลูกค้ารายคน */
+router.get(
+  "/:id",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getCustomerById
+);
+
+/** สร้างลูกค้าใหม่จาก Web CRM */
 router.post(
   "/",
   verifyToken,
@@ -48,11 +64,7 @@ router.post(
   createCustomer
 );
 
-/**
- * อัปเดตข้อมูลลูกค้า
- * PUT /api/customers/:id
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN
- */
+/** อัปเดตลูกค้า */
 router.put(
   "/:id",
   verifyToken,
@@ -60,11 +72,7 @@ router.put(
   updateCustomer
 );
 
-/**
- * มอบหมายพนักงานขายให้ลูกค้า
- * PATCH /api/customers/:id/assign-sale
- * จำกัดสิทธิ์: MANAGER, ADMIN
- */
+/** มอบหมายเซลล์ให้ลูกค้า */
 router.patch(
   "/:id/assign-sale",
   verifyToken,
@@ -72,11 +80,7 @@ router.patch(
   assignSales
 );
 
-/**
- * ลบลูกค้า
- * DELETE /api/customers/:id
- * จำกัดสิทธิ์: MANAGER, ADMIN
- */
+/** ลบลูกค้า */
 router.delete(
   "/:id",
   verifyToken,
