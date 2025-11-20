@@ -1,23 +1,22 @@
-// src/routes/customer.routes.ts
+// src/routes/customersRoutes.ts
 import { Router } from "express";
 import {
   getAllCustomers,
+  getNewCustomers,
+  getCustomersBySale,
+  getCustomerById,
   createCustomer,
   updateCustomer,
   assignSales,
+  deleteCustomer,
+  getMyAssignedSale,
 } from "../controller/customersController";
 
-// ถ้ามี middleware เช็ค token / role อยู่แล้ว ให้ import มาใช้ด้วย
-// แก้ชื่อให้ตรงกับโปรเจกต์ของตัวเองนะ
 import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
 
 const router = Router();
 
-/**
- * ดึงลูกค้าทั้งหมด
- * GET /api/customers
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN เท่านั้น
- */
+/** ดึงลูกค้าทั้งหมด */
 router.get(
   "/",
   verifyToken,
@@ -25,11 +24,39 @@ router.get(
   getAllCustomers
 );
 
-/**
- * สร้างลูกค้าใหม่จากฝั่ง Web CRM
- * POST /api/customers
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN
- */
+/** ลูกค้าใหม่ที่ยังไม่ assign */
+router.get(
+  "/new",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getNewCustomers
+);
+
+/** ✅ ลูกค้าตามเซลล์ (ใช้ในแอป role=SALE) */
+router.get(
+  "/sale/:saleId",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getCustomersBySale
+);
+
+/** ✅ เซลล์ที่ดูแลลูกค้าที่ล็อกอิน (ใช้ในแอป role=CUSTOMER) */
+router.get(
+  "/my-sale",
+  verifyToken,
+  requireRoles("CUSTOMER"),
+  getMyAssignedSale
+);
+
+/** รายละเอียดลูกค้ารายคน */
+router.get(
+  "/:id",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getCustomerById
+);
+
+/** สร้างลูกค้าใหม่จาก Web CRM */
 router.post(
   "/",
   verifyToken,
@@ -37,11 +64,7 @@ router.post(
   createCustomer
 );
 
-/**
- * อัปเดตข้อมูลลูกค้า
- * PUT /api/customers/:id
- * จำกัดสิทธิ์: SALE, MANAGER, ADMIN
- */
+/** อัปเดตลูกค้า */
 router.put(
   "/:id",
   verifyToken,
@@ -49,16 +72,20 @@ router.put(
   updateCustomer
 );
 
-/**
- * มอบหมายพนักงานขายให้ลูกค้า
- * PATCH /api/customers/:id/assign-sale
- * แนะนำให้ MANAGER, ADMIN เท่านั้นที่ใช้ได้
- */
+/** มอบหมายเซลล์ให้ลูกค้า */
 router.patch(
   "/:id/assign-sale",
   verifyToken,
   requireRoles("MANAGER", "ADMIN"),
   assignSales
+);
+
+/** ลบลูกค้า */
+router.delete(
+  "/:id",
+  verifyToken,
+  requireRoles("MANAGER", "ADMIN"),
+  deleteCustomer
 );
 
 export default router;

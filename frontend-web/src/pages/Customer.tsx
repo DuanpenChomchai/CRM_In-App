@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { io, Socket } from "socket.io-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,32 @@ interface Customer {
   assignedTo?: string;
 }
 
+interface SaleUser {
+  id: number;
+  name: string;
+}
+
+// ===== helper แปลงข้อมูลจาก backend → Customer ของ UI =====
+const mapApiCustomerToUi = (c: any): Customer => {
+  const rawStatus = (c.status || "NEW").toString().toLowerCase();
+
+  let status: Customer["status"] = "new";
+  if (rawStatus.startsWith("contact")) status = "contacted";
+  else if (rawStatus.startsWith("negotiat")) status = "negotiating";
+  else if (rawStatus.startsWith("close")) status = "closed";
+
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.tol,
+    email: c.email,
+    propertyType: c.productType ?? undefined,
+    budget: c.priceBudget ? Number(c.priceBudget) : undefined,
+    status,
+    assignedTo: c.sale?.name ?? undefined,
+  };
+};
+
 const SalesProcess = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null
@@ -68,41 +95,28 @@ const SalesProcess = () => {
 
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
 
-  // ทีมเซลล์ (ตอนนี้ยังใช้ mock เดิม UI สวยเหมือนเดิม)
-  const salesTeam = [
-    "สมชาย ใจดี",
-    "สมหญิง รักงาน",
-    "ประยุทธ์ ขยัน",
-    "วิไล มานะ",
-    "สุนทร พยายาม",
-  ];
+  // ✅ ทีมเซลล์จาก DB
+  const [salesTeam, setSalesTeam] = useState<SaleUser[]>([]);
 
-  // ลูกค้าทั้งหมด (เริ่มจาก [] แล้วค่อยดึงจาก backend)
+  // ลูกค้าทั้งหมด
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  // 🧲 โหลดลูกค้าจาก backend (ฐานข้อมูลจริง) แค่ตอนเปิดหน้า
+  // =============== 1) โหลดลูกค้าจาก backend ตอนเปิดหน้า ===============
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const res = await fetch("http://localhost:3000/api/customers");
+        const token = localStorage.getItem("token");
+        const res = await fetch("http://localhost:3000/api/customers", {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+        });
         if (!res.ok) {
           throw new Error("ไม่สามารถดึงข้อมูลลูกค้าได้");
         }
         const data = await res.json();
 
-        // data มาจาก Prisma customer model:
-        // { id, name, tol, email, ... }
-        const mapped = data.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          phone: c.tol,
-          email: c.email,
-          propertyType: undefined,
-          budget: undefined,
-          status: "new",
-          assignedTo: undefined,
-        }));
-
+        const mapped: Customer[] = data.map(mapApiCustomerToUi);
         setCustomers(mapped);
       } catch (err) {
         console.error(err);
@@ -111,6 +125,71 @@ const SalesProcess = () => {
     };
 
     fetchCustomers();
+  }, []);
+
+  // =============== 1.5) โหลดรายชื่อเซลล์จาก DB ===============
+  useEffect(() => {
+  const fetchSales = async () => {
+    try {
+      const token = localStorage.getItem("token");
+
+      const res = await fetch("http://localhost:3000/api/users/sales", {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+
+      if (!res.ok) {
+        throw new Error("ไม่สามารถดึงข้อมูลพนักงานขายได้");
+      }
+
+      const json = await res.json();
+      // json = { data: [...], page, pageSize, ... }
+
+      const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
+        id: u.id,
+        name: u.name,
+      }));
+
+      setSalesTeam(mapped);
+    } catch (err) {
+      console.error(err);
+      toast.error("โหลดรายชื่อพนักงานขายไม่สำเร็จ");
+    }
+  };
+
+  fetchSales();
+}, []);
+
+  // =============== 2) connect WebSocket ฟังลูกค้าใหม่จากแอป ===============
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const socket: Socket = io("http://localhost:3000", {
+      transports: ["websocket"],
+      extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+
+    socket.emit("join-role", { role: "MANAGER" });
+
+    socket.on("customer:new", (payload: any) => {
+      const mapped = mapApiCustomerToUi(payload);
+      setCustomers((prev) => {
+        if (prev.some((c) => c.id === mapped.id)) return prev;
+        return [mapped, ...prev];
+      });
+      toast.success(`มีลูกค้าใหม่จากแอป: ${mapped.name}`);
+    });
+
+    socket.on("customer:assigned", (payload: any) => {
+      const mapped = mapApiCustomerToUi(payload);
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === mapped.id ? mapped : c))
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const newCustomers = customers.filter((c) => c.status === "new");
@@ -153,14 +232,46 @@ const SalesProcess = () => {
     return <Badge className={config.className}>{config.label}</Badge>;
   };
 
-  const handleAssignSales = (customerId: number, salesName: string) => {
-    // ยังอัปเดตแค่ใน state ฝั่งหน้าเว็บ (ไม่ยิง backend)
-    setCustomers((prev) =>
-      prev.map((c) =>
-        c.id === customerId ? { ...c, assignedTo: salesName } : c
-      )
-    );
-    toast.success(`มอบหมายลูกค้าให้ ${salesName} เรียบร้อยแล้ว`);
+  // ✅ มอบหมายเซลล์: ยิงเข้า backend → backend ส่ง WS ไปให้ app 
+  const handleAssignSales = async (customerId: number, saleId: number) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(
+        `http://localhost:3000/api/customers/${customerId}/assign-sale`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({ saleId }),
+        }
+      );
+
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => ({}));
+        console.error("assign-sale error:", errorBody);
+        toast.error(
+          errorBody?.message || "มอบหมายพนักงานขายไม่สำเร็จ (backend)"
+        );
+        return;
+      }
+
+      const data = await res.json();
+      const mapped = mapApiCustomerToUi(data);
+
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === mapped.id ? mapped : c))
+      );
+
+      const sale = salesTeam.find((s) => s.id === saleId);
+      toast.success(
+        `มอบหมายลูกค้าให้ ${sale?.name || "พนักงานขาย"} เรียบร้อยแล้ว`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("มอบหมายพนักงานขายไม่สำเร็จ (network)");
+    }
   };
 
   const handleAddCustomer = () => {
@@ -175,14 +286,14 @@ const SalesProcess = () => {
       status: "new",
     };
 
-    setCustomers([...customers, customer]);
+    setCustomers((prev) => [...prev, customer]);
     setNewCustomer({
       name: "",
       phone: "",
       email: "",
     });
     setIsAddDialogOpen(false);
-    toast.success("เพิ่มลูกค้าใหม่สำเร็จ");
+    toast.success("เพิ่มลูกค้าใหม่สำเร็จ (ยังไม่บันทึกเข้า backend)");
   };
 
   const handleUpdateCustomer = () => {
@@ -225,6 +336,7 @@ const SalesProcess = () => {
     }
   };
 
+  // ======================== UI ========================
   return (
     <div className="container mx-auto p-6 space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
@@ -396,10 +508,12 @@ const SalesProcess = () => {
                     </TableCell>
                     <TableCell>{getStatusBadge(customer.status)}</TableCell>
                     <TableCell>
-                      {customer.assignedTo || (
+                      {customer.assignedTo ? (
+                        customer.assignedTo
+                      ) : (
                         <Select
                           onValueChange={(value) =>
-                            handleAssignSales(customer.id, value)
+                            handleAssignSales(customer.id, Number(value))
                           }
                         >
                           <SelectTrigger className="w-[180px]">
@@ -407,8 +521,11 @@ const SalesProcess = () => {
                           </SelectTrigger>
                           <SelectContent>
                             {salesTeam.map((sales) => (
-                              <SelectItem key={sales} value={sales}>
-                                {sales}
+                              <SelectItem
+                                key={sales.id}
+                                value={String(sales.id)}
+                              >
+                                {sales.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -703,8 +820,8 @@ const SalesProcess = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {salesTeam.map((sales) => (
-                    <SelectItem key={sales} value={sales}>
-                      {sales}
+                    <SelectItem key={sales.id} value={sales.name}>
+                      {sales.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

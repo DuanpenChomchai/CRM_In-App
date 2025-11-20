@@ -1,6 +1,18 @@
+// src/controller/customersController.ts
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { Prisma } from "@prisma/client";
+
+// ---------- เพิ่ม type สำหรับ req.user ----------
+interface AuthUser {
+  id: number;
+  email: string;
+  role: string;
+}
+
+interface AuthRequest extends Request {
+  user?: AuthUser;
+}
 
 /**
  * ดึงลูกค้าทั้งหมด
@@ -51,7 +63,7 @@ export const getNewCustomers = async (req: Request, res: Response) => {
   try {
     const customers = await prisma.customer.findMany({
       where: {
-        saleId: null, // ยังไม่ถูกมอบหมายเซลล์
+        saleId: null,
       },
       include: {
         user: {
@@ -87,6 +99,8 @@ export const getCustomersBySale = async (req: Request, res: Response) => {
     if (Number.isNaN(saleId)) {
       return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
     }
+
+    console.log("getCustomersBySale saleId =", saleId);
 
     const customers = await prisma.customer.findMany({
       where: { saleId },
@@ -178,15 +192,7 @@ export const getCustomerById = async (req: Request, res: Response) => {
  */
 export const createCustomer = async (req: Request, res: Response) => {
   try {
-    const {
-      name,
-      phone,
-      email,
-      img,
-      productType,
-      budget,
-      saleId,
-    } = req.body;
+    const { name, phone, email, img, productType, budget, saleId } = req.body;
 
     if (!name || !phone || !email) {
       return res
@@ -206,7 +212,6 @@ export const createCustomer = async (req: Request, res: Response) => {
             ? new Prisma.Decimal(budget)
             : null,
         saleId: saleId ? Number(saleId) : null,
-        // userId: null // จากฝั่งเว็บยังไม่สร้าง user ให้ลูกค้า
       },
       include: {
         sale: {
@@ -240,15 +245,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "id ไม่ถูกต้อง" });
     }
 
-    const {
-      name,
-      phone,
-      email,
-      img,
-      productType,
-      budget,
-      saleId, // ถ้าอยากเปลี่ยนเซลล์ตรงนี้ก็ได้
-    } = req.body;
+    const { name, phone, email, img, productType, budget, saleId } = req.body;
 
     const updated = await prisma.customer.update({
       where: { id },
@@ -261,7 +258,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
         priceBudget:
           budget !== undefined && budget !== null && budget !== ""
             ? new Prisma.Decimal(budget)
-            : undefined, // undefined = ไม่เปลี่ยนค่าเดิม
+            : undefined,
         saleId: saleId !== undefined ? Number(saleId) : undefined,
       },
       include: {
@@ -317,7 +314,6 @@ export const assignSales = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
     }
 
-    // เช็คว่า saleId เป็น user ที่ role = SALE จริงไหม
     const saleUser = await prisma.user.findFirst({
       where: { id: saleUserId, role: "SALE" },
     });
@@ -379,5 +375,62 @@ export const deleteCustomer = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("deleteCustomer error:", error);
     return res.status(500).json({ message: "ลบลูกค้าไม่สำเร็จ" });
+  }
+};
+
+/**
+ * ดึง "เซลล์ที่ดูแลลูกค้าคนนี้" จาก user ที่ล็อกอิน (ฝั่งแอป)
+ * GET /api/customers/my-sale
+ */
+export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
+  try {
+    const authUser = req.user;
+    if (!authUser?.id) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const userId = Number(authUser.id);
+    console.log("getMyAssignedSale userId =", userId);
+
+    const customer = await prisma.customer.findFirst({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      return res
+        .status(404)
+        .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
+    }
+
+    return res.json({
+      customerId: customer.id,
+      customerName: customer.name,
+      sale: customer.sale,
+    });
+  } catch (error) {
+    console.error("getMyAssignedSale error:", error);
+    return res.status(500).json({ message: "ดึงข้อมูลเซลล์ไม่สำเร็จ" });
   }
 };
