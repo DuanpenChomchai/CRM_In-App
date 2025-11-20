@@ -37,6 +37,21 @@ enum KpiMetric {
   CUSTOM
 }
 
+// ======= สำหรับการโทร =======
+enum CallDirection {
+  CUSTOMER_TO_SALE
+  SALE_TO_CUSTOMER
+}
+
+enum CallStatus {
+  RINGING     // กำลังเรียก
+  ONGOING     // กำลังคุย
+  COMPLETED   // คุยจบปกติ
+  MISSED      // ไม่รับสาย
+  REJECTED    // กดตัดสาย
+  CANCELED    // ผู้โทรยกเลิก
+}
+
 // ===========================================================
 // USER (ลูกค้า/เซลล์/ผู้จัดการ/แอดมิน)
 // ===========================================================
@@ -59,6 +74,10 @@ model User {
   closedDeals    ClosedDeal[]
   communications Communications[]
   KPITracking    KPITracking[]
+
+  // การโทร (ฝั่งเซลล์ / ฝั่งลูกค้า)
+  saleCalls     Call[] @relation("SaleCallUser")       // user นี้เป็นเซลล์ที่โทร
+  customerCalls Call[] @relation("CustomerCallUser")   // user นี้เป็นลูกค้าที่โทร/รับสาย
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,6 +130,9 @@ model Customer {
   closedDeals    ClosedDeal[]
   KPITracking    KPITracking[]
 
+  // การโทรทั้งหมดของลูกค้าคนนี้
+  calls Call[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -133,11 +155,16 @@ model Communications {
   userId Int?
   user   User?       @relation(fields: [userId], references: [id])
 
+  // ผูกกับสายโทร (ถ้า event นี้เกิดใน context ของ Call)
+  callId Int?
+  call   Call?       @relation(fields: [callId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([customerId])
   @@index([userId])
+  @@index([callId])
 }
 
 // ===========================================================
@@ -296,5 +323,48 @@ model KPITracking {
   @@index([closedDealId])
   @@index([userId])
   @@index([stage, metric])
+  @@index([startedAt])
+}
+
+// ===========================================================
+// CALL (ประวัติการโทร + ไฟล์เสียง)
+// ===========================================================
+model Call {
+  id          Int      @id @default(autoincrement())
+
+  // ผูกกับ Customer คนนี้ (อาจเป็น CRM customer record)
+  customerId  Int?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+
+  // ฝั่งเซลล์ (User ที่ role = SALE)
+  saleUserId  Int?
+  saleUser    User?    @relation("SaleCallUser", fields: [saleUserId], references: [id])
+
+  // ฝั่งลูกค้า (User ที่ role = CUSTOMER ถ้ามี user login)
+  customerUserId Int?
+  customerUser   User? @relation("CustomerCallUser", fields: [customerUserId], references: [id])
+
+  direction   CallDirection
+  status      CallStatus
+
+  startedAt   DateTime
+  endedAt     DateTime?
+  durationSec Int?
+
+  // ข้อมูลไฟล์เสียง (เก็บ key/object name ใน MinIO)
+  recordingKey         String?  // เช่น "calls/2025/11/xxx.m4a"
+  recordingDurationSec Int?
+  transcript           String?  // ถ้ามีการทำ speech-to-text
+  note                 String?
+
+  // communications ที่อยู่ใน context ของสายนี้
+  communications Communications[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([saleUserId])
+  @@index([customerUserId])
   @@index([startedAt])
 }
