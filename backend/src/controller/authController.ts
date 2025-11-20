@@ -84,9 +84,6 @@ export const register = async (req: Request, res: Response) => {
         user: {
           connect: { id: user.id },
         },
-        // ถ้าคุณเพิ่ม field เช่น status / source ใน Prisma schema
-        // status: "NEW",
-        // source: "APP",
       },
     });
 
@@ -376,8 +373,6 @@ export const me = async (req: any, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      // ถ้าอยากดึง customer ด้วย:
-      // include: { customer: true },
     });
 
     return res.json({ user });

@@ -381,3 +381,62 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "ลบลูกค้าไม่สำเร็จ" });
   }
 };
+
+/**
+ * ดึง "เซลล์ที่ดูแลลูกค้าคนนี้" จาก user ที่ล็อกอิน (ฝั่งแอป)
+ * GET /api/customers/my-sale
+ * ใช้ req.user.id (owner ของ Customer) -> คืน customerId + sale
+ */
+export const getMyAssignedSale = async (req: Request, res: Response) => {
+  try {
+    // มาจาก verifyToken -> req.user = { id, email, role, ... }
+    const authUser = (req as any).user;
+    if (!authUser?.id) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const userId = Number(authUser.id);
+
+    // หา Customer ที่ owner คือ user นี้ (field userId)
+    const customer = await prisma.customer.findFirst({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+        },
+      },
+    });
+
+    if (!customer) {
+      return res
+        .status(404)
+        .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
+    }
+
+    return res.json({
+      customerId: customer.id,
+      customerName: customer.name,
+      sale: customer.sale, // อาจเป็น null ถ้ายังไม่ได้ assign
+    });
+  } catch (error) {
+    console.error("getMyAssignedSale error:", error);
+    return res.status(500).json({ message: "ดึงข้อมูลเซลล์ไม่สำเร็จ" });
+  }
+};

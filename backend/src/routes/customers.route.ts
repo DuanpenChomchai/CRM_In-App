@@ -5,10 +5,9 @@ import {
   updateCustomer,
   assignSales,
   deleteCustomer,
+  getMyAssignedSale,
 } from "../controller/customersController";
 
-// ถ้ามี middleware เช็ค token / role อยู่แล้ว ให้ import มาใช้ด้วย
-// แก้ชื่อให้ตรงกับโปรเจกต์ของตัวเองนะ
 import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -23,6 +22,18 @@ router.get(
   verifyToken,
   requireRoles("SALE", "MANAGER", "ADMIN"),
   getAllCustomers
+);
+
+/**
+ * >>> ดึง "เซลล์ที่ดูแลลูกค้าที่ล็อกอิน"  <<<
+ * GET /api/customers/my-sale
+ * จำกัดสิทธิ์: CUSTOMER เท่านั้น
+ */
+router.get(
+  "/my-sale",
+  verifyToken,
+  requireRoles("CUSTOMER"),
+  getMyAssignedSale
 );
 
 /**
@@ -52,7 +63,7 @@ router.put(
 /**
  * มอบหมายพนักงานขายให้ลูกค้า
  * PATCH /api/customers/:id/assign-sale
- * แนะนำให้ MANAGER, ADMIN เท่านั้นที่ใช้ได้
+ * จำกัดสิทธิ์: MANAGER, ADMIN
  */
 router.patch(
   "/:id/assign-sale",
@@ -72,4 +83,5 @@ router.delete(
   requireRoles("MANAGER", "ADMIN"),
   deleteCustomer
 );
+
 export default router;

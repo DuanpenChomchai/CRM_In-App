@@ -5,17 +5,63 @@ import {
   createCommunication,
   updateCommunication,
   deleteCommunication,
+  getMyChatHistory,  
 } from "../controller/communicationController";
-import { authMiddleware } from "../middlewares/authMiddleware";
-import { verifyAdmin } from "../middlewares/verifyAdmin";
+
+import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
 
 const router = Router();
 
-router.get("/", authMiddleware, listCommunications);
-router.get("/:id", authMiddleware, getCommunicationById);
+/**
+ * สำหรับ admin / sale / manager ใช้ดูทั้งหมด / filter
+ */
+router.get(
+  "/",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  listCommunications
+);
 
-router.post("/", authMiddleware, createCommunication);
-router.patch("/:id", authMiddleware, updateCommunication);
-router.delete("/:id", authMiddleware, verifyAdmin, deleteCommunication);
+router.get(
+  "/:id",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  getCommunicationById
+);
+
+/**
+ * ✅ ลูกค้า (CUSTOMER) ดูประวัติแชทของตัวเอง
+ * GET /api/communications/my-chats
+ */
+router.get(
+  "/my-chats",
+  verifyToken,
+  requireRoles("CUSTOMER"),
+  getMyChatHistory
+);
+
+/**
+ * สร้าง / อัปเดต / ลบ (ตามสิทธิ์ที่คุณต้องการ)
+ */
+router.post(
+  "/",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  createCommunication
+);
+
+router.put(
+  "/:id",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  updateCommunication
+);
+
+router.delete(
+  "/:id",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  deleteCommunication
+);
 
 export default router;

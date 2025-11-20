@@ -202,3 +202,73 @@ export const deleteCommunication = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "ลบรายการสื่อสารล้มเหลว" });
   }
 };
+
+export const getMyChatHistory = async (req: AuthRequest, res: Response) => {
+  try {
+    const authUser = req.user;
+    if (!authUser?.id) {
+      return res.status(401).json({ message: "Unauthenticated" });
+    }
+
+    const userId = Number(authUser.id);
+
+    // 1) หา Customer ที่ผูกกับ user นี้ (owner = ลูกค้าจากแอป)
+    const customer = await prisma.customer.findFirst({
+      where: { userId },
+      select: { id: true, name: true },
+    });
+
+    if (!customer) {
+      return res
+        .status(404)
+        .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
+    }
+
+    const customerId = customer.id;
+
+    // 2) รองรับ filter เพิ่มเติมเล็กน้อย (optional)
+    const page = Math.max(
+      parseInt(String(req.query.page ?? "1"), 10),
+      1
+    );
+    const pageSize = Math.min(
+      Math.max(parseInt(String(req.query.pageSize ?? "50"), 10), 1),
+      200
+    );
+
+    const q = req.query.q ? String(req.query.q) : undefined;
+    const hasVoice = req.query.hasVoice ? String(req.query.hasVoice) : undefined;
+    const from = req.query.from ? String(req.query.from) : undefined;
+    const to = req.query.to ? String(req.query.to) : undefined;
+
+    // ใช้ helper เดิมของคุณ แต่ fix customerId ตรงนี้เลย
+    const where = buildWhere(q, customerId, hasVoice, from, to);
+
+    const [items, total] = await Promise.all([
+      prisma.communications.findMany({
+        where,
+        orderBy: { createdAt: "asc" }, // history = เก่าสุด -> ใหม่สุด
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: baseSelect,
+      }),
+      prisma.communications.count({ where }),
+    ]);
+
+    return res.json({
+      customerId,
+      customerName: customer.name,
+      data: items,
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    });
+  } catch (err) {
+    console.error("getMyChatHistory error:", err);
+    return res
+      .status(500)
+      .json({ message: "ดึงประวัติการแชทไม่สำเร็จ" });
+  }
+};
+
