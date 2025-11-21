@@ -44,7 +44,6 @@ export const register = async (req: Request, res: Response) => {
     const emailNorm = String(email).trim().toLowerCase();
     const tolNorm = normalizePhoneTH(tol);
 
-    // เช็คซ้ำก่อน
     const existed = await prisma.user.findFirst({
       where: {
         OR: [{ email: emailNorm }, { tol: tolNorm }],
@@ -59,7 +58,6 @@ export const register = async (req: Request, res: Response) => {
 
     const hashed = await bcrypt.hash(password, 10);
 
-    // สร้าง User + Customer แบบ nested ก็ได้ แต่ที่คุณเขียนแยกก็โอเค
     const user = await prisma.user.create({
       data: {
         name,
@@ -97,7 +95,7 @@ export const register = async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("Register error:", err);
-    // handle unique constraint ซ้ำ (กรณีหลุดมา catch)
+
     if (
       err instanceof Prisma.PrismaClientKnownRequestError &&
       err.code === "P2002"
@@ -217,6 +215,60 @@ export const registerManager = async (req: Request, res: Response) => {
   }
 };
 
+// ====================== REGISTER ADMIN (ใหม่) ======================
+export const registerAdmin = async (req: Request, res: Response) => {
+  try {
+    const { name, tol, email, password } = req.body;
+
+    if (!name || !tol || !email || !password) {
+      return res
+        .status(400)
+        .json({ message: "กรุณากรอกข้อมูลให้ครบทุกช่อง" });
+    }
+
+    const emailNorm = String(email).trim().toLowerCase();
+    const tolNorm = normalizePhoneTH(tol);
+
+    const existed = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: emailNorm }, { tol: tolNorm }],
+      },
+    });
+
+    if (existed) {
+      return res
+        .status(400)
+        .json({ message: "อีเมลหรือเบอร์โทรนี้ถูกใช้แล้ว" });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const admin = await prisma.user.create({
+      data: {
+        name,
+        tol: tolNorm,
+        email: emailNorm,
+        password: hashed,
+        role: "ADMIN",
+      },
+    });
+
+    return res.json({ message: "register admin success", admin });
+
+  } catch (err: any) {
+    console.error("RegisterAdmin error:", err);
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2002"
+    ) {
+      return res
+        .status(400)
+        .json({ message: "อีเมลหรือเบอร์โทรนี้ถูกใช้แล้ว" });
+    }
+    return res.status(500).json({ message: "server error" });
+  }
+};
+
 // ====================== LOGIN (APP – ทุก role) ======================
 export const login = async (req: Request, res: Response) => {
   try {
@@ -283,7 +335,7 @@ export const loginWeb = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "ไม่พบบัญชีผู้ใช้" });
     }
 
-    // ⛔ ไม่ให้ CUSTOMER เข้า Web CRM
+    // ❌ ไม่ให้ CUSTOMER เข้า Web CRM
     if (user.role === "CUSTOMER") {
       return res
         .status(403)
@@ -313,7 +365,6 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "missing credential" });
     }
 
-    // 1. verify Google token
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
@@ -326,22 +377,16 @@ export const googleLogin = async (req: Request, res: Response) => {
 
     const email = payload.email;
 
-    // 2. ต้องมี user ก่อน → หา user ในระบบ
     const user = await prisma.user.findUnique({
       where: { email },
     });
 
-    // ❌ ถ้าไม่มี user → ห้ามเข้า
     if (!user) {
       return res.status(403).json({
         message: "อีเมลนี้ไม่มีอยู่ในระบบ ไม่สามารถเข้าสู่ระบบได้",
       });
     }
 
-    // ❌ ไม่เช็ค role แล้ว — ให้เข้าได้ทุกคน
-    // ✔ ADMIN / SALE / MANAGER / CUSTOMER เข้าด้วย Google ได้หมด
-
-    // 3. ออก token
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET || "dev_secret",

@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuthStore } from "../store/useAuthStore"; 
+import { useAuthStore } from "../../store/useAuthStore"; 
 
 export default function LoginScreen() {
   const router = useRouter();

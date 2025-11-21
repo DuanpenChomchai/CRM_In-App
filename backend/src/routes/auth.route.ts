@@ -7,7 +7,8 @@ import {
   logout,
   googleLogin,
   me,
-  refreshToken
+  refreshToken,
+  registerAdmin,
 } from "../controller/authController";
 
 import {
@@ -29,6 +30,12 @@ router.post("/register-sale", authMiddleware, verifyAdmin, registerSales);
 
 // สมัคร Manager (ต้องเป็น Admin)
 router.post("/register-manager", authMiddleware, verifyAdmin, registerManager);
+
+
+// สมัคร Admin (ต้องเป็น Admin)
+router.post("/register-admin",  registerAdmin);
+
+
 
 
 /* ============================

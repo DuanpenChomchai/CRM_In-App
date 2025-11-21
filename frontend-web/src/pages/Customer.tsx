@@ -211,12 +211,13 @@ const SalesProcess = () => {
   };
 
   // ⭐ สถานะอิงจาก assignedTo จริง ๆ
-  const getStatusBadge = (assignedTo?: string) => {
-    if (!assignedTo) {
-      return <Badge className="bg-blue-500">ใหม่</Badge>;
-    }
-    return <Badge className="bg-yellow-500">กำลังติดต่อ</Badge>;
-  };
+const getStatusBadge = (assignedTo?: string) => {
+  if (!assignedTo) {
+    return <Badge className="bg-blue-500">ใหม่</Badge>;
+  }
+  return <Badge className="bg-yellow-500">กำลังติดต่อ</Badge>;
+};
+
 
   const findSaleIdByName = (name?: string) => {
     if (!name) return undefined;
@@ -524,7 +525,7 @@ const SalesProcess = () => {
                         <span className="text-muted-foreground text-sm">-</span>
                       )}
                     </TableCell>
-                    <TableCell>{getStatusBadge(customer.status)}</TableCell>
+                    <TableCell>{getStatusBadge(customer.assignedTo)}</TableCell>
                     <TableCell>
                       {customer.assignedTo ? (
                         customer.assignedTo

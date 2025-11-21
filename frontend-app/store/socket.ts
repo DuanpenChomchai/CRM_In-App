@@ -1,11 +1,35 @@
+// src/store/socket.ts
 import io, { Socket } from "socket.io-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export const WS_SERVER = "http://10.222.113.26:3000"; // ← แก้เป็น IP คอมคุณ
+export const WS_SERVER = "http://10.222.113.26:3000";
 
-export type ChatMsg = { id: string; text: string; user: string; ts: number; cid?: string };
+export type ChatMsg = {
+  id: string;
+  text: string;
+  user: string;
+  ts: number;
+  cid?: string;
+};
+
+type SocketAuth = {
+  token?: string | null;
+  role?: string | null;
+  userId?: number | null;
+};
 
 let socketInstance: Socket | null = null;
+let socketAuth: SocketAuth = {};
+
+// เรียกจาก React เพื่ออัพเดทข้อมูล auth ที่จะส่งให้ WS
+export const setSocketAuth = (auth: SocketAuth) => {
+  socketAuth = auth;
+
+  if (socketInstance) {
+    // เก็บไว้ที่ client ด้วย (server จะรับจาก event "auth-update")
+    socketInstance.emit("auth-update", auth);
+  }
+};
 
 export const getSocket = () => {
   if (!socketInstance) {
@@ -13,6 +37,8 @@ export const getSocket = () => {
       transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
+      // ส่งค่า auth ตอน handshake แรก
+      auth: socketAuth,
     });
   }
   return socketInstance;
@@ -36,15 +62,24 @@ export const useSocketRoom = (roomId: string, username: string) => {
       socket.emit("join", { roomId, user: username });
     };
     const onDisconnect = () => setConnected(false);
+
     const onHistory = (list: ChatMsg[] = []) =>
       setMessages([...list].sort((a, b) => a.ts - b.ts));
+
     const onMessage = (msg: ChatMsg) =>
       setMessages((prev) => [...prev, msg]);
+
     const onSystem = (sys: { text: string; ts: number }) =>
       setMessages((prev) => [
         ...prev,
-        { id: `sys-${sys.ts}`, text: `🔔 ${sys.text}`, user: "system", ts: sys.ts },
+        {
+          id: `sys-${sys.ts}`,
+          text: `🔔 ${sys.text}`,
+          user: "system",
+          ts: sys.ts,
+        },
       ]);
+
     const onTyping = ({ user, typing }: { user: string; typing: boolean }) =>
       setTypingUsers((prev) => ({ ...prev, [user]: typing }));
 
@@ -62,7 +97,11 @@ export const useSocketRoom = (roomId: string, username: string) => {
       socket.off("message", onMessage);
       socket.off("system", onSystem);
       socket.off("typing", onTyping);
-      if (typingTimer.current) clearTimeout(typingTimer.current);
+
+      if (typingTimer.current) {
+        clearTimeout(typingTimer.current);
+        typingTimer.current = null;
+      }
     };
   }, [roomId, username, socket]);
 
@@ -88,4 +127,5 @@ export const useSocketRoom = (roomId: string, username: string) => {
     .map(([u]) => u);
 
   return { connected, messages, sendText, startTyping, stopTyping, othersTyping };
+  
 };

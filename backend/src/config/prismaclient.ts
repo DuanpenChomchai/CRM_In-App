@@ -1,23 +1,23 @@
 ﻿import { PrismaClient } from "@prisma/client";
-import { Pool } from "pg";
-import { PrismaPg } from "@prisma/adapter-pg";
+
 
 const isTest = process.env.NODE_ENV === "test";
-const databaseUrl = isTest ? process.env.TEST_DATABASE_URL : process.env.DATABASE_URL;
 
-const pool = new Pool({ connectionString: databaseUrl });
-const adapter = new PrismaPg(pool);
 
-const globalForPrisma = global as unknown as { prisma?: PrismaClient };
+const globalForPrisma = global as unknown as {
+  prisma?: PrismaClient;
+};
 
-export const prisma: PrismaClient =
+export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    adapter,
+
     log: isTest ? [] : ["warn", "error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
 
 export async function ensureDatabaseConnection(): Promise<void> {
   try {
@@ -27,9 +27,7 @@ export async function ensureDatabaseConnection(): Promise<void> {
     }
   } catch (error) {
     console.error("Failed to connect to the database:", error);
-    if (!isTest) {
-      process.exit(1);
-    }
+    if (!isTest) process.exit(1);
   }
 }
 

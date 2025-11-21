@@ -2,7 +2,7 @@
 import { Router } from "express";
 import {
   getAllCustomers,
-  getNewCustomers,
+  getCustomers,
   getCustomersBySale,
   getCustomerById,
   createCustomer,
@@ -29,7 +29,7 @@ router.get(
   "/new",
   verifyToken,
   requireRoles("SALE", "MANAGER", "ADMIN"),
-  getNewCustomers
+  getCustomers
 );
 
 /** ✅ ลูกค้าตามเซลล์ (ใช้ในแอป role=SALE) */

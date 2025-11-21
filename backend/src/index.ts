@@ -1,19 +1,15 @@
+// src/index.ts
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import http from "http";
 import authRoutes from "./routes/auth.route";
 import { checkBucket } from "./config/minioclient";
-import { initWs } from "./ws";
 import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
-
-function createWebSocketServer(app: express.Express) {
-  const server = http.createServer(app);
-  initWs(server);
-  return server;
-}
+import chatMessageRoutes from "./routes/chatMessage.routes";
+import { registerSocket } from "./socket";
 
 async function main() {
   const app = express();
@@ -37,6 +33,7 @@ async function main() {
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
+  app.use("/api/chat", chatMessageRoutes);
 
   console.log(
     "SERVER START with JWT_SECRET =",
@@ -49,7 +46,9 @@ async function main() {
     console.error("MinIO checkBucket failed:", e);
   }
 
-  const server = createWebSocketServer(app);
+  // ⭐ สร้าง HTTP server + WebSocket
+  const server = http.createServer(app);
+  registerSocket(server); // ← ใช้ registerSocket ใหม่
 
   server.listen(port, "0.0.0.0", () => {
     console.log(`HTTP + WebSocket running on http://localhost:${port}`);
