@@ -7,15 +7,32 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams } from "expo-router";
-import { useSocketRoom, generateCid } from "../store/socket";
+import { useSocketRoom, generateCid } from "../../store/socket";
+import { useAuthStore } from "../../store/useAuthStore";
 
 type Msg =
-  | { id: string; fromMe: boolean; type: "text"; text: string; time: string; cid?: string | number }
+  | {
+      id: string;
+      fromMe: boolean;
+      type: "text";
+      text: string;
+      time: string;
+      cid?: string | number;
+    }
   | { id: string; fromMe: boolean; type: "audio"; durationSec: number; time: string };
+
+// ✅ ใช้ HOST เดียวกับหน้า all-chat
+const HOST: string = Platform.select<string>({
+  ios: "http://localhost:3000",
+  android: "http://10.0.2.2:3000",
+  default: "http://10.222.113.26:3000", // เปลี่ยนเป็น IP เครื่องคอมตอนใช้มือถือจริง
+})!;
+const API_BASE_URL = `${HOST}/api`;
 
 function formatClock(t = new Date()) {
   const h = t.getHours().toString().padStart(2, "0");
@@ -28,26 +45,180 @@ function formatDuration(sec: number) {
   return `${m}:${s}`;
 }
 
+type ChatPartner = {
+  name: string;
+  avatarUrl?: string | null;
+};
+
 export default function ChatDetailScreen() {
   const params = useLocalSearchParams();
-  const idParam = Array.isArray(params.id) ? params.id[0] : (params.id as string | undefined);
+  const idParam = Array.isArray(params.id)
+    ? params.id[0]
+    : (params.id as string | undefined);
   const nameParam = Array.isArray(params.name)
     ? params.name[0]
     : (params.name as string | undefined);
 
-  // (ถ้ามี customerId สามารถใช้เป็น roomId แบบ cust:<id> ได้)
   const customerIdParam = Array.isArray(params.customerId)
     ? Number(params.customerId[0])
     : params.customerId
     ? Number(params.customerId as string)
     : undefined;
 
-  // ใช้ได้ทั้งสองแบบ: ถ้ามี customerId จะใช้ cust:<id>, ไม่งั้นใช้ idParam เดิม
-  const roomId = customerIdParam ? `cust:${customerIdParam}` : (idParam ?? "general");
+  const roomId = customerIdParam
+    ? `cust:${customerIdParam}`
+    : idParam ?? "general";
+
+  const { user, token } = useAuthStore();
+
+  // ชื่อที่ใช้บน socket (ยังใช้เหมือนเดิม)
   const username = nameParam || "User_" + Math.floor(Math.random() * 1000);
 
-  const { connected, messages: socketMessages, sendText: sendSocketText, startTyping, othersTyping } =
-    useSocketRoom(roomId, username);
+  const {
+    connected,
+    messages: socketMessages,
+    sendText: sendSocketText,
+    startTyping,
+    othersTyping,
+  } = useSocketRoom(roomId, username);
+
+  // ===== ดึงข้อมูล "คนที่เราคุยด้วย" เพื่อเอารูปมาโชว์ =====
+  const [partner, setPartner] = useState<ChatPartner | null>(null);
+
+  useEffect(() => {
+    const fetchPartner = async () => {
+      try {
+        if (!token) return;
+
+        // ลูกค้า -> เซลล์ : ดึงจาก /customers/my-sale
+        if (user?.role === "CUSTOMER") {
+          const res = await fetch(`${API_BASE_URL}/customers/my-sale`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) {
+            console.log("my-sale error:", res.status);
+            return;
+          }
+          const data = await res.json(); // { customerId, customerName, sale: { id, name, img, ... } | null }
+          if (data.sale) {
+            setPartner({
+              name: data.sale.name || "Sale",
+              avatarUrl: data.sale.img ?? null,
+            });
+          }
+        }
+        // เซลล์ -> ลูกค้า : มี customerIdParam แล้ว ไปดึง customer detail
+        else if (user?.role === "SALE" && customerIdParam) {
+          const res = await fetch(
+            `${API_BASE_URL}/customers/${customerIdParam}`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          if (!res.ok) {
+            console.log("customer detail error:", res.status);
+            return;
+          }
+          const c = await res.json(); // { id, name, img, ... }
+          setPartner({
+            name: c.name || `Customer #${c.id}`,
+            avatarUrl: c.img ?? null,
+          });
+        } else {
+          setPartner(null);
+        }
+      } catch (err) {
+        console.error("fetchPartner error:", err);
+      }
+    };
+
+    fetchPartner();
+  }, [token, user?.role, customerIdParam]);
+
+  // ===== โหลดประวัติแชทเก่าจาก DB =====
+  const [historyMessages, setHistoryMessages] = useState<Msg[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchHistory = async () => {
+      try {
+        setLoadingHistory(true);
+
+        const res = await fetch(
+          `${API_BASE_URL}/chat/room/${encodeURIComponent(
+            roomId
+          )}?pageSize=200`,
+          {
+            headers: {
+              Authorization: token ? `Bearer ${token}` : "",
+            },
+          }
+        );
+
+        if (!res.ok) {
+          console.log("fetch history error:", res.status);
+          return;
+        }
+
+        const json = await res.json();
+
+        const arr = Array.isArray(json)
+          ? json
+          : Array.isArray(json.data)
+          ? json.data
+          : [];
+
+        const mapped: Msg[] = arr.map((m: any) => ({
+          id: String(m.id),
+          fromMe: m.senderName === username,
+          type: "text",
+          text: m.text,
+          time: formatClock(new Date(m.createdAt)),
+          cid: m.cid ?? undefined,
+        }));
+
+        if (!cancelled) {
+          setHistoryMessages(mapped);
+        }
+      } catch (err) {
+        console.error("fetchHistory error:", err);
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    };
+
+    fetchHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, token, username]);
+
+    // ===== mark ห้องนี้ว่าอ่านแล้ว =====
+  useEffect(() => {
+    // ต้องเป็นห้องลูกค้าเท่านั้นถึงจะมี customerIdParam
+    if (!token || !customerIdParam) return;
+
+    const markRead = async () => {
+      try {
+        await fetch(`${API_BASE_URL}/chat/mark-read`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ customerId: customerIdParam }),
+        });
+      } catch (err) {
+        console.error("markRoomAsRead error:", err);
+      }
+    };
+
+    markRead();
+  }, [token, customerIdParam]);
+
 
   // ===== Voice recording (UI only) =====
   const [isRecording, setIsRecording] = useState(false);
@@ -118,8 +289,8 @@ export default function ChatDetailScreen() {
   }, [socketMessages, username]);
 
   const mergedMessages: Msg[] = useMemo(
-    () => [...textMsgs, ...localAudio, ...localTextBuf],
-    [textMsgs, localAudio, localTextBuf]
+    () => [...historyMessages, ...textMsgs, ...localAudio, ...localTextBuf],
+    [historyMessages, textMsgs, localAudio, localTextBuf]
   );
 
   const [input, setInput] = useState("");
@@ -138,7 +309,6 @@ export default function ChatDetailScreen() {
 
     const cid = generateCid();
 
-    // temp bubble ฝั่ง client
     setLocalTextBuf((prev) => [
       ...prev,
       {
@@ -151,7 +321,6 @@ export default function ChatDetailScreen() {
       },
     ]);
 
-    // ส่งไปที่ WS server (จะ broadcast กลับมาพร้อม cid ตัวเดิม)
     sendSocketText(t, cid);
     setInput("");
   };
@@ -169,7 +338,9 @@ export default function ChatDetailScreen() {
           {item.type === "text" ? (
             <>
               <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
-              <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
+              <Text className={`${subColor} text-[10px] mt-1`}>
+                {item.time}
+              </Text>
             </>
           ) : (
             <>
@@ -179,16 +350,24 @@ export default function ChatDetailScreen() {
                     isMe ? "bg-emerald-700" : "bg-gray-200"
                   } items-center justify-center mr-2`}
                 >
-                  <Ionicons name="play" size={16} color={isMe ? "#ffffff" : "#111827"} />
+                  <Ionicons
+                    name="play"
+                    size={16}
+                    color={isMe ? "#ffffff" : "#111827"}
+                  />
                 </View>
                 <View className="flex-1">
-                  <Text className={`${textColor} text-[15px]`}>Voice message</Text>
+                  <Text className={`${textColor} text-[15px]`}>
+                    Voice message
+                  </Text>
                   <Text className={`${subColor} text-[11px]`}>
                     {formatDuration((item as any).durationSec)}
                   </Text>
                 </View>
               </View>
-              <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
+              <Text className={`${subColor} text-[10px] mt-1`}>
+                {item.time}
+              </Text>
             </>
           )}
         </View>
@@ -204,20 +383,39 @@ export default function ChatDetailScreen() {
             <Ionicons name="chevron-back" size={24} color="#111827" />
           </Pressable>
         </Link>
-        <View className="flex-1">
-          <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
-            {nameParam ?? "Chat"}
-          </Text>
-          <Text className="text-xs text-gray-500">
-            ID: {roomId} · {connected ? "🟢 Online" : "🔴 Offline"}
-          </Text>
+
+        {/* avatar + ชื่อคู่สนทนา */}
+        <View className="flex-row flex-1 items-center">
+          {partner?.avatarUrl ? (
+            <Image
+              source={{ uri: partner.avatarUrl }}
+              className="w-9 h-9 rounded-full mr-3"
+            />
+          ) : (
+            <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
+              <Ionicons name="person" size={20} color="#047857" />
+            </View>
+          )}
+
+          <View className="flex-1">
+            <Text
+              className="text-base font-semibold text-gray-900"
+              numberOfLines={1}
+            >
+              {partner?.name ?? nameParam ?? "Chat"}
+            </Text>
+            <Text className="text-xs text-gray-500">
+              ID: {roomId} · {connected ? "🟢 Online" : "🔴 Offline"}
+            </Text>
+          </View>
         </View>
+
         <Pressable className="pl-3" onPress={() => {}}>
           <Ionicons name="call-outline" size={20} color="#047857" />
         </Pressable>
       </View>
     ),
-    [roomId, nameParam, connected]
+    [roomId, nameParam, connected, partner]
   );
 
   return (
@@ -230,6 +428,15 @@ export default function ChatDetailScreen() {
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ padding: 12 }}
         renderItem={renderMessage}
+        ListEmptyComponent={
+          loadingHistory ? (
+            <View className="py-8 items-center">
+              <Text className="text-xs text-gray-400">
+                กำลังโหลดประวัติแชท...
+              </Text>
+            </View>
+          ) : null
+        }
       />
 
       {othersTyping.length > 0 && (
@@ -240,7 +447,6 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
-      {/* Recording banner */}
       {isRecording && (
         <View className="px-3 py-2 bg-rose-50 border-t border-rose-200">
           <View className="flex-row items-center">
@@ -256,11 +462,17 @@ export default function ChatDetailScreen() {
               </Text>
             </View>
 
-            <Pressable className="px-3 py-2 rounded-xl bg-rose-100 mr-2" onPress={cancelRecording}>
+            <Pressable
+              className="px-3 py-2 rounded-xl bg-rose-100 mr-2"
+              onPress={cancelRecording}
+            >
               <Ionicons name="trash-outline" size={18} color="#be123c" />
             </Pressable>
 
-            <Pressable className="px-3 py-2 rounded-xl bg-emerald-600" onPress={stopAndSend}>
+            <Pressable
+              className="px-3 py-2 rounded-xl bg-emerald-600"
+              onPress={stopAndSend}
+            >
               <View className="flex-row items-center">
                 <Ionicons name="stop" size={14} color="#ffffff" />
                 <Text className="text-white ml-2">Stop</Text>
@@ -316,7 +528,11 @@ export default function ChatDetailScreen() {
               delayLongPress={120}
               style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
             >
-              <Ionicons name="mic" size={20} color={isRecording ? "#be123c" : "#6B7280"} />
+              <Ionicons
+                name="mic"
+                size={20}
+                color={isRecording ? "#be123c" : "#6B7280"}
+              />
             </Pressable>
           )}
         </View>

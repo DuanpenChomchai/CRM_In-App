@@ -2,10 +2,10 @@
 CREATE TYPE "Role" AS ENUM ('CUSTOMER', 'SALE', 'MANAGER', 'ADMIN');
 
 -- CreateEnum
-CREATE TYPE "KpiStage" AS ENUM ('COMMUNICATIONS', 'CONTACTED', 'QUOTATION', 'NEGOTIATION', 'CLOSED_DEAL');
+CREATE TYPE "CallDirection" AS ENUM ('CUSTOMER_TO_SALE', 'SALE_TO_CUSTOMER');
 
 -- CreateEnum
-CREATE TYPE "KpiMetric" AS ENUM ('TIME_TO_FIRST_CONTACT', 'TIME_IN_STAGE', 'TIME_TO_QUOTATION', 'TIME_TO_CLOSE', 'RESPONSE_TIME', 'CUSTOM');
+CREATE TYPE "CallStatus" AS ENUM ('RINGING', 'ONGOING', 'COMPLETED', 'MISSED', 'REJECTED', 'CANCELED');
 
 -- CreateTable
 CREATE TABLE "User" (
@@ -41,9 +41,12 @@ CREATE TABLE "Customer" (
     "name" TEXT NOT NULL,
     "tol" TEXT,
     "email" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
     "img" TEXT,
+    "password" TEXT,
+    "productType" TEXT,
+    "priceBudget" DECIMAL(12,2),
     "userId" INTEGER,
+    "saleId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -58,6 +61,7 @@ CREATE TABLE "Communications" (
     "voiceNote" TEXT,
     "customerId" INTEGER NOT NULL,
     "userId" INTEGER,
+    "callId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -144,25 +148,39 @@ CREATE TABLE "ClosedDeal" (
 );
 
 -- CreateTable
-CREATE TABLE "KPITracking" (
+CREATE TABLE "Call" (
     "id" SERIAL NOT NULL,
-    "stage" "KpiStage" NOT NULL,
-    "metric" "KpiMetric" NOT NULL,
+    "customerId" INTEGER,
+    "saleUserId" INTEGER,
+    "customerUserId" INTEGER,
+    "direction" "CallDirection" NOT NULL,
+    "status" "CallStatus" NOT NULL,
     "startedAt" TIMESTAMP(3) NOT NULL,
     "endedAt" TIMESTAMP(3),
-    "valueSeconds" INTEGER,
-    "targetSeconds" INTEGER,
-    "breached" BOOLEAN NOT NULL DEFAULT false,
+    "durationSec" INTEGER,
+    "recordingKey" TEXT,
+    "recordingDurationSec" INTEGER,
+    "transcript" TEXT,
     "note" TEXT,
-    "customerId" INTEGER NOT NULL,
-    "quotationId" INTEGER,
-    "negotiationId" INTEGER,
-    "closedDealId" INTEGER,
-    "userId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "KPITracking_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Call_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ChatMessage" (
+    "id" SERIAL NOT NULL,
+    "roomId" TEXT NOT NULL,
+    "text" TEXT NOT NULL,
+    "senderName" TEXT NOT NULL,
+    "cid" TEXT,
+    "customerId" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "readByCustomerAt" TIMESTAMP(3),
+    "readBySaleAt" TIMESTAMP(3),
+
+    CONSTRAINT "ChatMessage_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -178,10 +196,16 @@ CREATE UNIQUE INDEX "Customer_email_key" ON "Customer"("email");
 CREATE INDEX "Customer_userId_idx" ON "Customer"("userId");
 
 -- CreateIndex
+CREATE INDEX "Customer_saleId_idx" ON "Customer"("saleId");
+
+-- CreateIndex
 CREATE INDEX "Communications_customerId_idx" ON "Communications"("customerId");
 
 -- CreateIndex
 CREATE INDEX "Communications_userId_idx" ON "Communications"("userId");
+
+-- CreateIndex
+CREATE INDEX "Communications_callId_idx" ON "Communications"("callId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Contacted_customerId_key" ON "Contacted"("customerId");
@@ -217,34 +241,37 @@ CREATE INDEX "ClosedDeal_userId_idx" ON "ClosedDeal"("userId");
 CREATE INDEX "ClosedDeal_closingDate_idx" ON "ClosedDeal"("closingDate");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_customerId_idx" ON "KPITracking"("customerId");
+CREATE INDEX "Call_customerId_idx" ON "Call"("customerId");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_quotationId_idx" ON "KPITracking"("quotationId");
+CREATE INDEX "Call_saleUserId_idx" ON "Call"("saleUserId");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_negotiationId_idx" ON "KPITracking"("negotiationId");
+CREATE INDEX "Call_customerUserId_idx" ON "Call"("customerUserId");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_closedDealId_idx" ON "KPITracking"("closedDealId");
+CREATE INDEX "Call_startedAt_idx" ON "Call"("startedAt");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_userId_idx" ON "KPITracking"("userId");
+CREATE INDEX "ChatMessage_roomId_createdAt_idx" ON "ChatMessage"("roomId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "KPITracking_stage_metric_idx" ON "KPITracking"("stage", "metric");
-
--- CreateIndex
-CREATE INDEX "KPITracking_startedAt_idx" ON "KPITracking"("startedAt");
+CREATE INDEX "ChatMessage_customerId_createdAt_idx" ON "ChatMessage"("customerId", "createdAt");
 
 -- AddForeignKey
 ALTER TABLE "Customer" ADD CONSTRAINT "Customer_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Customer" ADD CONSTRAINT "Customer_saleId_fkey" FOREIGN KEY ("saleId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Communications" ADD CONSTRAINT "Communications_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Communications" ADD CONSTRAINT "Communications_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Communications" ADD CONSTRAINT "Communications_callId_fkey" FOREIGN KEY ("callId") REFERENCES "Call"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Contacted" ADD CONSTRAINT "Contacted_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -268,16 +295,13 @@ ALTER TABLE "ClosedDeal" ADD CONSTRAINT "ClosedDeal_customerId_fkey" FOREIGN KEY
 ALTER TABLE "ClosedDeal" ADD CONSTRAINT "ClosedDeal_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KPITracking" ADD CONSTRAINT "KPITracking_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Call" ADD CONSTRAINT "Call_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KPITracking" ADD CONSTRAINT "KPITracking_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "Quotation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Call" ADD CONSTRAINT "Call_saleUserId_fkey" FOREIGN KEY ("saleUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KPITracking" ADD CONSTRAINT "KPITracking_negotiationId_fkey" FOREIGN KEY ("negotiationId") REFERENCES "Negotiation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Call" ADD CONSTRAINT "Call_customerUserId_fkey" FOREIGN KEY ("customerUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "KPITracking" ADD CONSTRAINT "KPITracking_closedDealId_fkey" FOREIGN KEY ("closedDealId") REFERENCES "ClosedDeal"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "KPITracking" ADD CONSTRAINT "KPITracking_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;

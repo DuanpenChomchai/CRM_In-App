@@ -1,4 +1,4 @@
-// app/(screens)/chats.tsx  หรือไฟล์หน้ารายการแชทของคุณ
+// src/app/(screens)/all-chat.tsx (หรือไฟล์ ChatsScreen.tsx ของคุณ)
 
 import React, { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, router, Href } from "expo-router";
-import { getSocket } from "../store/socket";
-import { useAuthStore } from "../store/useAuthStore";
+import { getSocket, setSocketAuth } from "../../store/socket";
+import { useAuthStore } from "../../store/useAuthStore";
 
 type ChatItem = {
   id: string;
@@ -21,29 +21,39 @@ type ChatItem = {
   time: string;
   customerId?: number;
   isSaleChat?: boolean;
+  unreadCount?: number;
 };
 
-const baseRooms: ChatItem[] = [
-  { id: "general", name: "General", time: "Now" },
-  { id: "dev", name: "Developers", time: "Now" },
-  { id: "sales", name: "Sales Team", time: "Now" },
-];
+type WsUnreadPayload = {
+  roomId: string;
+  customerUnread: number;
+  saleUnread: number;
+};
 
 // ✅ ใช้ได้ทั้ง emulator และมือถือจริง
 const HOST: string = Platform.select<string>({
   ios: "http://localhost:3000",
   android: "http://10.0.2.2:3000",
-  default: "http://10.222.113.26:3000", // 👉 เปลี่ยนเป็น IP เครื่องคอมของตัวเองเวลาใช้มือถือจริง
+  default: "http://10.222.113.26:3000",
 })!;
 const API_BASE_URL = `${HOST}/api`;
 
 export default function ChatsScreen() {
-  const socket = getSocket();
+  const { user, token } = useAuthStore();
+
+  // ส่ง token + role + userId เข้า socket (ใช้ตอน server เซฟ readBy อะไรพวกนี้)
+  useEffect(() => {
+    setSocketAuth({
+      token: token,
+      role: user?.role ?? null,
+      userId: user?.id ?? null,
+    });
+  }, [token, user?.role, user?.id]);
+
+  const socket = useMemo(getSocket, []);
   const [connected, setConnected] = useState<boolean>(socket.connected);
   const [query, setQuery] = useState("");
   const [customRoomName, setCustomRoomName] = useState("");
-
-  const { user, token } = useAuthStore();
 
   // CUSTOMER: ห้องแชทกับเซลล์ที่ถูก assign ให้เรา
   const [saleChat, setSaleChat] = useState<ChatItem | null>(null);
@@ -73,7 +83,7 @@ export default function ChatsScreen() {
         }
 
         const data = await res.json();
-        // data: { customerId, customerName, sale: { id, name, ... } | null }
+        // data: { customerId, customerName, sale: { id, name, ... } | null, unreadCount }
 
         if (data.sale) {
           setSaleChat({
@@ -82,6 +92,7 @@ export default function ChatsScreen() {
             name: data.sale.name || "Sale",
             time: "Now",
             isSaleChat: true,
+            unreadCount: data.unreadCount ?? 0,
           });
         } else {
           setSaleChat(null);
@@ -116,12 +127,14 @@ export default function ChatsScreen() {
         }
 
         const data = await res.json();
+        // data: [{ id, name, email, unreadCount }, ...]
 
         const mapped: ChatItem[] = data.map((c: any) => ({
           id: `cust:${c.id}`,
           customerId: c.id,
           name: c.name || `Customer #${c.id}`,
           time: "Now",
+          unreadCount: c.unreadCount ?? 0,
         }));
 
         setSaleRooms(mapped);
@@ -135,6 +148,34 @@ export default function ChatsScreen() {
     fetchSaleRooms();
   }, [token, user?.role, user?.id]);
 
+  // ===== ฟัง unread-count จาก WebSocket แล้วอัปเดต badge =====
+  useEffect(() => {
+    const handleUnread = (payload: WsUnreadPayload) => {
+      if (!user?.role) return;
+
+      if (user.role === "CUSTOMER") {
+        setSaleChat((prev) => {
+          if (!prev) return prev;
+          if (prev.id !== payload.roomId) return prev;
+          return { ...prev, unreadCount: payload.customerUnread };
+        });
+      } else if (user.role === "SALE") {
+        setSaleRooms((prev) =>
+          prev.map((room) =>
+            room.id === payload.roomId
+              ? { ...room, unreadCount: payload.saleUnread }
+              : room
+          )
+        );
+      }
+    };
+
+    socket.on("unread-count", handleUnread);
+    return () => {
+      socket.off("unread-count", handleUnread);
+    };
+  }, [socket, user?.role]);
+
   // ===== รวมรายการห้อง =====
   const allRooms = useMemo<ChatItem[]>(() => {
     const rooms: ChatItem[] = [];
@@ -146,8 +187,6 @@ export default function ChatsScreen() {
     if (user?.role === "SALE" && saleRooms.length > 0) {
       rooms.push(...saleRooms);
     }
-
-    rooms.push(...baseRooms);
 
     return rooms;
   }, [user?.role, saleChat, saleRooms]);
@@ -179,7 +218,6 @@ export default function ChatsScreen() {
 
   // ===== เวลาแตะห้องแต่ละอัน =====
   const renderItem = ({ item }: { item: ChatItem }) => {
-    // ใช้ object Href ให้ตรงกับ type ของ expo-router
     const href: Href =
       item.customerId != null
         ? {
@@ -225,7 +263,20 @@ export default function ChatsScreen() {
               )}
             </View>
 
-            <Text className="text-xs text-gray-500">{item.time}</Text>
+            {/* เวลา + badge */}
+            <View className="items-end">
+              <Text className="text-xs text-gray-500 mb-1">
+                {item.time}
+              </Text>
+
+              {item.unreadCount !== undefined && item.unreadCount > 0 && (
+                <View className="min-w-[20px] px-1.5 h-5 rounded-full bg-red-500 items-center justify-center">
+                  <Text className="text-[11px] text-white font-semibold">
+                    {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </Pressable>
       </Link>
@@ -251,7 +302,7 @@ export default function ChatsScreen() {
     });
   };
 
-  // ห่อ header ทั้งหมดด้วย View เดียว เพื่อใช้ stickyHeaderIndices
+  // Header ทั้งหมด
   const ListHeader = (
     <View>
       <View className="flex-row items-center px-4 bg-white pt-2">

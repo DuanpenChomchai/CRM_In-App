@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { Prisma } from "@prisma/client";
 
-// ---------- เพิ่ม type สำหรับ req.user ----------
+// ---------- Types สำหรับ req.user ----------
 interface AuthUser {
   id: number;
   email: string;
@@ -90,10 +90,11 @@ export const getNewCustomers = async (req: Request, res: Response) => {
 };
 
 /**
- * ดึงลูกค้าตามเซลล์
+ * ดึงลูกค้าตามเซลล์ + unreadCount (ฝั่งเซลล์ใช้กับ list แชท)
  * GET /api/customers/sale/:saleId
+ * response: [{ id, name, email, unreadCount }, ...]
  */
-export const getCustomersBySale = async (req: Request, res: Response) => {
+export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
   try {
     const saleId = Number(req.params.saleId);
     if (Number.isNaN(saleId)) {
@@ -102,34 +103,37 @@ export const getCustomersBySale = async (req: Request, res: Response) => {
 
     console.log("getCustomersBySale saleId =", saleId);
 
+    // ดึง list ลูกค้าที่ saleId นี้ดูแล
     const customers = await prisma.customer.findMany({
       where: { saleId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            tol: true,
-            img: true,
-            role: true,
-          },
-        },
-        sale: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            tol: true,
-            img: true,
-            role: true,
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        email: true,
       },
       orderBy: { createdAt: "desc" },
     });
 
-    return res.json(customers);
+    // เติม unreadCount (ข้อความที่ "เซลล์" ยังไม่อ่าน readBySaleAt = null)
+    const enriched = await Promise.all(
+      customers.map(async (c) => {
+        const unreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: c.id,
+            readBySaleAt: null,
+          },
+        });
+
+        return {
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          unreadCount,
+        };
+      })
+    );
+
+    return res.json(enriched);
   } catch (err) {
     console.error("getCustomersBySale error:", err);
     return res
@@ -379,8 +383,9 @@ export const deleteCustomer = async (req: Request, res: Response) => {
 };
 
 /**
- * ดึง "เซลล์ที่ดูแลลูกค้าคนนี้" จาก user ที่ล็อกอิน (ฝั่งแอป)
+ * ดึง "เซลล์ที่ดูแลลูกค้าที่ล็อกอิน" + unreadCount ฝั่งลูกค้า
  * GET /api/customers/my-sale
+ * ใช้ในแอป role=CUSTOMER (หน้า ChatsScreen)
  */
 export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
   try {
@@ -394,25 +399,16 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
 
     const customer = await prisma.customer.findFirst({
       where: { userId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            tol: true,
-            img: true,
-            role: true,
-          },
-        },
+      select: {
+        id: true,
+        name: true,
         sale: {
           select: {
             id: true,
             name: true,
+            img: true,
             email: true,
             tol: true,
-            img: true,
-            role: true,
           },
         },
       },
@@ -424,10 +420,19 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
     }
 
+    // นับจำนวนข้อความที่ "ลูกค้า" ยังไม่อ่าน (readByCustomerAt = null)
+    const unreadCount = await prisma.chatMessage.count({
+      where: {
+        customerId: customer.id,
+        readByCustomerAt: null,
+      },
+    });
+
     return res.json({
       customerId: customer.id,
       customerName: customer.name,
       sale: customer.sale,
+      unreadCount, // 👈 ตัวนี้แหละที่จะไปโชว์ badge
     });
   } catch (error) {
     console.error("getMyAssignedSale error:", error);

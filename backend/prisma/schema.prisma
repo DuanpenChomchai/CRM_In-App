@@ -3,7 +3,7 @@
 // ===========================================================
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url = env("DATABASE_URL")
 }
 
 generator client {
@@ -20,23 +20,6 @@ enum Role {
   ADMIN
 }
 
-enum KpiStage {
-  COMMUNICATIONS
-  CONTACTED
-  QUOTATION
-  NEGOTIATION
-  CLOSED_DEAL
-}
-
-enum KpiMetric {
-  TIME_TO_FIRST_CONTACT
-  TIME_IN_STAGE
-  TIME_TO_QUOTATION
-  TIME_TO_CLOSE
-  RESPONSE_TIME
-  CUSTOM
-}
-
 // ======= สำหรับการโทร =======
 enum CallDirection {
   CUSTOMER_TO_SALE
@@ -44,12 +27,12 @@ enum CallDirection {
 }
 
 enum CallStatus {
-  RINGING     // กำลังเรียก
-  ONGOING     // กำลังคุย
-  COMPLETED   // คุยจบปกติ
-  MISSED      // ไม่รับสาย
-  REJECTED    // กดตัดสาย
-  CANCELED    // ผู้โทรยกเลิก
+  RINGING
+  ONGOING
+  COMPLETED
+  MISSED
+  REJECTED
+  CANCELED
 }
 
 // ===========================================================
@@ -64,20 +47,13 @@ model User {
   img      String?
   role     Role    @default(CUSTOMER)
 
-  // ลูกค้าที่ user นี้เป็นเจ้าของ (สมัครจากแอป)
-  customers Customer[]              @relation("CustomerOwner")
+  customers       Customer[]              @relation("CustomerOwner")
+  salesCustomers  Customer[]              @relation("SaleCustomers")
+  closedDeals     ClosedDeal[]
+  communications  Communications[]
 
-  // ลูกค้าที่ user นี้เป็นเซลล์ดูแล
-  salesCustomers Customer[]         @relation("SaleCustomers")
-
-  // ความสัมพันธ์อื่น ๆ
-  closedDeals    ClosedDeal[]
-  communications Communications[]
-  KPITracking    KPITracking[]
-
-  // การโทร (ฝั่งเซลล์ / ฝั่งลูกค้า)
-  saleCalls     Call[] @relation("SaleCallUser")       // user นี้เป็นเซลล์ที่โทร
-  customerCalls Call[] @relation("CustomerCallUser")   // user นี้เป็นลูกค้าที่โทร/รับสาย
+  saleCalls       Call[] @relation("SaleCallUser")
+  customerCalls   Call[] @relation("CustomerCallUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -87,11 +63,11 @@ model User {
 // PRODUCT
 // ===========================================================
 model Product {
-  id       Int      @id @default(autoincrement())
-  name     String
-  price    Decimal  @db.Decimal(12, 2)
-  property String?
-  img      String?
+  id        Int      @id @default(autoincrement())
+  name      String
+  price     Decimal  @db.Decimal(12, 2)
+  property  String?
+  img       String?
 
   proposals Proposal[]
 
@@ -100,38 +76,33 @@ model Product {
 }
 
 // ===========================================================
-// CUSTOMER (ตัวจริงของ CRM)
+// CUSTOMER
 // ===========================================================
 model Customer {
-  id       Int     @id @default(autoincrement())
-  name     String
-  tol      String?
-  email    String  @unique
-  img      String?
-  password String?
+  id        Int     @id @default(autoincrement())
+  name      String
+  tol       String?
+  email     String  @unique
+  img       String?
+  password  String?
 
-  // --- Preferred Product Info ---
-  productType String?                     // ประเภทของสินค้า เช่น บ้านเดี่ยว คอนโด ฯลฯ
-  priceBudget Decimal? @db.Decimal(12, 2) // งบประมาณ/ช่วงราคาที่สนใจ
+  productType String?
+  priceBudget Decimal? @db.Decimal(12, 2)
 
-  // --- Owner (User role=CUSTOMER) ---
   userId Int?
-  user   User?      @relation("CustomerOwner", fields: [userId], references: [id])
+  user   User? @relation("CustomerOwner", fields: [userId], references: [id])
 
-  // --- Assigned Sale ---
   saleId Int?
-  sale   User?      @relation("SaleCustomers", fields: [saleId], references: [id])
+  sale   User? @relation("SaleCustomers", fields: [saleId], references: [id])
 
-  // --- Related Stages ---
   communications Communications[]
   contacted      Contacted?
   quotations     Quotation[]
   negotiations   Negotiation[]
   closedDeals    ClosedDeal[]
-  KPITracking    KPITracking[]
 
-  // การโทรทั้งหมดของลูกค้าคนนี้
-  calls Call[]
+  calls          Call[]
+  chatMessages   ChatMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -141,7 +112,7 @@ model Customer {
 }
 
 // ===========================================================
-// COMMUNICATIONS (โทร/แชท/วอยซ์โน้ต)
+// COMMUNICATIONS
 // ===========================================================
 model Communications {
   id        Int     @id @default(autoincrement())
@@ -155,7 +126,6 @@ model Communications {
   userId Int?
   user   User?       @relation(fields: [userId], references: [id])
 
-  // ผูกกับสายโทร (ถ้า event นี้เกิดใน context ของ Call)
   callId Int?
   call   Call?       @relation(fields: [callId], references: [id])
 
@@ -168,7 +138,7 @@ model Communications {
 }
 
 // ===========================================================
-// CONTACTED (สเตจ CONTACTED)
+// CONTACTED
 // ===========================================================
 model Contacted {
   id        Int      @id @default(autoincrement())
@@ -186,7 +156,7 @@ model Contacted {
 }
 
 // ===========================================================
-// QUOTATION (ใบเสนอราคา)
+// QUOTATION
 // ===========================================================
 model Quotation {
   id              Int      @id @default(autoincrement())
@@ -200,8 +170,8 @@ model Quotation {
 
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
+
   proposals  Proposal[]
-  KPITracking KPITracking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -211,7 +181,7 @@ model Quotation {
 }
 
 // ===========================================================
-// PROPOSAL (รายการข้อเสนอ)
+// PROPOSAL
 // ===========================================================
 model Proposal {
   id           Int      @id @default(autoincrement())
@@ -233,7 +203,7 @@ model Proposal {
 }
 
 // ===========================================================
-// NEGOTIATION (ต่อรองราคา)
+// NEGOTIATION
 // ===========================================================
 model Negotiation {
   id        Int      @id @default(autoincrement())
@@ -244,7 +214,6 @@ model Negotiation {
 
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
-  KPITracking KPITracking[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -254,7 +223,7 @@ model Negotiation {
 }
 
 // ===========================================================
-// CLOSED DEAL (ปิดดีล)
+// CLOSED DEAL
 // ===========================================================
 model ClosedDeal {
   id          Int      @id @default(autoincrement())
@@ -271,9 +240,7 @@ model ClosedDeal {
   customer   Customer @relation(fields: [customerId], references: [id])
 
   userId Int?
-  user   User?       @relation(fields: [userId], references: [id])
-
-  KPITracking KPITracking[]
+  user   User? @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -284,87 +251,59 @@ model ClosedDeal {
 }
 
 // ===========================================================
-// KPI TRACKING
+// CALL (ประวัติการโทร)
 // ===========================================================
-model KPITracking {
-  id Int @id @default(autoincrement())
+model Call {
+  id                Int      @id @default(autoincrement())
+  customerId        Int?
+  customer          Customer? @relation(fields: [customerId], references: [id])
 
-  stage  KpiStage
-  metric KpiMetric
+  saleUserId        Int?
+  saleUser          User? @relation("SaleCallUser", fields: [saleUserId], references: [id])
 
-  startedAt     DateTime
-  endedAt       DateTime?
-  valueSeconds  Int?
-  targetSeconds Int?
-  breached      Boolean @default(false)
-  note          String?
+  customerUserId    Int?
+  customerUser      User? @relation("CustomerCallUser", fields: [customerUserId], references: [id])
 
-  customerId Int
-  customer   Customer @relation(fields: [customerId], references: [id])
+  direction         CallDirection
+  status            CallStatus
 
-  quotationId Int?
-  quotation   Quotation? @relation(fields: [quotationId], references: [id])
+  startedAt         DateTime
+  endedAt           DateTime?
+  durationSec       Int?
 
-  negotiationId Int?
-  negotiation   Negotiation? @relation(fields: [negotiationId], references: [id])
+  recordingKey         String?
+  recordingDurationSec Int?
+  transcript           String?
+  note                 String?
 
-  closedDealId Int?
-  closedDeal   ClosedDeal? @relation(fields: [closedDealId], references: [id])
-
-  userId Int?
-  user   User? @relation(fields: [userId], references: [id])
+  communications    Communications[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([customerId])
-  @@index([quotationId])
-  @@index([negotiationId])
-  @@index([closedDealId])
-  @@index([userId])
-  @@index([stage, metric])
+  @@index([saleUserId])
+  @@index([customerUserId])
   @@index([startedAt])
 }
 
 // ===========================================================
-// CALL (ประวัติการโทร + ไฟล์เสียง)
+// CHAT MESSAGE (ประวัติการแชทจริง ๆ ของ WebSocket)
 // ===========================================================
-model Call {
+model ChatMessage {
   id          Int      @id @default(autoincrement())
-
-  // ผูกกับ Customer คนนี้ (อาจเป็น CRM customer record)
+  roomId      String
+  text        String
+  senderName  String
+  cid         String?
   customerId  Int?
+  createdAt   DateTime @default(now())
+
+  readByCustomerAt DateTime?
+  readBySaleAt     DateTime?
+
   customer    Customer? @relation(fields: [customerId], references: [id])
 
-  // ฝั่งเซลล์ (User ที่ role = SALE)
-  saleUserId  Int?
-  saleUser    User?    @relation("SaleCallUser", fields: [saleUserId], references: [id])
-
-  // ฝั่งลูกค้า (User ที่ role = CUSTOMER ถ้ามี user login)
-  customerUserId Int?
-  customerUser   User? @relation("CustomerCallUser", fields: [customerUserId], references: [id])
-
-  direction   CallDirection
-  status      CallStatus
-
-  startedAt   DateTime
-  endedAt     DateTime?
-  durationSec Int?
-
-  // ข้อมูลไฟล์เสียง (เก็บ key/object name ใน MinIO)
-  recordingKey         String?  // เช่น "calls/2025/11/xxx.m4a"
-  recordingDurationSec Int?
-  transcript           String?  // ถ้ามีการทำ speech-to-text
-  note                 String?
-
-  // communications ที่อยู่ใน context ของสายนี้
-  communications Communications[]
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([customerId])
-  @@index([saleUserId])
-  @@index([customerUserId])
-  @@index([startedAt])
+  @@index([roomId, createdAt])
+  @@index([customerId, createdAt])
 }

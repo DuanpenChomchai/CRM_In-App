@@ -7,7 +7,8 @@ import { checkBucket } from "./config/minioclient";
 import { initWs } from "./ws";      
 import userRoutes from "./routes/user.route"; 
 import communicationRoutes from "./routes/communication.route"; 
-import customerRoutes from "./routes/customers.route"; 
+import customerRoutes from "./routes/customers.route";
+import chatMessageRoutes from "./routes/chatMessage.routes"; 
 
 
 function createWebSocketServer(app: express.Express) {
@@ -30,6 +31,7 @@ async function main() {
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes); 
+  app.use("/api/chat", chatMessageRoutes);
 
 
   console.log("SERVER START with JWT_SECRET =", process.env.JWT_SECRET ? "[SET]" : "[MISSING]");
