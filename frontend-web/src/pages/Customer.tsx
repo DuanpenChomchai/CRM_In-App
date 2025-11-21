@@ -129,37 +129,37 @@ const SalesProcess = () => {
 
   // =============== 1.5) โหลดรายชื่อเซลล์จาก DB ===============
   useEffect(() => {
-  const fetchSales = async () => {
-    try {
-      const token = localStorage.getItem("token");
+    const fetchSales = async () => {
+      try {
+        const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:3000/api/users/sales", {
-        headers: {
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-      });
+        const res = await fetch("http://localhost:3000/api/users/sales", {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+        });
 
-      if (!res.ok) {
-        throw new Error("ไม่สามารถดึงข้อมูลพนักงานขายได้");
+        if (!res.ok) {
+          throw new Error("ไม่สามารถดึงข้อมูลพนักงานขายได้");
+        }
+
+        const json = await res.json();
+        // json = { data: [...], page, pageSize, ... }
+
+        const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
+          id: u.id,
+          name: u.name,
+        }));
+
+        setSalesTeam(mapped);
+      } catch (err) {
+        console.error(err);
+        toast.error("โหลดรายชื่อพนักงานขายไม่สำเร็จ");
       }
+    };
 
-      const json = await res.json();
-      // json = { data: [...], page, pageSize, ... }
-
-      const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
-        id: u.id,
-        name: u.name,
-      }));
-
-      setSalesTeam(mapped);
-    } catch (err) {
-      console.error(err);
-      toast.error("โหลดรายชื่อพนักงานขายไม่สำเร็จ");
-    }
-  };
-
-  fetchSales();
-}, []);
+    fetchSales();
+  }, []);
 
   // =============== 2) connect WebSocket ฟังลูกค้าใหม่จากแอป ===============
   useEffect(() => {
@@ -192,7 +192,8 @@ const SalesProcess = () => {
     };
   }, []);
 
-  const newCustomers = customers.filter((c) => c.status === "new");
+  // ✅ ลูกค้าใหม่ = ยังไม่มีเซลล์ดูแล
+  const newCustomers = customers.filter((c) => !c.assignedTo);
 
   const filteredCustomers = customers.filter(
     (customer) =>
@@ -209,30 +210,21 @@ const SalesProcess = () => {
     }).format(value);
   };
 
-  const getStatusBadge = (status: Customer["status"]) => {
-    const statusConfig = {
-      new: {
-        label: "ใหม่",
-        className: "bg-blue-500",
-      },
-      contacted: {
-        label: "ติดต่อแล้ว",
-        className: "bg-yellow-500",
-      },
-      negotiating: {
-        label: "เจรจา",
-        className: "bg-purple-500",
-      },
-      closed: {
-        label: "ปิดการขาย",
-        className: "bg-green-500",
-      },
-    };
-    const config = statusConfig[status];
-    return <Badge className={config.className}>{config.label}</Badge>;
+  // ⭐ สถานะอิงจาก assignedTo จริง ๆ
+  const getStatusBadge = (assignedTo?: string) => {
+    if (!assignedTo) {
+      return <Badge className="bg-blue-500">ใหม่</Badge>;
+    }
+    return <Badge className="bg-yellow-500">กำลังติดต่อ</Badge>;
   };
 
-  // ✅ มอบหมายเซลล์: ยิงเข้า backend → backend ส่ง WS ไปให้ app 
+  const findSaleIdByName = (name?: string) => {
+    if (!name) return undefined;
+    const sale = salesTeam.find((s) => s.name === name);
+    return sale?.id;
+  };
+
+  // ✅ มอบหมายเซลล์: ยิงเข้า backend → backend ส่ง WS ไปให้ app
   const handleAssignSales = async (customerId: number, saleId: number) => {
     try {
       const token = localStorage.getItem("token");
@@ -274,36 +266,62 @@ const SalesProcess = () => {
     }
   };
 
-  const handleAddCustomer = () => {
+  // ✅ เพิ่มลูกค้าใหม่จากฝั่งเว็บ → POST /api/customers
+  const handleAddCustomer = async () => {
     if (!newCustomer.name || !newCustomer.phone || !newCustomer.email) {
       toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
 
-    const customer: Customer = {
-      id: customers.length ? customers[customers.length - 1].id + 1 : 1,
-      ...newCustomer,
-      status: "new",
-    };
+    try {
+      const token = localStorage.getItem("token");
 
-    setCustomers((prev) => [...prev, customer]);
-    setNewCustomer({
-      name: "",
-      phone: "",
-      email: "",
-    });
-    setIsAddDialogOpen(false);
-    toast.success("เพิ่มลูกค้าใหม่สำเร็จ (ยังไม่บันทึกเข้า backend)");
+      const res = await fetch("http://localhost:3000/api/customers", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({
+          name: newCustomer.name,
+          phone: newCustomer.phone,
+          email: newCustomer.email,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("create customer error:", body);
+        toast.error(body?.message || "เพิ่มลูกค้าใหม่ไม่สำเร็จ");
+        return;
+      }
+
+      const created = await res.json();
+      const mapped = mapApiCustomerToUi(created);
+
+      setCustomers((prev) => [mapped, ...prev]);
+      setNewCustomer({ name: "", phone: "", email: "" });
+      setIsAddDialogOpen(false);
+      toast.success("เพิ่มลูกค้าใหม่สำเร็จ");
+    } catch (err) {
+      console.error(err);
+      toast.error("เพิ่มลูกค้าใหม่ไม่สำเร็จ (network)");
+    }
   };
 
+  // ✅ แก้ไขลูกค้า → ยังทำงานฝั่ง frontend + เพิ่ม deal เข้า Pipeline ถ้าเป็นลูกค้าใหม่
   const handleUpdateCustomer = () => {
     if (!editCustomer) return;
 
-    const wasNew = editCustomer.status === "new";
+    // ลูกค้าใหม่ = ก่อนหน้านี้ยังไม่มีเซลล์
+    const wasNew = !editCustomer.assignedTo;
 
     const updatedCustomer: Customer = {
       ...editCustomer,
-      status: editCustomer.status === "new" ? "contacted" : editCustomer.status,
+      status:
+        editCustomer.status === "new"
+          ? "contacted"
+          : editCustomer.status,
     };
 
     setCustomers((prev) =>
@@ -612,7 +630,8 @@ const SalesProcess = () => {
               <div>
                 <Label>สถานะ</Label>
                 <div className="mt-2">
-                  {selectedCustomer && getStatusBadge(selectedCustomer.status)}
+                  {selectedCustomer &&
+                    getStatusBadge(selectedCustomer.status)}
                 </div>
               </div>
               <div>

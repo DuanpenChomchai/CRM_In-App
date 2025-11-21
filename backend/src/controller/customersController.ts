@@ -434,3 +434,6 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ message: "ดึงข้อมูลเซลล์ไม่สำเร็จ" });
   }
 };
+
+// ✅ alias ไว้ให้โค้ดเก่าเรียกใช้ชื่อเดิมได้
+export const getCustomers = getAllCustomers;

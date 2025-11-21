@@ -1,14 +1,13 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import http from "http";                     
+import http from "http";
 import authRoutes from "./routes/auth.route";
 import { checkBucket } from "./config/minioclient";
-import { initWs } from "./ws";      
-import userRoutes from "./routes/user.route"; 
-import communicationRoutes from "./routes/communication.route"; 
-import customerRoutes from "./routes/customers.route"; 
-
+import { initWs } from "./ws";
+import userRoutes from "./routes/user.route";
+import communicationRoutes from "./routes/communication.route";
+import customerRoutes from "./routes/customers.route";
 
 function createWebSocketServer(app: express.Express) {
   const server = http.createServer(app);
@@ -20,19 +19,29 @@ async function main() {
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
-  app.use(cors({ origin: "*", methods: ["GET","POST","PUT","DELETE","OPTIONS"] }));
+  app.use(
+    cors({
+      origin: "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    })
+  );
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
   app.get("/", (_req, res) => res.json({ ok: true }));
 
+  // routes หลักทั้งหมด
   app.use("/api", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
-  app.use("/api/customers", customerRoutes); 
+  app.use("/api/customers", customerRoutes);
 
-
-  console.log("SERVER START with JWT_SECRET =", process.env.JWT_SECRET ? "[SET]" : "[MISSING]");
+  console.log(
+    "SERVER START with JWT_SECRET =",
+    process.env.JWT_SECRET ? "[SET]" : "[MISSING]"
+  );
 
   try {
     await checkBucket();

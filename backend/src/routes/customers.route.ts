@@ -1,4 +1,4 @@
-// src/routes/customersRoutes.ts
+// src/routes/customers.route.ts (หรือ customersRoutes.ts)
 import { Router } from "express";
 import {
   getAllCustomers,

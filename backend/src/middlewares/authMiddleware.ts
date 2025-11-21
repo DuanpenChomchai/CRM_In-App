@@ -1,4 +1,3 @@
-// src/middlewares/authMiddleware.ts
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
@@ -6,11 +5,8 @@ export interface AuthRequest extends Request {
   user?: { id: number; email: string; role: string };
 }
 
-/**
- * ตรวจสอบ JWT ว่าถูกต้องไหม
- * (ตัวหลัก ใช้ชื่อเดิม = authMiddleware)
- */
-export const authMiddleware = (
+/** ตรวจ token พื้นฐาน */
+export const verifyToken = (
   req: AuthRequest,
   res: Response,
   next: NextFunction
@@ -41,12 +37,27 @@ export const authMiddleware = (
   }
 };
 
-// เผื่อจะใช้ชื่อ verifyToken ในไฟล์ใหม่ ๆ ก็ได้
-export const verifyToken = authMiddleware;
+/** alias ให้ชื่อเดิมยังใช้ได้ */
+export const authMiddleware = verifyToken;
 
-/**
- * ตรวจสอบ role ว่าต้องเป็น ADMIN เท่านั้น
- */
+/** ตรวจ role ว่าต้องเป็น 1 ใน roles ที่กำหนด */
+export const requireRoles =
+  (...roles: string[]) =>
+  (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: "กรุณาเข้าสู่ระบบก่อน" });
+    }
+
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        message: "สิทธิ์ไม่เพียงพอสำหรับการทำรายการนี้",
+      });
+    }
+
+    next();
+  };
+
+/** ตรวจว่าเป็น ADMIN เท่านั้น */
 export const verifyAdmin = (
   req: AuthRequest,
   res: Response,
@@ -63,24 +74,4 @@ export const verifyAdmin = (
   }
 
   next();
-};
-
-/**
- * ตรวจสอบว่า user ต้องมี Role ตามที่กำหนด
- * เช่น requireRoles("SALE", "MANAGER")
- */
-export const requireRoles = (...roles: string[]) => {
-  return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({ message: "กรุณาเข้าสู่ระบบก่อน" });
-    }
-
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({
-        message: `ต้องเป็นหนึ่งในสิทธิ์: ${roles.join(", ")}`,
-      });
-    }
-
-    next();
-  };
 };
