@@ -1,6 +1,7 @@
 // src/controller/chatMessageController.ts
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
+import { getIO } from "../ws";
 
 // ===== Types =====
 interface AuthUser {
@@ -208,6 +209,31 @@ export const getMyChatMessages = async (req: AuthRequest, res: Response) => {
  * CUSTOMER → mark readByCustomerAt
  * SALE → mark readBySaleAt
  */
+
+// ===== helper นับ unread ตาม role =====
+const countUnreadForCustomer = async (customerId: number) => {
+  return prisma.chatMessage.count({
+    where: {
+      customerId,
+      readByCustomerAt: null,
+    },
+  });
+};
+
+const countUnreadForSale = async (customerId: number) => {
+  return prisma.chatMessage.count({
+    where: {
+      customerId,
+      readBySaleAt: null,
+    },
+  });
+};
+
+/**
+ * POST /api/chat/mark-read
+ * body: { customerId: number }
+ * ใช้ได้ทั้งฝั่ง CUSTOMER และ SALE
+ */
 export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
   try {
     const authUser = req.user;
@@ -222,6 +248,7 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
 
     const now = new Date();
 
+    // ✅ อัปเดตฝั่งที่อ่าน ตาม role
     if (authUser.role === "CUSTOMER") {
       await prisma.chatMessage.updateMany({
         where: {
@@ -230,11 +257,7 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
         },
         data: { readByCustomerAt: now },
       });
-
-      return res.json({ customerId, role: "CUSTOMER" });
-    }
-
-    if (authUser.role === "SALE") {
+    } else if (authUser.role === "SALE") {
       await prisma.chatMessage.updateMany({
         where: {
           customerId,
@@ -242,14 +265,45 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
         },
         data: { readBySaleAt: now },
       });
-
-      return res.json({ customerId, role: "SALE" });
+    } else {
+      return res
+        .status(403)
+        .json({ message: "role นี้ยังไม่รองรับ mark-read" });
     }
 
-    return res.status(403).json({ message: "role ไม่รองรับ mark-read" });
+    // ✅ คำนวณ unread ใหม่ทั้งสองฝั่ง
+    const [customerUnread, saleUnread] = await Promise.all([
+      countUnreadForCustomer(customerId),
+      countUnreadForSale(customerId),
+    ]);
+
+    const roomId = `cust:${customerId}`;
+
+    // ✅ broadcast ผ่าน Socket.IO ให้ทั้งห้อง + ทุก role ที่เกี่ยว
+    try {
+      const io = getIO();
+      const payload = { roomId, customerUnread, saleUnread };
+
+      // คนที่ join ห้องนี้
+      io.to(roomId).emit("unread-count", payload);
+      // ทุก socket ที่เป็นลูกค้า
+      io.to("role:CUSTOMER").emit("unread-count", payload);
+      // ทุก socket ที่เป็นเซลล์
+      io.to("role:SALE").emit("unread-count", payload);
+    } catch (e) {
+      console.error("emit unread-count after mark-read error:", e);
+    }
+
+    return res.json({
+      customerId,
+      role: authUser.role,
+      customerUnread,
+      saleUnread,
+    });
   } catch (err) {
     console.error("markRoomAsRead error:", err);
-    return res.status(500).json({ message: "อัปเดตสถานะอ่านแชทไม่สำเร็จ" });
+    return res
+      .status(500)
+      .json({ message: "อัปเดตสถานะอ่านแชทไม่สำเร็จ" });
   }
 };
-

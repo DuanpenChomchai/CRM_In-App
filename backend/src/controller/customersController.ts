@@ -2,7 +2,7 @@
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { Prisma } from "@prisma/client";
-import { io } from "../socket";   
+import { getIO } from "../ws";
 
 // ---------- Types ----------
 interface AuthUser {
@@ -53,7 +53,6 @@ export const getAllCustomers = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "ดึงข้อมูลลูกค้าล้มเหลว" });
   }
 };
-
 
 /**
  * มอบหมายพนักงานขายให้ลูกค้า
@@ -113,13 +112,20 @@ export const assignSales = async (req: Request, res: Response) => {
       },
     });
 
-    // 🔥 ส่งให้เซลล์ทุกคน
-    io.to("role:SALE").emit("customer:assigned", updated);
+    // 🔥 ส่ง WS เฉพาะถ้า initWs ถูกเรียกแล้ว
+    try {
+      const io = getIO();
 
-    // 🔥 ส่งให้เซลล์เฉพาะคนที่ถูก assign
-    io.to(`user:${saleUserId}`).emit("customer:assigned", updated);
+      // 🔥 ส่งให้เซลล์ทุกคน
+      io.to("role:SALE").emit("customer:assigned", updated);
 
-    console.log("📢 Emit → customer:assigned:", updated.id);
+      // 🔥 ส่งให้เซลล์เฉพาะคนที่ถูก assign
+      io.to(`user:${saleUserId}`).emit("customer:assigned", updated);
+
+      console.log("📢 Emit → customer:assigned:", updated.id);
+    } catch (wsErr) {
+      console.warn("Socket.IO not initialized, skip emit:", wsErr);
+    }
 
     return res.json(updated);
   } catch (error) {
@@ -127,7 +133,6 @@ export const assignSales = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "มอบหมายไม่สำเร็จ" });
   }
 };
-
 
 /**
  * ดึงลูกค้าตามเซลล์
@@ -152,6 +157,7 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
 
     const enriched = await Promise.all(
       customers.map(async (c) => {
+        // ✅ นับเฉพาะข้อความที่ "เซลล์ยังไม่ได้อ่าน"
         const unreadCount = await prisma.chatMessage.count({
           where: {
             customerId: c.id,
@@ -171,10 +177,11 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
     return res.json(enriched);
   } catch (err) {
     console.error("getCustomersBySale error:", err);
-    return res.status(500).json({ message: "ดึงข้อมูลลูกค้าตามเซลล์ล้มเหลว" });
+    return res
+      .status(500)
+      .json({ message: "ดึงข้อมูลลูกค้าตามเซลล์ล้มเหลว" });
   }
 };
-
 
 /**
  * ดึงข้อมูลลูกค้ารายคน
@@ -224,7 +231,6 @@ export const getCustomerById = async (req: Request, res: Response) => {
   }
 };
 
-
 /**
  * เพิ่มลูกค้าใหม่
  * POST /api/customers
@@ -272,7 +278,6 @@ export const createCustomer = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "สร้างลูกค้าไม่สำเร็จ" });
   }
 };
-
 
 /**
  * อัปเดทข้อมูลลูกค้า
@@ -332,7 +337,6 @@ export const updateCustomer = async (req: Request, res: Response) => {
   }
 };
 
-
 /**
  * ลบลูกค้า
  * DELETE /api/customers/:id
@@ -354,7 +358,6 @@ export const deleteCustomer = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "ลบลูกค้าไม่สำเร็จ" });
   }
 };
-
 
 /**
  * เซลล์ของลูกค้าที่ล็อกอิน (สำหรับ app)
@@ -392,6 +395,7 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
     }
 
+    // ✅ ฝั่งลูกค้า: นับเฉพาะข้อความที่ "ลูกค้ายังไม่ได้อ่าน"
     const unreadCount = await prisma.chatMessage.count({
       where: {
         customerId: customer.id,

@@ -1,3 +1,4 @@
+// app/(screens)/chat-detail.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -14,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams } from "expo-router";
 import { useSocketRoom, generateCid } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
+import { useIsFocused } from "@react-navigation/native"; // ✅ เพิ่ม
 
 type Msg =
   | {
@@ -24,13 +26,19 @@ type Msg =
       time: string;
       cid?: string | number;
     }
-  | { id: string; fromMe: boolean; type: "audio"; durationSec: number; time: string };
+  | {
+      id: string;
+      fromMe: boolean;
+      type: "audio";
+      durationSec: number;
+      time: string;
+    };
 
 // ✅ ใช้ HOST เดียวกับหน้า all-chat
 const HOST: string = Platform.select<string>({
   ios: "http://localhost:3000",
   android: "http://10.0.2.2:3000",
-  default: "http://10.222.113.26:3000", // เปลี่ยนเป็น IP เครื่องคอมตอนใช้มือถือจริง
+  default: "http://10.222.113.26:3000",
 })!;
 const API_BASE_URL = `${HOST}/api`;
 
@@ -70,9 +78,13 @@ export default function ChatDetailScreen() {
     : idParam ?? "general";
 
   const { user, token } = useAuthStore();
+  const isFocused = useIsFocused(); // ✅ ใช้เช็คว่าหน้านี้กำลัง active อยู่ไหม
 
-  // ชื่อที่ใช้บน socket (ยังใช้เหมือนเดิม)
-  const username = nameParam || "User_" + Math.floor(Math.random() * 1000);
+  // ✅ ใช้ username ให้คงที่
+  const username = useMemo(
+    () => user?.name || user?.email || nameParam || "User",
+    [user?.name, user?.email, nameParam]
+  );
 
   const {
     connected,
@@ -82,7 +94,7 @@ export default function ChatDetailScreen() {
     othersTyping,
   } = useSocketRoom(roomId, username);
 
-  // ===== ดึงข้อมูล "คนที่เราคุยด้วย" เพื่อเอารูปมาโชว์ =====
+  // ===== ดึงข้อมูล "คนที่เราคุยด้วย" =====
   const [partner, setPartner] = useState<ChatPartner | null>(null);
 
   useEffect(() => {
@@ -90,7 +102,6 @@ export default function ChatDetailScreen() {
       try {
         if (!token) return;
 
-        // ลูกค้า -> เซลล์ : ดึงจาก /customers/my-sale
         if (user?.role === "CUSTOMER") {
           const res = await fetch(`${API_BASE_URL}/customers/my-sale`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -99,16 +110,14 @@ export default function ChatDetailScreen() {
             console.log("my-sale error:", res.status);
             return;
           }
-          const data = await res.json(); // { customerId, customerName, sale: { id, name, img, ... } | null }
+          const data = await res.json();
           if (data.sale) {
             setPartner({
               name: data.sale.name || "Sale",
               avatarUrl: data.sale.img ?? null,
             });
           }
-        }
-        // เซลล์ -> ลูกค้า : มี customerIdParam แล้ว ไปดึง customer detail
-        else if (user?.role === "SALE" && customerIdParam) {
+        } else if (user?.role === "SALE" && customerIdParam) {
           const res = await fetch(
             `${API_BASE_URL}/customers/${customerIdParam}`,
             {
@@ -119,7 +128,7 @@ export default function ChatDetailScreen() {
             console.log("customer detail error:", res.status);
             return;
           }
-          const c = await res.json(); // { id, name, img, ... }
+          const c = await res.json();
           setPartner({
             name: c.name || `Customer #${c.id}`,
             avatarUrl: c.img ?? null,
@@ -132,8 +141,11 @@ export default function ChatDetailScreen() {
       }
     };
 
-    fetchPartner();
-  }, [token, user?.role, customerIdParam]);
+    if (isFocused) {
+      // ✅ โฟกัสแล้วค่อยดึง
+      fetchPartner();
+    }
+  }, [token, user?.role, customerIdParam, isFocused]);
 
   // ===== โหลดประวัติแชทเก่าจาก DB =====
   const [historyMessages, setHistoryMessages] = useState<Msg[]>([]);
@@ -144,7 +156,11 @@ export default function ChatDetailScreen() {
 
     const fetchHistory = async () => {
       try {
+        if (!token || !isFocused) return; // ✅ ต้องโฟกัส+มี token
+
         setLoadingHistory(true);
+
+        console.log("🔍 fetch history for roomId:", roomId);
 
         const res = await fetch(
           `${API_BASE_URL}/chat/room/${encodeURIComponent(
@@ -152,10 +168,12 @@ export default function ChatDetailScreen() {
           )}?pageSize=200`,
           {
             headers: {
-              Authorization: token ? `Bearer ${token}` : "",
+              Authorization: `Bearer ${token}`,
             },
           }
         );
+
+        console.log("history status:", res.status);
 
         if (!res.ok) {
           console.log("fetch history error:", res.status);
@@ -163,6 +181,7 @@ export default function ChatDetailScreen() {
         }
 
         const json = await res.json();
+        console.log("history json:", json);
 
         const arr = Array.isArray(json)
           ? json
@@ -172,7 +191,9 @@ export default function ChatDetailScreen() {
 
         const mapped: Msg[] = arr.map((m: any) => ({
           id: String(m.id),
-          fromMe: m.senderName === username,
+          fromMe:
+            (m.senderId && user?.id && m.senderId === user.id) ||
+            m.senderName === username,
           type: "text",
           text: m.text,
           time: formatClock(new Date(m.createdAt)),
@@ -194,15 +215,15 @@ export default function ChatDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [roomId, token, username]);
+  }, [roomId, token, user?.id, username, isFocused]); // ✅ เพิ่ม isFocused
 
-    // ===== mark ห้องนี้ว่าอ่านแล้ว =====
+  // ===== mark ห้องนี้ว่าอ่านแล้ว =====
   useEffect(() => {
-    // ต้องเป็นห้องลูกค้าเท่านั้นถึงจะมี customerIdParam
-    if (!token || !customerIdParam) return;
+    if (!token || !customerIdParam || !isFocused) return; // ✅ ต้องเป็นห้องลูกค้า + โฟกัส
 
     const markRead = async () => {
       try {
+        console.log("📩 mark-read customerId =", customerIdParam);
         await fetch(`${API_BASE_URL}/chat/mark-read`, {
           method: "POST",
           headers: {
@@ -217,8 +238,7 @@ export default function ChatDetailScreen() {
     };
 
     markRead();
-  }, [token, customerIdParam]);
-
+  }, [token, customerIdParam, isFocused]); // ✅ เพิ่ม isFocused
 
   // ===== Voice recording (UI only) =====
   const [isRecording, setIsRecording] = useState(false);
@@ -435,7 +455,13 @@ export default function ChatDetailScreen() {
                 กำลังโหลดประวัติแชท...
               </Text>
             </View>
-          ) : null
+          ) : (
+            <View className="py-8 items-center">
+              <Text className="text-xs text-gray-400">
+                ยังไม่มีประวัติการคุย
+              </Text>
+            </View>
+          )
         }
       />
 

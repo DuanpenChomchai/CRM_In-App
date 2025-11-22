@@ -1,6 +1,10 @@
-// src/app/(screens)/all-chat.tsx (หรือไฟล์ ChatsScreen.tsx ของคุณ)
-
-import React, { useEffect, useMemo, useState } from "react";
+// app/(screens)/all-chat.tsx
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+} from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   View,
@@ -11,21 +15,21 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router, Href } from "expo-router";
+import { Link, router, Href, useFocusEffect } from "expo-router";
 import { getSocket, setSocketAuth } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
 
 type ChatItem = {
-  id: string;
+  id: string; // roomId เช่น "cust:4"
   name: string;
   time: string;
   customerId?: number;
-  isSaleChat?: boolean;
+  isSaleChat?: boolean; // true = ลูกค้าฝั่งแอพ แชทกับเซลล์
   unreadCount?: number;
 };
 
 type WsUnreadPayload = {
-  roomId: string;
+  roomId: string; // เช่น "cust:4"
   customerUnread: number;
   saleUnread: number;
 };
@@ -41,16 +45,16 @@ const API_BASE_URL = `${HOST}/api`;
 export default function ChatsScreen() {
   const { user, token } = useAuthStore();
 
-  // ส่ง token + role + userId เข้า socket (ใช้ตอน server เซฟ readBy อะไรพวกนี้)
+  // --------- ตั้งค่า auth ให้ socket ตอน user/token เปลี่ยน ----------
   useEffect(() => {
     setSocketAuth({
-      token: token,
+      token: token ?? null,
       role: user?.role ?? null,
       userId: user?.id ?? null,
     });
   }, [token, user?.role, user?.id]);
 
-  const socket = useMemo(getSocket, []);
+  const socket = getSocket();
   const [connected, setConnected] = useState<boolean>(socket.connected);
   const [query, setQuery] = useState("");
   const [customRoomName, setCustomRoomName] = useState("");
@@ -63,103 +67,129 @@ export default function ChatsScreen() {
   const [saleRooms, setSaleRooms] = useState<ChatItem[]>([]);
   const [loadingSaleRooms, setLoadingSaleRooms] = useState(false);
 
-  // ===== CUSTOMER: ดึงเซลล์ที่ดูแลลูกค้าที่ล็อกอิน =====
-  useEffect(() => {
-    const fetchSaleChat = async () => {
-      try {
-        if (!token || user?.role !== "CUSTOMER") return;
+  // ===== CUSTOMER: ดึงเซลล์ที่ดูแลลูกค้าที่ล็อกอิน (รีเฟรชทุกครั้งที่หน้า focus) =====
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
 
-        setLoadingSale(true);
+      const fetchSaleChat = async () => {
+        try {
+          if (!token || user?.role !== "CUSTOMER") return;
 
-        const res = await fetch(`${API_BASE_URL}/customers/my-sale`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+          setLoadingSale(true);
 
-        if (!res.ok) {
-          console.log("my-sale error status:", res.status);
-          return;
-        }
-
-        const data = await res.json();
-        // data: { customerId, customerName, sale: { id, name, ... } | null, unreadCount }
-
-        if (data.sale) {
-          setSaleChat({
-            id: `cust:${data.customerId}`,
-            customerId: data.customerId,
-            name: data.sale.name || "Sale",
-            time: "Now",
-            isSaleChat: true,
-            unreadCount: data.unreadCount ?? 0,
+          const res = await fetch(`${API_BASE_URL}/customers/my-sale`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           });
-        } else {
-          setSaleChat(null);
+
+          if (!res.ok) {
+            console.log("my-sale error status:", res.status);
+            return;
+          }
+
+          // { customerId, customerName, sale: {...} | null, unreadCount }
+          const data = await res.json();
+
+          if (cancelled) return;
+
+          if (data.sale) {
+            setSaleChat({
+              id: `cust:${data.customerId}`,
+              customerId: data.customerId,
+              name: data.sale.name || "Sale",
+              time: "Now",
+              isSaleChat: true,
+              // ✅ ฝั่งลูกค้าใช้จำนวนข้อความที่ลูกค้ายังไม่อ่าน
+              unreadCount: data.unreadCount ?? 0,
+            });
+          } else {
+            setSaleChat(null);
+          }
+        } catch (err) {
+          console.error("fetchSaleChat error:", err);
+        } finally {
+          if (!cancelled) setLoadingSale(false);
         }
-      } catch (err) {
-        console.error("fetchSaleChat error:", err);
-      } finally {
-        setLoadingSale(false);
-      }
-    };
+      };
 
-    fetchSaleChat();
-  }, [token, user?.role]);
+      fetchSaleChat();
 
-  // ===== SALE: ดึงลูกค้าที่เราเป็นเซลล์ดูแล =====
-  useEffect(() => {
-    const fetchSaleRooms = async () => {
-      try {
-        if (!token || user?.role !== "SALE" || !user?.id) return;
+      return () => {
+        cancelled = true;
+      };
+    }, [token, user?.role])
+  );
 
-        setLoadingSaleRooms(true);
+  // ===== SALE: ดึงลูกค้าที่เราเป็นเซลล์ดูแล (รีเฟรชทุกครั้งที่หน้า focus) =====
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
 
-        const res = await fetch(`${API_BASE_URL}/customers/sale/${user.id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      const fetchSaleRooms = async () => {
+        try {
+          if (!token || user?.role !== "SALE" || !user?.id) return;
 
-        if (!res.ok) {
-          console.log("customers/sale error status:", res.status);
-          return;
+          setLoadingSaleRooms(true);
+
+          const res = await fetch(
+            `${API_BASE_URL}/customers/sale/${user.id}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (!res.ok) {
+            console.log("customers/sale error status:", res.status);
+            return;
+          }
+
+          // data: [{ id, name, email, unreadCount }, ...]
+          const data = await res.json();
+          if (cancelled) return;
+
+          const mapped: ChatItem[] = data.map((c: any) => ({
+            id: `cust:${c.id}`,
+            customerId: c.id,
+            name: c.name || `Customer #${c.id}`,
+            time: "Now",
+            // ✅ ฝั่งเซลล์ใช้ unread ของเซลล์เอง
+            unreadCount: c.unreadCount ?? 0,
+          }));
+
+          setSaleRooms(mapped);
+        } catch (err) {
+          console.error("fetchSaleRooms error:", err);
+        } finally {
+          if (!cancelled) setLoadingSaleRooms(false);
         }
+      };
 
-        const data = await res.json();
-        // data: [{ id, name, email, unreadCount }, ...]
+      fetchSaleRooms();
 
-        const mapped: ChatItem[] = data.map((c: any) => ({
-          id: `cust:${c.id}`,
-          customerId: c.id,
-          name: c.name || `Customer #${c.id}`,
-          time: "Now",
-          unreadCount: c.unreadCount ?? 0,
-        }));
+      return () => {
+        cancelled = true;
+      };
+    }, [token, user?.role, user?.id])
+  );
 
-        setSaleRooms(mapped);
-      } catch (err) {
-        console.error("fetchSaleRooms error:", err);
-      } finally {
-        setLoadingSaleRooms(false);
-      }
-    };
-
-    fetchSaleRooms();
-  }, [token, user?.role, user?.id]);
-
-  // ===== ฟัง unread-count จาก WebSocket แล้วอัปเดต badge =====
+  // ===== ฟัง unread-count จาก WebSocket แล้วอัปเดต badge แบบ realtime =====
   useEffect(() => {
     const handleUnread = (payload: WsUnreadPayload) => {
       if (!user?.role) return;
 
       if (user.role === "CUSTOMER") {
+        // ลูกค้ามีห้องเดียว (saleChat) → ใช้ customerUnread
         setSaleChat((prev) => {
           if (!prev) return prev;
           if (prev.id !== payload.roomId) return prev;
           return { ...prev, unreadCount: payload.customerUnread };
         });
       } else if (user.role === "SALE") {
+        // เซลล์มีหลายห้อง → ใช้ saleUnread ของห้องที่ตรง roomId
         setSaleRooms((prev) =>
           prev.map((room) =>
             room.id === payload.roomId
@@ -217,69 +247,87 @@ export default function ChatsScreen() {
   }, [socket]);
 
   // ===== เวลาแตะห้องแต่ละอัน =====
+  const handlePressRoom = (item: ChatItem) => {
+    // 1) เคลียร์ badge ใน state ทันที
+    if (user?.role === "CUSTOMER") {
+      setSaleChat((prev) =>
+        prev && prev.id === item.id ? { ...prev, unreadCount: 0 } : prev
+      );
+    } else if (user?.role === "SALE") {
+      setSaleRooms((prev) =>
+        prev.map((room) =>
+          room.id === item.id ? { ...room, unreadCount: 0 } : room
+        )
+      );
+    }
+
+    // 2) นำทางไปหน้า chat-detail
+    if (item.customerId != null) {
+      router.push({
+        pathname: "/(screens)/chat-detail",
+        params: {
+          customerId: String(item.customerId),
+          name: item.name,
+        },
+      });
+    } else {
+      router.push({
+        pathname: "/(screens)/chat-detail",
+        params: {
+          id: item.id,
+          name: item.name,
+        },
+      });
+    }
+  };
+
   const renderItem = ({ item }: { item: ChatItem }) => {
-    const href: Href =
-      item.customerId != null
-        ? {
-            pathname: "/(screens)/chat-detail",
-            params: {
-              customerId: String(item.customerId),
-              name: item.name,
-            },
-          }
-        : {
-            pathname: "/(screens)/chat-detail",
-            params: {
-              id: item.id,
-              name: item.name,
-            },
-          };
-
     return (
-      <Link href={href} asChild>
-        <Pressable className="px-4 active:opacity-70">
-          <View className="flex-row items-center py-4">
-            <View className="w-12 h-12 rounded-full bg-emerald-200 items-center justify-center mr-3">
-              <Ionicons
-                name={item.isSaleChat ? "person" : "people"}
-                size={20}
-                color="#0f5132"
-              />
-            </View>
-
-            <View className="flex-1">
-              <Text className="text-base font-semibold text-gray-800">
-                {item.isSaleChat
-                  ? `Sale: ${item.name}`
-                  : item.customerId
-                  ? item.name
-                  : item.name}
-              </Text>
-
-              {item.isSaleChat && (
-                <Text className="text-[11px] text-gray-500 mt-0.5">
-                  Your assigned sale
-                </Text>
-              )}
-            </View>
-
-            {/* เวลา + badge */}
-            <View className="items-end">
-              <Text className="text-xs text-gray-500 mb-1">
-                {item.time}
-              </Text>
-
-              {item.unreadCount !== undefined && item.unreadCount > 0 && (
-                <View className="min-w-[20px] px-1.5 h-5 rounded-full bg-red-500 items-center justify-center">
-                  <Text className="text-[11px] text-white font-semibold">
-                    {item.unreadCount > 99 ? "99+" : item.unreadCount}
-                  </Text>
-                </View>
-              )}
-            </View>
+      <Pressable
+        className="px-4 active:opacity-70"
+        onPress={() => handlePressRoom(item)}
+      >
+        <View className="flex-row items-center py-4">
+          <View className="w-12 h-12 rounded-full bg-emerald-200 items-center justify-center mr-3">
+            <Ionicons
+              name={item.isSaleChat ? "person" : "people"}
+              size={20}
+              color="#0f5132"
+            />
           </View>
-        </Pressable>
-      </Link>
+
+          <View className="flex-1">
+            <Text className="text-base font-semibold text-gray-800">
+              {item.isSaleChat
+                ? `Sale: ${item.name}`
+                : item.customerId
+                ? item.name
+                : item.name}
+            </Text>
+
+            {item.isSaleChat && (
+              <Text className="text-[11px] text-gray-500 mt-0.5">
+                Your assigned sale
+              </Text>
+            )}
+          </View>
+
+          {/* เวลา + badge */}
+          <View className="items-end">
+            <Text className="text-xs text-gray-500 mb-1">
+              {item.time}
+            </Text>
+
+            {item.unreadCount !== undefined && item.unreadCount > 0 && (
+              <View className="min-w-[20px] px-1.5 h-5 rounded-full bg-red-500 items-center justify-center">
+                <Text className="text-[11px] text-white font-semibold">
+                  {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Pressable>
     );
   };
 

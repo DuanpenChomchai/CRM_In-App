@@ -3,13 +3,14 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import http from "http";
+
 import authRoutes from "./routes/auth.route";
 import { checkBucket } from "./config/minioclient";
 import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
-import { registerSocket } from "./socket";
+import { initWs } from "./ws"; 
 
 async function main() {
   const app = express();
@@ -48,7 +49,9 @@ async function main() {
 
   // ⭐ สร้าง HTTP server + WebSocket
   const server = http.createServer(app);
-  registerSocket(server); // ← ใช้ registerSocket ใหม่
+
+  // ⬇️ ใช้ WebSocket ตัวใหม่จาก ws.ts
+  initWs(server);
 
   server.listen(port, "0.0.0.0", () => {
     console.log(`HTTP + WebSocket running on http://localhost:${port}`);

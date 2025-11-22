@@ -1,4 +1,4 @@
-// src/ws.ts (หรือไฟล์ initWs ที่คุณใช้)
+// src/ws.ts
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import prisma from "./config/prismaclient";
@@ -27,7 +27,7 @@ let io: Server | null = null;
 
 /** แปลง roomId เป็น customerId เช่น "cust:2" -> 2 */
 function parseCustomerId(roomId: string): number | null {
-  const parts = roomId.split(":");
+  const parts = String(roomId).split(":");
   if (parts.length < 2) return null;
   if (parts[0] !== "cust") return null;
   const n = Number(parts[1]);
@@ -36,34 +36,62 @@ function parseCustomerId(roomId: string): number | null {
 
 export const initWs = (server: HttpServer) => {
   io = new Server(server, {
-    cors: { origin: "*" },
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    },
     transports: ["websocket"],
   });
 
   io.on("connection", (socket) => {
-    console.log("WS connected:", socket.id);
+    console.log("📡 WS connected:", socket.id);
 
-    // --- อ่าน auth ตอน handshake ---
+    // ===== อ่าน auth ตอน handshake =====
     const { token, role, userId } = socket.handshake.auth || {};
     if (role) {
       (socket.data as any).role = role; // "CUSTOMER" | "SALE" | ...
+      socket.join(`role:${role}`);
     }
     if (userId) {
-      (socket.data as any).userId = Number(userId);
+      const uidNum = Number(userId);
+      (socket.data as any).userId = uidNum;
+      socket.join(`user:${uidNum}`);
     }
 
-    // เผื่อกรณี React เปลี่ยน user ตอนรันแอป → update ผ่าน event
+    if (role || userId) {
+      console.log(
+        `✅ HANDSHAKE ROOMS: role=${role ?? "-"}, user=${userId ?? "-"}`
+      );
+    }
+
+    // ===== AUTH UPDATE (ตอนเปลี่ยน user ระหว่างรัน) =====
     socket.on("auth-update", (payload: any) => {
       try {
-        if (payload?.role) (socket.data as any).role = payload.role;
-        if (payload?.userId)
-          (socket.data as any).userId = Number(payload.userId);
+        const nextRole = payload?.role;
+        const nextUserId = payload?.userId;
+
+        if (nextRole) {
+          (socket.data as any).role = nextRole;
+          socket.join(`role:${nextRole}`);
+        }
+        if (nextUserId) {
+          const uidNum = Number(nextUserId);
+          (socket.data as any).userId = uidNum;
+          socket.join(`user:${uidNum}`);
+        }
+
+        console.log(
+          `✅ AUTH-UPDATE: role=${(socket.data as any).role ?? "-"}, user=${
+            (socket.data as any).userId ?? "-"
+          }`
+        );
       } catch (e) {
         console.error("auth-update error:", e);
       }
     });
 
-    // ================== JOIN ==================
+    // ================== JOIN (ห้องแชท) ==================
     socket.on("join", (payload: JoinPayload) => {
       try {
         const { roomId, user } = payload || ({} as JoinPayload);
@@ -75,6 +103,7 @@ export const initWs = (server: HttpServer) => {
         if (!rooms.has(roomId)) rooms.set(roomId, []);
         const history = rooms.get(roomId)!;
 
+        // ส่ง history จาก memory (ของรอบที่ server ยังไม่ปิด)
         socket.emit("history", history);
         socket
           .to(roomId)
@@ -111,31 +140,24 @@ export const initWs = (server: HttpServer) => {
           arr.splice(0, arr.length - HISTORY_LIMIT);
         rooms.set(roomId, arr);
 
-        // 2) broadcast ให้คนในห้อง
+        // 2) broadcast message ให้คนในห้อง
         io!.to(roomId).emit("message", msg);
+        const role = (socket.data as any).role;
         console.log(
-          `[message] room=${roomId} user=${user} text="${t.substring(
+          `[message] room=${roomId} user=${user} role=${role} text="${t.substring(
             0,
             80
-          )}" cid=${cid ?? "-"} role=${(socket.data as any).role}`
+          )}" cid=${cid ?? "-"}`
         );
 
-        // 3) ถ้าเป็นห้องลูกค้า cust:<id> → save DB + unread logic
+        // 3) ถ้าเป็นห้องลูกค้า cust:<id> → save DB + คำนวณ unread
         const customerId = parseCustomerId(roomId);
 
         if (customerId) {
-          const role =
-            (socket.data as any)?.role as
-              | "CUSTOMER"
-              | "SALE"
-              | "MANAGER"
-              | "ADMIN"
-              | undefined;
-
           const now = new Date();
 
           try {
-            // 3.1 เก็บ ChatMessage
+            // 3.1 เก็บ ChatMessage ลง DB พร้อม read flag ฝั่งที่ "เป็นคนส่ง"
             await prisma.chatMessage.create({
               data: {
                 roomId,
@@ -143,13 +165,15 @@ export const initWs = (server: HttpServer) => {
                 senderName: user,
                 cid: cid != null ? String(cid) : null,
                 customerId,
-                // ฝั่งที่เป็นคน "ส่ง" ให้ถือว่าอ่านแล้ว
-                readByCustomerAt: role === "CUSTOMER" ? now : undefined,
-                readBySaleAt: role === "SALE" ? now : undefined,
+                ...(role === "CUSTOMER"
+                  ? { readByCustomerAt: now }
+                  : role === "SALE"
+                  ? { readBySaleAt: now }
+                  : {}),
               },
             });
 
-            // 3.2 เก็บ Communications
+            // 3.2 เก็บ Communications (ถ้าใช้ใน CRM)
             await prisma.communications.create({
               data: {
                 customerId,
@@ -160,7 +184,7 @@ export const initWs = (server: HttpServer) => {
               },
             });
 
-            // 3.3 นับ unread แยกฝั่ง
+            // 3.3 นับจำนวนข้อความที่ยังไม่อ่านของแต่ละฝั่ง
             const [customerUnread, saleUnread] = await Promise.all([
               prisma.chatMessage.count({
                 where: {
@@ -176,13 +200,22 @@ export const initWs = (server: HttpServer) => {
               }),
             ]);
 
-            io!.to(roomId).emit("unread-count", {
+            const payloadUnread = {
               roomId,
               customerUnread,
               saleUnread,
-            });
+            };
+
+            // 3.4 ส่ง event unread-count ไปให้ทุกคนในห้อง + ทุก socket ตาม role
+            io!.to(roomId).emit("unread-count", payloadUnread);
+            io!.to("role:CUSTOMER").emit("unread-count", payloadUnread);
+            io!.to("role:SALE").emit("unread-count", payloadUnread);
+
+            console.log(
+              `💾 saved chat & unread-count: customerId=${customerId}, customerUnread=${customerUnread}, saleUnread=${saleUnread}`
+            );
           } catch (dbErr) {
-            console.error("save chat to DB error:", dbErr);
+            console.error("❌ save chat to DB error:", dbErr);
           }
         } else {
           console.warn(
@@ -208,7 +241,7 @@ export const initWs = (server: HttpServer) => {
     });
 
     socket.on("disconnect", (reason) => {
-      console.log("WS disconnected:", socket.id, "reason:", reason);
+      console.log("❌ WS disconnected:", socket.id, "reason:", reason);
     });
   });
 
