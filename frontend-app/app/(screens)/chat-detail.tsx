@@ -38,7 +38,7 @@ type Msg =
 const HOST: string = Platform.select<string>({
   ios: "http://localhost:3000",
   android: "http://10.0.2.2:3000",
-  default: "http://10.222.113.26:3000",
+  default: "http://172.24.4.22:3000",
 })!;
 const API_BASE_URL = `${HOST}/api`;
 
