@@ -7,6 +7,9 @@ CREATE TYPE "CallDirection" AS ENUM ('CUSTOMER_TO_SALE', 'SALE_TO_CUSTOMER');
 -- CreateEnum
 CREATE TYPE "CallStatus" AS ENUM ('RINGING', 'ONGOING', 'COMPLETED', 'MISSED', 'REJECTED', 'CANCELED');
 
+-- CreateEnum
+CREATE TYPE "CustomerStatus" AS ENUM ('NEW', 'CONTACTED', 'NEGOTIATING', 'CLOSED');
+
 -- CreateTable
 CREATE TABLE "User" (
     "id" SERIAL NOT NULL,
@@ -47,6 +50,7 @@ CREATE TABLE "Customer" (
     "priceBudget" DECIMAL(12,2),
     "userId" INTEGER,
     "saleId" INTEGER,
+    "mainStatus" "CustomerStatus" DEFAULT 'NEW',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -176,6 +180,8 @@ CREATE TABLE "ChatMessage" (
     "senderName" TEXT NOT NULL,
     "cid" TEXT,
     "customerId" INTEGER,
+    "imgMessage" TEXT,
+    "fileMessage" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "readByCustomerAt" TIMESTAMP(3),
     "readBySaleAt" TIMESTAMP(3),
