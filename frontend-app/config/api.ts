@@ -1,17 +1,20 @@
+// src/config/api.ts
 import { Platform } from "react-native";
-import {
-  API_HOST_IOS,
-  API_HOST_ANDROID,
-  API_HOST_DEVICE,
-  WS_SERVER as WS_ENV
-} from "@env";
 
-export const HOST = Platform.select({
-  ios: API_HOST_IOS,
-  android: API_HOST_ANDROID,
-  default: API_HOST_DEVICE,
-});
+const API_HOST_IOS = process.env.EXPO_PUBLIC_API_HOST_IOS!;
+const API_HOST_ANDROID = process.env.EXPO_PUBLIC_API_HOST_ANDROID!;
+const API_HOST_DEVICE = process.env.EXPO_PUBLIC_API_HOST_DEVICE!;
 
+// เลือก host ตาม platform
+export const HOST =
+  Platform.OS === "ios"
+    ? API_HOST_IOS
+    : Platform.OS === "android"
+    ? API_HOST_ANDROID
+    : API_HOST_DEVICE;
+
+// สำหรับ REST API
 export const API_BASE_URL = `${HOST}/api`;
 
-export const WS_SERVER = WS_ENV;
+// 🔥 ให้ WebSocket ใช้ host เดียวกับ REST เสมอ
+export const WS_SERVER = HOST;

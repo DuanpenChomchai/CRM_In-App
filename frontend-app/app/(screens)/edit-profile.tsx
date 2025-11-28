@@ -13,8 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, Link, useRouter } from "expo-router";
 import { useAuthStore } from "../../store/useAuthStore";
-
-const API_BASE_URL = "http://10.222.113.26:3000/api"; 
+import { API_BASE_URL } from "../../config/api";
 
 export default function ProfileEditScreen() {
   const router = useRouter();

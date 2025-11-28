@@ -1,9 +1,7 @@
 // src/store/socket.ts
-import io, { Socket } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 import { useEffect, useMemo, useRef, useState } from "react";
-
 import { WS_SERVER } from "../config/api";
-
 
 export type ChatMsg = {
   id: string;
@@ -22,24 +20,36 @@ type SocketAuth = {
 let socketInstance: Socket | null = null;
 let socketAuth: SocketAuth = {};
 
-// เรียกจาก React เพื่ออัพเดทข้อมูล auth ที่จะส่งให้ WS
 export const setSocketAuth = (auth: SocketAuth) => {
   socketAuth = auth;
 
   if (socketInstance) {
-    // เก็บไว้ที่ client ด้วย (server จะรับจาก event "auth-update")
+    socketInstance.auth = socketAuth;
     socketInstance.emit("auth-update", auth);
   }
 };
 
-export const getSocket = () => {
+export const getSocket = (): Socket => {
   if (!socketInstance) {
+    console.log("🔌 init WebSocket:", WS_SERVER, "AUTH:", socketAuth);
+
     socketInstance = io(WS_SERVER, {
-      transports: ["websocket"],
+      //transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 10,
-      // ส่งค่า auth ตอน handshake แรก
       auth: socketAuth,
+    });
+
+    socketInstance.on("connect", () => {
+      console.log("✅ WS connected:", socketInstance?.id);
+    });
+
+    socketInstance.on("connect_error", (err) => {
+      console.log("❌ WS connect_error:", err.message, err);
+    });
+
+    socketInstance.on("disconnect", (reason) => {
+      console.log("⚠️ WS disconnected:", reason);
     });
   }
   return socketInstance;
@@ -50,10 +60,10 @@ export const generateCid = () =>
 
 export const useSocketRoom = (roomId: string, username: string) => {
   const socket = useMemo(getSocket, []);
-  const [connected, setConnected] = useState<boolean>(socket.connected);
+  const [connected, setConnected] = useState(socket.connected);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [typingUsers, setTypingUsers] = useState<Record<string, boolean>>({});
-  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingTimer = useRef<any>(null);
 
   useEffect(() => {
     if (!socket.connected) socket.connect();
@@ -62,6 +72,7 @@ export const useSocketRoom = (roomId: string, username: string) => {
       setConnected(true);
       socket.emit("join", { roomId, user: username });
     };
+
     const onDisconnect = () => setConnected(false);
 
     const onHistory = (list: ChatMsg[] = []) =>
@@ -128,5 +139,4 @@ export const useSocketRoom = (roomId: string, username: string) => {
     .map(([u]) => u);
 
   return { connected, messages, sendText, startTyping, stopTyping, othersTyping };
-  
 };

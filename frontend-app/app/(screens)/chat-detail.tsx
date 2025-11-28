@@ -16,7 +16,7 @@ import { Link, useLocalSearchParams } from "expo-router";
 import { useSocketRoom, generateCid } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useIsFocused } from "@react-navigation/native"; // ✅ เพิ่ม
-import { HOST, API_BASE_URL } from "../../config/api";
+import { HOST, API_BASE_URL, WS_SERVER } from "../../config/api";
 
 
 type Msg =
@@ -35,14 +35,6 @@ type Msg =
       durationSec: number;
       time: string;
     };
-
-// // ✅ ใช้ HOST เดียวกับหน้า all-chat
-// const HOST: string = Platform.select<string>({
-//   ios: "http://localhost:3000",
-//   android: "http://10.0.2.2:3000",
-//   default: "http://172.24.4.22:3000",
-// })!;
-// const API_BASE_URL = `${HOST}/api`;
 
 function formatClock(t = new Date()) {
   const h = t.getHours().toString().padStart(2, "0");
