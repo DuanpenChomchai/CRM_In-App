@@ -18,6 +18,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, router, Href, useFocusEffect } from "expo-router";
 import { getSocket, setSocketAuth } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
+import { HOST, API_BASE_URL } from "../../config/api";
+
 
 type ChatItem = {
   id: string; // roomId เช่น "cust:4"
@@ -34,13 +36,13 @@ type WsUnreadPayload = {
   saleUnread: number;
 };
 
-// ✅ ใช้ได้ทั้ง emulator และมือถือจริง
-const HOST: string = Platform.select<string>({
-  ios: "http://localhost:3000",
-  android: "http://10.0.2.2:3000",
-  default: "http://172.24.4.22:3000",
-})!;
-const API_BASE_URL = `${HOST}/api`;
+// // ✅ ใช้ได้ทั้ง emulator และมือถือจริง
+// const HOST: string = Platform.select<string>({
+//   ios: "http://localhost:3000",
+//   android: "http://10.0.2.2:3000",
+//   default: "http://172.24.4.22:3000",
+// })!;
+// const API_BASE_URL = `${HOST}/api`;
 
 export default function ChatsScreen() {
   const { user, token } = useAuthStore();

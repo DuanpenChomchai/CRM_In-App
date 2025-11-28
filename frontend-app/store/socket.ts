@@ -2,7 +2,8 @@
 import io, { Socket } from "socket.io-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export const WS_SERVER = "http://10.222.113.26:3000";
+import { WS_SERVER } from "../config/api";
+
 
 export type ChatMsg = {
   id: string;
