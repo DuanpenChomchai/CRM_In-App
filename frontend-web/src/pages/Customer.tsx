@@ -41,15 +41,18 @@ import {
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
+// ==========================
+// TYPE ตรงกับ backend 100%
+// ==========================
 interface Customer {
   id: number;
   name: string;
-  phone: string;
+  tol: string; // เบอร์โทรตรง backend
   email: string;
-  propertyType?: string;
-  budget?: number;
-  status: "new" | "contacted" | "negotiating" | "closed";
-  assignedTo?: string;
+  productType?: string | null;
+  priceBudget?: number | null;
+  saleId?: number | null;
+  saleName?: string | null;
 }
 
 interface SaleUser {
@@ -57,31 +60,25 @@ interface SaleUser {
   name: string;
 }
 
-// ===== helper แปลงข้อมูลจาก backend → Customer ของ UI =====
+// ===== helper แปลงข้อมูลจาก backend → UI =====
 const mapApiCustomerToUi = (c: any): Customer => {
-  const rawStatus = (c.status || "NEW").toString().toLowerCase();
-
-  let status: Customer["status"] = "new";
-  if (rawStatus.startsWith("contact")) status = "contacted";
-  else if (rawStatus.startsWith("negotiat")) status = "negotiating";
-  else if (rawStatus.startsWith("close")) status = "closed";
-
   return {
     id: c.id,
     name: c.name,
-    phone: c.tol,
+    tol: c.tol,
     email: c.email,
-    propertyType: c.productType ?? undefined,
-    budget: c.priceBudget ? Number(c.priceBudget) : undefined,
-    status,
-    assignedTo: c.sale?.name ?? undefined,
+    productType: c.productType ?? null,
+    priceBudget: c.priceBudget ? Number(c.priceBudget) : null,
+    saleId: c.saleId ?? null,
+    saleName: c.sale?.name ?? null,
   };
 };
 
-const SalesProcess = () => {
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    null
-  );
+// ==============================
+// Component หลัก
+// ==============================
+const Customer = () => {
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -89,19 +86,16 @@ const SalesProcess = () => {
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
-    phone: "",
+    tol: "",
     email: "",
   });
 
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
 
-  // ✅ ทีมเซลล์จาก DB
   const [salesTeam, setSalesTeam] = useState<SaleUser[]>([]);
-
-  // ลูกค้าทั้งหมด
   const [customers, setCustomers] = useState<Customer[]>([]);
 
-  // =============== 1) โหลดลูกค้าจาก backend ตอนเปิดหน้า ===============
+  // =============== โหลดลูกค้าจาก backend ===============
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
@@ -111,11 +105,9 @@ const SalesProcess = () => {
             Authorization: token ? `Bearer ${token}` : "",
           },
         });
-        if (!res.ok) {
-          throw new Error("ไม่สามารถดึงข้อมูลลูกค้าได้");
-        }
-        const data = await res.json();
+        if (!res.ok) throw new Error("โหลดลูกค้าไม่ได้");
 
+        const data = await res.json();
         const mapped: Customer[] = data.map(mapApiCustomerToUi);
         setCustomers(mapped);
       } catch (err) {
@@ -127,24 +119,20 @@ const SalesProcess = () => {
     fetchCustomers();
   }, []);
 
-  // =============== 1.5) โหลดรายชื่อเซลล์จาก DB ===============
+  // =============== โหลดเซลล์ ===============
   useEffect(() => {
     const fetchSales = async () => {
       try {
         const token = localStorage.getItem("token");
-
         const res = await fetch("http://localhost:3000/api/users/sales", {
           headers: {
             Authorization: token ? `Bearer ${token}` : "",
           },
         });
 
-        if (!res.ok) {
-          throw new Error("ไม่สามารถดึงข้อมูลพนักงานขายได้");
-        }
+        if (!res.ok) throw new Error("โหลดเซลล์ไม่ได้");
 
         const json = await res.json();
-        // json = { data: [...], page, pageSize, ... }
 
         const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
           id: u.id,
@@ -161,15 +149,14 @@ const SalesProcess = () => {
     fetchSales();
   }, []);
 
-  // =============== 2) connect WebSocket ฟังลูกค้าใหม่จากแอป ===============
+  // =============== WebSocket ===============
   useEffect(() => {
     const token = localStorage.getItem("token");
+
     const socket: Socket = io("http://localhost:3000", {
       transports: ["websocket"],
       extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
     });
-
-    socket.emit("join-role", { role: "MANAGER" });
 
     socket.on("customer:new", (payload: any) => {
       const mapped = mapApiCustomerToUi(payload);
@@ -187,48 +174,34 @@ const SalesProcess = () => {
       );
     });
 
-    return () => {
-      socket.disconnect();
-    };
+    return () => socket.disconnect();
   }, []);
 
-  // ✅ ลูกค้าใหม่ = ยังไม่มีเซลล์ดูแล
-  const newCustomers = customers.filter((c) => !c.assignedTo);
+  // ================================
+  // คำนวณลูกค้าใหม่ (ยังไม่ assign)
+  // ================================
+  const newCustomers = customers.filter((c) => !c.saleId);
 
   const filteredCustomers = customers.filter(
     (customer) =>
       customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      customer.phone.includes(searchQuery) ||
+      customer.tol.includes(searchQuery) ||
       customer.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("th-TH", {
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("th-TH", {
       style: "currency",
       currency: "THB",
       minimumFractionDigits: 0,
     }).format(value);
-  };
-
-  // ⭐ สถานะอิงจาก assignedTo จริง ๆ
-const getStatusBadge = (assignedTo?: string) => {
-  if (!assignedTo) {
-    return <Badge className="bg-blue-500">ใหม่</Badge>;
-  }
-  return <Badge className="bg-yellow-500">กำลังติดต่อ</Badge>;
-};
-
-
-  const findSaleIdByName = (name?: string) => {
-    if (!name) return undefined;
-    const sale = salesTeam.find((s) => s.name === name);
-    return sale?.id;
-  };
-
-  // ✅ มอบหมายเซลล์: ยิงเข้า backend → backend ส่ง WS ไปให้ app
+  // ================================
+  // มอบหมายเซลล์ (Assign Sales)
+  // ================================
   const handleAssignSales = async (customerId: number, saleId: number) => {
     try {
       const token = localStorage.getItem("token");
+
       const res = await fetch(
         `http://localhost:3000/api/customers/${customerId}/assign-sale`,
         {
@@ -242,34 +215,31 @@ const getStatusBadge = (assignedTo?: string) => {
       );
 
       if (!res.ok) {
-        const errorBody = await res.json().catch(() => ({}));
-        console.error("assign-sale error:", errorBody);
-        toast.error(
-          errorBody?.message || "มอบหมายพนักงานขายไม่สำเร็จ (backend)"
-        );
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.message || "มอบหมายเซลล์ไม่สำเร็จ");
         return;
       }
 
-      const data = await res.json();
-      const mapped = mapApiCustomerToUi(data);
+      const updated = await res.json();
+      const mapped = mapApiCustomerToUi(updated);
 
       setCustomers((prev) =>
         prev.map((c) => (c.id === mapped.id ? mapped : c))
       );
 
       const sale = salesTeam.find((s) => s.id === saleId);
-      toast.success(
-        `มอบหมายลูกค้าให้ ${sale?.name || "พนักงานขาย"} เรียบร้อยแล้ว`
-      );
+      toast.success(`มอบหมายลูกค้าให้ ${sale?.name || "พนักงานขาย"}`);
     } catch (err) {
       console.error(err);
       toast.error("มอบหมายพนักงานขายไม่สำเร็จ (network)");
     }
   };
 
-  // ✅ เพิ่มลูกค้าใหม่จากฝั่งเว็บ → POST /api/customers
+  // ===================================
+  // เพิ่มลูกค้าใหม่ → ยิง POST จริง
+  // ===================================
   const handleAddCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.phone || !newCustomer.email) {
+    if (!newCustomer.name || !newCustomer.tol || !newCustomer.email) {
       toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
       return;
     }
@@ -285,14 +255,13 @@ const getStatusBadge = (assignedTo?: string) => {
         },
         body: JSON.stringify({
           name: newCustomer.name,
-          phone: newCustomer.phone,
+          phone: newCustomer.tol,
           email: newCustomer.email,
         }),
       });
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        console.error("create customer error:", body);
         toast.error(body?.message || "เพิ่มลูกค้าใหม่ไม่สำเร็จ");
         return;
       }
@@ -301,8 +270,9 @@ const getStatusBadge = (assignedTo?: string) => {
       const mapped = mapApiCustomerToUi(created);
 
       setCustomers((prev) => [mapped, ...prev]);
-      setNewCustomer({ name: "", phone: "", email: "" });
+      setNewCustomer({ name: "", tol: "", email: "" });
       setIsAddDialogOpen(false);
+
       toast.success("เพิ่มลูกค้าใหม่สำเร็จ");
     } catch (err) {
       console.error(err);
@@ -310,54 +280,60 @@ const getStatusBadge = (assignedTo?: string) => {
     }
   };
 
-  // ✅ แก้ไขลูกค้า → ยังทำงานฝั่ง frontend + เพิ่ม deal เข้า Pipeline ถ้าเป็นลูกค้าใหม่
-  const handleUpdateCustomer = () => {
+  // ============================================
+  // แก้ไขข้อมูลลูกค้า → ยิง PUT /api/customers/:id
+  // ============================================
+  const handleUpdateCustomer = async () => {
     if (!editCustomer) return;
 
-    // ลูกค้าใหม่ = ก่อนหน้านี้ยังไม่มีเซลล์
-    const wasNew = !editCustomer.assignedTo;
+    try {
+      const token = localStorage.getItem("token");
 
-    const updatedCustomer: Customer = {
-      ...editCustomer,
-      status:
-        editCustomer.status === "new"
-          ? "contacted"
-          : editCustomer.status,
-    };
-
-    setCustomers((prev) =>
-      prev.map((c) => (c.id === editCustomer.id ? updatedCustomer : c))
-    );
-    setIsEditDialogOpen(false);
-    setEditCustomer(null);
-
-    if (wasNew) {
-      const pipelineDeals = JSON.parse(
-        localStorage.getItem("pipelineDeals") || "[]"
+      const res = await fetch(
+        `http://localhost:3000/api/customers/${editCustomer.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: token ? `Bearer ${token}` : "",
+          },
+          body: JSON.stringify({
+            name: editCustomer.name,
+            phone: editCustomer.tol,
+            email: editCustomer.email,
+            productType: editCustomer.productType,
+            budget: editCustomer.priceBudget,
+            saleId: editCustomer.saleId ?? null,
+          }),
+        }
       );
-      const newDeal = {
-        id: Date.now(),
-        customerId: updatedCustomer.id,
-        customerName: updatedCustomer.name,
-        phone: updatedCustomer.phone,
-        propertyType: updatedCustomer.propertyType || "ไม่ระบุ",
-        budget: updatedCustomer.budget || 0,
-        stage: "contacted",
-        status: "กำลังติดต่อ",
-        startDate: new Date(),
-        assignedSales: updatedCustomer.assignedTo,
-      };
-      pipelineDeals.push(newDeal);
-      localStorage.setItem("pipelineDeals", JSON.stringify(pipelineDeals));
-      toast.success("อัพเดทข้อมูลลูกค้าและเพิ่มไปยัง Pipeline สำเร็จ");
-    } else {
-      toast.success("อัพเดทข้อมูลลูกค้าสำเร็จ");
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.message || "อัปเดทข้อมูลลูกค้าไม่สำเร็จ");
+        return;
+      }
+
+      const updated = await res.json();
+      const mapped = mapApiCustomerToUi(updated);
+
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === mapped.id ? mapped : c))
+      );
+
+      toast.success("อัปเดทข้อมูลลูกค้าสำเร็จ");
+
+      setIsEditDialogOpen(false);
+      setEditCustomer(null);
+    } catch (err) {
+      console.error(err);
+      toast.error("อัปเดทข้อมูลลูกค้าไม่สำเร็จ (network)");
     }
   };
-
   // ======================== UI ========================
   return (
-    <div className="container mx-auto p-6 space-y-6 animate-fade-in">
+    <div className="container mx-auto p-6 space-y-6">
+
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">ลูกค้า</h1>
       </div>
@@ -377,6 +353,7 @@ const getStatusBadge = (assignedTo?: string) => {
             </div>
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="grid gap-4">
             {newCustomers.map((customer) => (
@@ -389,9 +366,10 @@ const getStatusBadge = (assignedTo?: string) => {
                     <div className="p-3 rounded-full gradient-primary">
                       <UserPlus className="w-5 h-5 text-white" />
                     </div>
+
                     <div>
                       <h3
-                        className="font-bold text-lg cursor-pointer hover:text-primary transition-colors"
+                        className="font-bold text-lg cursor-pointer hover:text-primary"
                         onClick={() => {
                           setSelectedCustomer(customer);
                           setIsDetailDialogOpen(true);
@@ -401,6 +379,7 @@ const getStatusBadge = (assignedTo?: string) => {
                       </h3>
                     </div>
                   </div>
+
                   <Badge className="bg-accent text-accent-foreground">
                     ลูกค้าใหม่
                   </Badge>
@@ -408,29 +387,34 @@ const getStatusBadge = (assignedTo?: string) => {
 
                 <div className="flex items-start justify-between gap-4 mt-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+
                     <div className="flex items-center gap-2">
                       <Phone className="w-4 h-4 text-primary" />
-                      <span className="text-sm">{customer.phone}</span>
+                      <span className="text-sm">{customer.tol}</span>
                     </div>
+
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-primary" />
                       <span className="text-sm">{customer.email}</span>
                     </div>
-                    {customer.propertyType && (
+
+                    {customer.productType && (
                       <div className="flex items-center gap-2">
                         <Home className="w-4 h-4 text-primary" />
-                        <span className="text-sm">{customer.propertyType}</span>
+                        <span className="text-sm">{customer.productType}</span>
                       </div>
                     )}
-                    {customer.budget && (
+
+                    {customer.priceBudget && (
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-primary" />
                         <span className="text-sm font-semibold text-primary">
-                          {formatCurrency(customer.budget)}
+                          {formatCurrency(customer.priceBudget)}
                         </span>
                       </div>
                     )}
                   </div>
+
                   <Button
                     size="sm"
                     variant="outline"
@@ -461,8 +445,9 @@ const getStatusBadge = (assignedTo?: string) => {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>รายชื่อลูกค้าทั้งหมด</CardTitle>
+
             <div className="relative w-96">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder="ค้นหาลูกค้า (ชื่อ, เบอร์โทร, อีเมล)"
                 value={searchQuery}
@@ -472,6 +457,7 @@ const getStatusBadge = (assignedTo?: string) => {
             </div>
           </div>
         </CardHeader>
+
         <CardContent>
           <div className="rounded-md border">
             <Table>
@@ -482,53 +468,50 @@ const getStatusBadge = (assignedTo?: string) => {
                   <TableHead>อีเมล</TableHead>
                   <TableHead>ประเภทอสังหา</TableHead>
                   <TableHead>งบประมาณ</TableHead>
-                  <TableHead>สถานะ</TableHead>
                   <TableHead>พนักงานที่ดูแล</TableHead>
                   <TableHead className="text-center">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
+
               <TableBody>
                 {filteredCustomers.map((customer) => (
                   <TableRow key={customer.id}>
-                    <TableCell className="font-medium">
-                      {customer.name}
-                    </TableCell>
+                    <TableCell>{customer.name}</TableCell>
+
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Phone className="w-3 h-3 text-muted-foreground" />
-                        {customer.phone}
+                        <Phone className="w-3 h-3 text-primary" />
+                        {customer.tol}
                       </div>
                     </TableCell>
+
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <Mail className="w-3 h-3 text-muted-foreground" />
+                        <Mail className="w-3 h-3 text-primary" />
                         {customer.email}
                       </div>
                     </TableCell>
+
                     <TableCell>
-                      {customer.propertyType ? (
-                        <div className="flex items-center gap-2">
-                          <Home className="w-3 h-3 text-primary" />
-                          {customer.propertyType}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
+                      {customer.productType || (
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
+
                     <TableCell>
-                      {customer.budget ? (
+                      {customer.priceBudget ? (
                         <div className="flex items-center gap-2 font-semibold text-primary">
                           <DollarSign className="w-3 h-3" />
-                          {formatCurrency(customer.budget)}
+                          {formatCurrency(customer.priceBudget)}
                         </div>
                       ) : (
-                        <span className="text-muted-foreground text-sm">-</span>
+                        <span className="text-muted-foreground">-</span>
                       )}
                     </TableCell>
-                    <TableCell>{getStatusBadge(customer.assignedTo)}</TableCell>
+
                     <TableCell>
-                      {customer.assignedTo ? (
-                        customer.assignedTo
+                      {customer.saleId ? (
+                        customer.saleName
                       ) : (
                         <Select
                           onValueChange={(value) =>
@@ -539,19 +522,17 @@ const getStatusBadge = (assignedTo?: string) => {
                             <SelectValue placeholder="เลือกพนักงาน" />
                           </SelectTrigger>
                           <SelectContent>
-                            {salesTeam.map((sales) => (
-                              <SelectItem
-                                key={sales.id}
-                                value={String(sales.id)}
-                              >
-                                {sales.name}
+                            {salesTeam.map((sale) => (
+                              <SelectItem key={sale.id} value={String(sale.id)}>
+                                {sale.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     </TableCell>
-                    <TableCell>
+
+                    <TableCell className="text-center">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -585,8 +566,10 @@ const getStatusBadge = (assignedTo?: string) => {
             <DialogTitle>รายละเอียดลูกค้า</DialogTitle>
             <DialogDescription>ข้อมูลทั้งหมดของลูกค้า</DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
+
               <div>
                 <Label>ชื่อลูกค้า</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -594,13 +577,15 @@ const getStatusBadge = (assignedTo?: string) => {
                   <span className="font-medium">{selectedCustomer?.name}</span>
                 </div>
               </div>
+
               <div>
                 <Label>เบอร์โทร</Label>
                 <div className="flex items-center gap-2 mt-2">
                   <Phone className="w-4 h-4 text-primary" />
-                  <span className="font-medium">{selectedCustomer?.phone}</span>
+                  <span className="font-medium">{selectedCustomer?.tol}</span>
                 </div>
               </div>
+
               <div>
                 <Label>อีเมล</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -608,122 +593,56 @@ const getStatusBadge = (assignedTo?: string) => {
                   <span className="font-medium">{selectedCustomer?.email}</span>
                 </div>
               </div>
+
               <div>
                 <Label>ประเภทอสังหา</Label>
                 <div className="flex items-center gap-2 mt-2">
                   <Home className="w-4 h-4 text-primary" />
                   <span className="font-medium">
-                    {selectedCustomer?.propertyType || "-"}
+                    {selectedCustomer?.productType || "-"}
                   </span>
                 </div>
               </div>
+
               <div>
                 <Label>งบประมาณ</Label>
                 <div className="flex items-center gap-2 mt-2">
                   <DollarSign className="w-4 h-4 text-primary" />
                   <span className="font-medium text-primary">
-                    {selectedCustomer?.budget
-                      ? formatCurrency(selectedCustomer.budget)
+                    {selectedCustomer?.priceBudget
+                      ? formatCurrency(selectedCustomer.priceBudget)
                       : "-"}
                   </span>
                 </div>
               </div>
-              <div>
-                <Label>สถานะ</Label>
-                <div className="mt-2">
-                  {selectedCustomer &&
-                    getStatusBadge(selectedCustomer.status)}
-                </div>
-              </div>
+
               <div>
                 <Label>พนักงานที่ดูแล</Label>
                 <div className="mt-2">
-                  <span className="font-medium">
-                    {selectedCustomer?.assignedTo || "ยังไม่ได้มอบหมาย"}
-                  </span>
+                  {selectedCustomer?.saleName || "ยังไม่ได้มอบหมาย"}
                 </div>
               </div>
             </div>
           </div>
+
           <DialogFooter>
             <Button onClick={() => setIsDetailDialogOpen(false)}>ปิด</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog เพิ่มลูกค้าใหม่ */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>เพิ่มลูกค้าใหม่</DialogTitle>
-            <DialogDescription>กรอกข้อมูลลูกค้าใหม่</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label>ชื่อลูกค้า</Label>
-              <Input
-                value={newCustomer.name}
-                onChange={(e) =>
-                  setNewCustomer({
-                    ...newCustomer,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="ชื่อ-นามสกุล"
-              />
-            </div>
-            <div>
-              <Label>เบอร์โทร</Label>
-              <Input
-                value={newCustomer.phone}
-                onChange={(e) =>
-                  setNewCustomer({
-                    ...newCustomer,
-                    phone: e.target.value,
-                  })
-                }
-                placeholder="0XX-XXX-XXXX"
-              />
-            </div>
-            <div>
-              <Label>อีเมล</Label>
-              <Input
-                type="email"
-                value={newCustomer.email}
-                onChange={(e) =>
-                  setNewCustomer({
-                    ...newCustomer,
-                    email: e.target.value,
-                  })
-                }
-                placeholder="email@example.com"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-              ยกเลิก
-            </Button>
-            <Button
-              onClick={handleAddCustomer}
-              className="gradient-primary text-white hover:opacity-90"
-            >
-              เพิ่มลูกค้า
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog แก้ไขข้อมูลลูกค้า */}
+      {/* Dialog แก้ไขลูกค้า */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>แก้ไขข้อมูลลูกค้า</DialogTitle>
             <DialogDescription>
-              เพิ่มข้อมูลความต้องการของลูกค้า
+              อัปเดตข้อมูลความต้องการของลูกค้า
             </DialogDescription>
           </DialogHeader>
+
           <div className="space-y-4 py-4">
+
             <div>
               <Label>ชื่อลูกค้า</Label>
               <Input
@@ -731,62 +650,49 @@ const getStatusBadge = (assignedTo?: string) => {
                 onChange={(e) =>
                   setEditCustomer(
                     editCustomer
-                      ? {
-                          ...editCustomer,
-                          name: e.target.value,
-                        }
+                      ? { ...editCustomer, name: e.target.value }
                       : null
                   )
                 }
-                placeholder="ชื่อ-นามสกุล"
               />
             </div>
+
             <div>
               <Label>เบอร์โทร</Label>
               <Input
-                value={editCustomer?.phone || ""}
+                value={editCustomer?.tol || ""}
                 onChange={(e) =>
                   setEditCustomer(
                     editCustomer
-                      ? {
-                          ...editCustomer,
-                          phone: e.target.value,
-                        }
+                      ? { ...editCustomer, tol: e.target.value }
                       : null
                   )
                 }
-                placeholder="0XX-XXX-XXXX"
               />
             </div>
+
             <div>
               <Label>อีเมล</Label>
               <Input
-                type="email"
                 value={editCustomer?.email || ""}
                 onChange={(e) =>
                   setEditCustomer(
                     editCustomer
-                      ? {
-                          ...editCustomer,
-                          email: e.target.value,
-                        }
+                      ? { ...editCustomer, email: e.target.value }
                       : null
                   )
                 }
-                placeholder="email@example.com"
               />
             </div>
+
             <div>
               <Label>ประเภทอสังหา</Label>
               <Select
-                value={editCustomer?.propertyType || ""}
+                value={editCustomer?.productType || ""}
                 onValueChange={(value) =>
                   setEditCustomer(
                     editCustomer
-                      ? {
-                          ...editCustomer,
-                          propertyType: value,
-                        }
+                      ? { ...editCustomer, productType: value }
                       : null
                   )
                 }
@@ -794,6 +700,7 @@ const getStatusBadge = (assignedTo?: string) => {
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกประเภท" />
                 </SelectTrigger>
+
                 <SelectContent>
                   <SelectItem value="คอนโด">คอนโด</SelectItem>
                   <SelectItem value="บ้านเดี่ยว">บ้านเดี่ยว</SelectItem>
@@ -802,34 +709,38 @@ const getStatusBadge = (assignedTo?: string) => {
                 </SelectContent>
               </Select>
             </div>
+
             <div>
               <Label>งบประมาณ</Label>
               <Input
                 type="number"
-                value={editCustomer?.budget || ""}
+                value={editCustomer?.priceBudget || ""}
                 onChange={(e) =>
                   setEditCustomer(
                     editCustomer
                       ? {
                           ...editCustomer,
-                          budget: Number(e.target.value),
+                          priceBudget: Number(e.target.value),
                         }
                       : null
                   )
                 }
-                placeholder="0"
               />
             </div>
+
             <div>
               <Label>พนักงานที่ดูแล</Label>
               <Select
-                value={editCustomer?.assignedTo || ""}
+                value={String(editCustomer?.saleId || "")}
                 onValueChange={(value) =>
                   setEditCustomer(
                     editCustomer
                       ? {
                           ...editCustomer,
-                          assignedTo: value,
+                          saleId: Number(value),
+                          saleName:
+                            salesTeam.find((s) => s.id === Number(value))
+                              ?.name || null,
                         }
                       : null
                   )
@@ -838,26 +749,26 @@ const getStatusBadge = (assignedTo?: string) => {
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกพนักงาน" />
                 </SelectTrigger>
+
                 <SelectContent>
-                  {salesTeam.map((sales) => (
-                    <SelectItem key={sales.id} value={sales.name}>
-                      {sales.name}
+                  {salesTeam.map((sale) => (
+                    <SelectItem key={sale.id} value={String(sale.id)}>
+                      {sale.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
+
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsEditDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               ยกเลิก
             </Button>
+
             <Button
               onClick={handleUpdateCustomer}
-              className="gradient-primary text-white hover:opacity-90"
+              className="gradient-primary text-white"
             >
               บันทึกข้อมูล
             </Button>
@@ -868,4 +779,4 @@ const getStatusBadge = (assignedTo?: string) => {
   );
 };
 
-export default SalesProcess;
+export default Customer;

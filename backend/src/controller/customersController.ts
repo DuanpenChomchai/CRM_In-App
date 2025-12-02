@@ -31,6 +31,7 @@ export const getAllCustomers = async (req: Request, res: Response) => {
             tol: true,
             img: true,
             role: true,
+
           },
         },
         sale: {
@@ -87,7 +88,10 @@ export const assignSales = async (req: Request, res: Response) => {
     // อัปเดตลง DB
     const updated = await prisma.customer.update({
       where: { id },
-      data: { saleId: saleUserId },
+      data: { 
+        saleId: saleUserId,
+        mainStatus: "CONTACTED", // เปลี่ยนสถานะเป็น CONTACTED
+      },
       include: {
         user: {
           select: {
