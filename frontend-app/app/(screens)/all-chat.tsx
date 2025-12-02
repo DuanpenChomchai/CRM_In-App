@@ -12,14 +12,12 @@ import {
   TextInput,
   FlatList,
   Pressable,
-  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, router, Href, useFocusEffect } from "expo-router";
+import { Link, router, useFocusEffect } from "expo-router";
 import { getSocket, setSocketAuth } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
-import { HOST, API_BASE_URL } from "../../config/api";
-
+import { HOST, API_BASE_URL, WS_SERVER } from "../../config/api";
 
 type ChatItem = {
   id: string; // roomId เช่น "cust:4"
@@ -36,16 +34,15 @@ type WsUnreadPayload = {
   saleUnread: number;
 };
 
-// // ✅ ใช้ได้ทั้ง emulator และมือถือจริง
-// const HOST: string = Platform.select<string>({
-//   ios: "http://localhost:3000",
-//   android: "http://10.0.2.2:3000",
-//   default: "http://172.24.4.22:3000",
-// })!;
-// const API_BASE_URL = `${HOST}/api`;
-
 export default function ChatsScreen() {
   const { user, token } = useAuthStore();
+
+  // ------- debug env / ws --------
+  useEffect(() => {
+    console.log("HOST =", HOST);
+    console.log("API_BASE_URL =", API_BASE_URL);
+    console.log("WS_SERVER =", WS_SERVER);
+  }, []);
 
   // --------- ตั้งค่า auth ให้ socket ตอน user/token เปลี่ยน ----------
   useEffect(() => {
@@ -103,7 +100,6 @@ export default function ChatsScreen() {
               name: data.sale.name || "Sale",
               time: "Now",
               isSaleChat: true,
-              // ✅ ฝั่งลูกค้าใช้จำนวนข้อความที่ลูกค้ายังไม่อ่าน
               unreadCount: data.unreadCount ?? 0,
             });
           } else {
@@ -158,7 +154,6 @@ export default function ChatsScreen() {
             customerId: c.id,
             name: c.name || `Customer #${c.id}`,
             time: "Now",
-            // ✅ ฝั่งเซลล์ใช้ unread ของเซลล์เอง
             unreadCount: c.unreadCount ?? 0,
           }));
 
@@ -184,14 +179,12 @@ export default function ChatsScreen() {
       if (!user?.role) return;
 
       if (user.role === "CUSTOMER") {
-        // ลูกค้ามีห้องเดียว (saleChat) → ใช้ customerUnread
         setSaleChat((prev) => {
           if (!prev) return prev;
           if (prev.id !== payload.roomId) return prev;
           return { ...prev, unreadCount: payload.customerUnread };
         });
       } else if (user.role === "SALE") {
-        // เซลล์มีหลายห้อง → ใช้ saleUnread ของห้องที่ตรง roomId
         setSaleRooms((prev) =>
           prev.map((room) =>
             room.id === payload.roomId
@@ -232,13 +225,20 @@ export default function ChatsScreen() {
 
   // ===== สถานะ Socket =====
   useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    const onConnect = () => {
+      console.log("✅ all-chat: socket connected");
+      setConnected(true);
+    };
+    const onDisconnect = () => {
+      console.log("❌ all-chat: socket disconnected");
+      setConnected(false);
+    };
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
 
     if (!socket.connected) {
+      console.log("🔁 all-chat: call socket.connect()");
       socket.connect();
     }
 
@@ -250,7 +250,6 @@ export default function ChatsScreen() {
 
   // ===== เวลาแตะห้องแต่ละอัน =====
   const handlePressRoom = (item: ChatItem) => {
-    // 1) เคลียร์ badge ใน state ทันที
     if (user?.role === "CUSTOMER") {
       setSaleChat((prev) =>
         prev && prev.id === item.id ? { ...prev, unreadCount: 0 } : prev
@@ -263,7 +262,6 @@ export default function ChatsScreen() {
       );
     }
 
-    // 2) นำทางไปหน้า chat-detail
     if (item.customerId != null) {
       router.push({
         pathname: "/(screens)/chat-detail",
@@ -314,7 +312,6 @@ export default function ChatsScreen() {
             )}
           </View>
 
-          {/* เวลา + badge */}
           <View className="items-end">
             <Text className="text-xs text-gray-500 mb-1">
               {item.time}
@@ -352,7 +349,6 @@ export default function ChatsScreen() {
     });
   };
 
-  // Header ทั้งหมด
   const ListHeader = (
     <View>
       <View className="flex-row items-center px-4 bg-white pt-2">

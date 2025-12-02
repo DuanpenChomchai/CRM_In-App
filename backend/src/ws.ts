@@ -41,7 +41,7 @@ export const initWs = (server: HttpServer) => {
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
       allowedHeaders: ["Content-Type", "Authorization"],
     },
-    transports: ["websocket"],
+    //transports: ["websocket"],
   });
 
   io.on("connection", (socket) => {
