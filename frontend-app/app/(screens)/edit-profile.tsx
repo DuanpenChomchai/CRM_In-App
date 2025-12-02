@@ -1,4 +1,3 @@
-// app/(screens)/profile-edit.tsx
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {

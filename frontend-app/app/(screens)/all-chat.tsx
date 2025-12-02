@@ -1,4 +1,3 @@
-// app/(screens)/all-chat.tsx
 import React, {
   useEffect,
   useMemo,
@@ -56,7 +55,6 @@ export default function ChatsScreen() {
   const socket = getSocket();
   const [connected, setConnected] = useState<boolean>(socket.connected);
   const [query, setQuery] = useState("");
-  const [customRoomName, setCustomRoomName] = useState("");
 
   // CUSTOMER: ห้องแชทกับเซลล์ที่ถูก assign ให้เรา
   const [saleChat, setSaleChat] = useState<ChatItem | null>(null);
@@ -330,27 +328,10 @@ export default function ChatsScreen() {
     );
   };
 
-  const handleCreateRoom = () => {
-    const name = customRoomName.trim();
-    if (!name) return;
-
-    const roomId =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9\- ]/g, "")
-        .replace(/\s+/g, "-")
-        .slice(0, 40) || `room-${Date.now()}`;
-
-    setCustomRoomName("");
-
-    router.push({
-      pathname: "/(screens)/chat-detail",
-      params: { id: roomId, name },
-    });
-  };
-
+  // ===== Header (ตัดบรรทัดสีเขียวออกแล้ว) =====
   const ListHeader = (
     <View>
+      {/* Title */}
       <View className="flex-row items-center px-4 bg-white pt-2">
         <View className="flex-1 items-center -ml-6 py-2">
           <Text className="text-lg font-semibold text-gray-900 text-center">
@@ -360,6 +341,7 @@ export default function ChatsScreen() {
         <View className="w-6" />
       </View>
 
+      {/* Search bar */}
       <View className="px-4 pb-2 bg-white">
         <View className="flex-row items-center bg-gray-100 rounded-2xl px-3 py-2">
           <Ionicons name="search" size={18} color="#9CA3AF" />
@@ -374,31 +356,8 @@ export default function ChatsScreen() {
         </View>
       </View>
 
+      {/* Status ข้างล่าง (ยังอยู่เหมือนเดิม) */}
       <View className="px-4 pb-2 bg-white">
-        <View className="flex-row items-center bg-emerald-50 rounded-2xl px-3 py-2 border border-emerald-100">
-          <Ionicons
-            name="chatbox-ellipses-outline"
-            size={18}
-            color="#047857"
-          />
-          <TextInput
-            className="flex-1 px-2 py-1 text-gray-800"
-            placeholder="Create or join a room (e.g. support-TH)"
-            placeholderTextColor="#6EE7B7"
-            value={customRoomName}
-            onChangeText={setCustomRoomName}
-            returnKeyType="go"
-            onSubmitEditing={handleCreateRoom}
-          />
-          <Pressable
-            onPress={handleCreateRoom}
-            className="pl-2"
-            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Ionicons name="add-circle" size={22} color="#10B981" />
-          </Pressable>
-        </View>
-
         {loadingSale && user?.role === "CUSTOMER" && (
           <View className="mt-2">
             <Text className="text-[11px] text-gray-400">
@@ -453,6 +412,7 @@ export default function ChatsScreen() {
         }
       />
 
+      {/* bottom tab */}
       <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around">
         <View className="items-center">
           <Ionicons name="chatbubble" size={22} color="#047857" />

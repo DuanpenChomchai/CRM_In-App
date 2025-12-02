@@ -1,4 +1,3 @@
-// app/store/useAuthStore.ts
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -15,7 +14,7 @@ type AuthState = {
   user: UserPayload | null;
   token: string | null;
   setAuthAfterLogin: (user: UserPayload, token: string) => Promise<void>;
-  setUser: (user: UserPayload | null) => void;   // 👈 เพิ่ม
+  setUser: (user: UserPayload | null) => void;   
   logout: () => Promise<void>;
 };
 

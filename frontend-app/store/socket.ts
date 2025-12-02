@@ -1,4 +1,3 @@
-// src/store/socket.ts
 import { io, Socket } from "socket.io-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { WS_SERVER } from "../config/api";

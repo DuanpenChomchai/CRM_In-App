@@ -1,4 +1,3 @@
-// src/controller/chatMessageController.ts
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { getIO } from "../ws";

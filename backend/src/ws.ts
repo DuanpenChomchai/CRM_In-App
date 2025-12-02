@@ -1,4 +1,3 @@
-// src/ws.ts
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import prisma from "./config/prismaclient";
