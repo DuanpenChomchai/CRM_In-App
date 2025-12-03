@@ -14,36 +14,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams } from "expo-router";
 import { useSocketRoom, generateCid } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
-import { useIsFocused } from "@react-navigation/native"; // ✅ เพิ่ม
+import { useIsFocused } from "@react-navigation/native";
 import { HOST, API_BASE_URL, WS_SERVER } from "../../config/api";
 
-
-type Msg =
-  | {
-      id: string;
-      fromMe: boolean;
-      type: "text";
-      text: string;
-      time: string;
-      cid?: string | number;
-    }
-  | {
-      id: string;
-      fromMe: boolean;
-      type: "audio";
-      durationSec: number;
-      time: string;
-    };
+type Msg = {
+  id: string;
+  fromMe: boolean;
+  type: "text";
+  text: string;
+  time: string;
+  cid?: string | number;
+};
 
 function formatClock(t = new Date()) {
   const h = t.getHours().toString().padStart(2, "0");
   const m = t.getMinutes().toString().padStart(2, "0");
   return `${h}:${m}`;
-}
-function formatDuration(sec: number) {
-  const m = Math.floor(sec / 60).toString().padStart(2, "0");
-  const s = Math.floor(sec % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
 }
 
 type ChatPartner = {
@@ -71,9 +57,8 @@ export default function ChatDetailScreen() {
     : idParam ?? "general";
 
   const { user, token } = useAuthStore();
-  const isFocused = useIsFocused(); // ✅ ใช้เช็คว่าหน้านี้กำลัง active อยู่ไหม
+  const isFocused = useIsFocused();
 
-  // ✅ ใช้ username ให้คงที่
   const username = useMemo(
     () => user?.name || user?.email || nameParam || "User",
     [user?.name, user?.email, nameParam]
@@ -135,7 +120,6 @@ export default function ChatDetailScreen() {
     };
 
     if (isFocused) {
-      // ✅ โฟกัสแล้วค่อยดึง
       fetchPartner();
     }
   }, [token, user?.role, customerIdParam, isFocused]);
@@ -149,7 +133,7 @@ export default function ChatDetailScreen() {
 
     const fetchHistory = async () => {
       try {
-        if (!token || !isFocused) return; // ✅ ต้องโฟกัส+มี token
+        if (!token || !isFocused) return;
 
         setLoadingHistory(true);
 
@@ -208,11 +192,11 @@ export default function ChatDetailScreen() {
     return () => {
       cancelled = true;
     };
-  }, [roomId, token, user?.id, username, isFocused]); // ✅ เพิ่ม isFocused
+  }, [roomId, token, user?.id, username, isFocused]);
 
   // ===== mark ห้องนี้ว่าอ่านแล้ว =====
   useEffect(() => {
-    if (!token || !customerIdParam || !isFocused) return; // ✅ ต้องเป็นห้องลูกค้า + โฟกัส
+    if (!token || !customerIdParam || !isFocused) return;
 
     const markRead = async () => {
       try {
@@ -231,53 +215,8 @@ export default function ChatDetailScreen() {
     };
 
     markRead();
-  }, [token, customerIdParam, isFocused]); // ✅ เพิ่ม isFocused
+  }, [token, customerIdParam, isFocused]);
 
-  // ===== Voice recording (UI only) =====
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordSec, setRecordSec] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const startRecording = () => {
-    if (isRecording) return;
-    setIsRecording(true);
-    setRecordSec(0);
-  };
-  const stopAndSend = () => {
-    if (!isRecording) return;
-    const duration = recordSec;
-    setIsRecording(false);
-    setRecordSec(0);
-    if (duration > 0) {
-      setLocalAudio((prev) => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          fromMe: true,
-          type: "audio",
-          durationSec: duration,
-          time: formatClock(new Date()),
-        },
-      ]);
-    }
-  };
-  const cancelRecording = () => {
-    setIsRecording(false);
-    setRecordSec(0);
-  };
-
-  useEffect(() => {
-    if (isRecording)
-      timerRef.current = setInterval(() => setRecordSec((s) => s + 1), 1000);
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [isRecording]);
-
-  const [localAudio, setLocalAudio] = useState<Msg[]>([]);
   const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
 
   const textMsgs: Msg[] = useMemo(
@@ -302,8 +241,8 @@ export default function ChatDetailScreen() {
   }, [socketMessages, username]);
 
   const mergedMessages: Msg[] = useMemo(
-    () => [...historyMessages, ...textMsgs, ...localAudio, ...localTextBuf],
-    [historyMessages, textMsgs, localAudio, localTextBuf]
+    () => [...historyMessages, ...textMsgs, ...localTextBuf],
+    [historyMessages, textMsgs, localTextBuf]
   );
 
   const [input, setInput] = useState("");
@@ -348,41 +287,8 @@ export default function ChatDetailScreen() {
     return (
       <View className={`mb-2 ${align}`}>
         <View className={`max-w-[78%] rounded-2xl px-3 py-2 ${bg}`}>
-          {item.type === "text" ? (
-            <>
-              <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
-              <Text className={`${subColor} text-[10px] mt-1`}>
-                {item.time}
-              </Text>
-            </>
-          ) : (
-            <>
-              <View className="flex-row items-center">
-                <View
-                  className={`w-8 h-8 rounded-full ${
-                    isMe ? "bg-emerald-700" : "bg-gray-200"
-                  } items-center justify-center mr-2`}
-                >
-                  <Ionicons
-                    name="play"
-                    size={16}
-                    color={isMe ? "#ffffff" : "#111827"}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className={`${textColor} text-[15px]`}>
-                    Voice message
-                  </Text>
-                  <Text className={`${subColor} text-[11px]`}>
-                    {formatDuration((item as any).durationSec)}
-                  </Text>
-                </View>
-              </View>
-              <Text className={`${subColor} text-[10px] mt-1`}>
-                {item.time}
-              </Text>
-            </>
-          )}
+          <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
+          <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
         </View>
       </View>
     );
@@ -450,9 +356,7 @@ export default function ChatDetailScreen() {
             </View>
           ) : (
             <View className="py-8 items-center">
-              <Text className="text-xs text-gray-400">
-                ยังไม่มีประวัติการคุย
-              </Text>
+              <Text className="text-xs text-gray-400">ยังไม่มีประวัติการคุย</Text>
             </View>
           )
         }
@@ -466,41 +370,6 @@ export default function ChatDetailScreen() {
         </View>
       )}
 
-      {isRecording && (
-        <View className="px-3 py-2 bg-rose-50 border-t border-rose-200">
-          <View className="flex-row items-center">
-            <View className="w-8 h-8 rounded-full bg-rose-100 items-center justify-center mr-2">
-              <Ionicons name="mic" size={16} color="#be123c" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-rose-700 font-medium">
-                Recording... {formatDuration(recordSec)}
-              </Text>
-              <Text className="text-rose-400 text-xs">
-                UI only — no audio file saved
-              </Text>
-            </View>
-
-            <Pressable
-              className="px-3 py-2 rounded-xl bg-rose-100 mr-2"
-              onPress={cancelRecording}
-            >
-              <Ionicons name="trash-outline" size={18} color="#be123c" />
-            </Pressable>
-
-            <Pressable
-              className="px-3 py-2 rounded-xl bg-emerald-600"
-              onPress={stopAndSend}
-            >
-              <View className="flex-row items-center">
-                <Ionicons name="stop" size={14} color="#ffffff" />
-                <Text className="text-white ml-2">Stop</Text>
-              </View>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
@@ -509,49 +378,28 @@ export default function ChatDetailScreen() {
             <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
           </Pressable>
 
-          <View
-            className={`flex-1 mx-2 rounded-2xl px-3 ${
-              isRecording ? "bg-gray-200" : "bg-gray-100"
-            }`}
-          >
+          <View className="flex-1 mx-2 rounded-2xl px-3 bg-gray-100">
             <TextInput
               className="py-2"
-              placeholder={isRecording ? "Recording..." : "Message"}
+              placeholder="Message"
               placeholderTextColor="#9CA3AF"
               value={input}
               onChangeText={(v) => {
                 setInput(v);
                 if (v.trim().length > 0) startTyping();
               }}
-              editable={!isRecording}
               returnKeyType="send"
               onSubmitEditing={onSend}
             />
           </View>
 
-          {input.trim().length > 0 && !isRecording ? (
+          {input.trim().length > 0 && (
             <Pressable
               className="px-3 py-2 rounded-2xl"
               onPress={onSend}
               style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
             >
               <Ionicons name="send" size={20} color="#047857" />
-            </Pressable>
-          ) : (
-            <Pressable
-              className={`px-3 py-2 rounded-2xl ${
-                isRecording ? "bg-rose-100" : ""
-              }`}
-              onPress={isRecording ? stopAndSend : startRecording}
-              onLongPress={startRecording}
-              delayLongPress={120}
-              style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
-            >
-              <Ionicons
-                name="mic"
-                size={20}
-                color={isRecording ? "#be123c" : "#6B7280"}
-              />
             </Pressable>
           )}
         </View>
