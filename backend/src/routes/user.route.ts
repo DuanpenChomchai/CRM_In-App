@@ -8,11 +8,24 @@ import {
   getMe,
   updateMe,
   listSales,
+  uploadProfileImage,
+  getUserProfle
 } from "../controller/userController";
+
 import { authMiddleware, verifyAdmin, AuthRequest } from "../middlewares/authMiddleware";
 import prisma from "../config/prismaclient";
+import { upload } from "../middlewares/uploadProfile";
+
+// ✅ ใช้ BUCKET_NAME เพื่อประกอบ URL
+import { BUCKET_NAME } from "../config/minioclient";
 
 const router = Router();
+
+const buildProfileImageUrl = (userId: number, filename?: string | null) => {
+  if (!filename) return null;
+  const base = (process.env.MINIO_PUBLIC_URL || process.env.MINIO_ENDPOINT || "").replace(/\/+$/, "");
+  return `${base}/${BUCKET_NAME}/profiles/${userId}/${filename}`;
+};
 
 /* ============================
    Mobile App / ผู้ใช้ทั่วไป
@@ -20,8 +33,12 @@ const router = Router();
 router.get("/me", authMiddleware, getMe);
 router.put("/me", authMiddleware, updateMe);
 
+// ✅ อัปโหลดรูปโปรไฟล์
+router.put("/me/profile-image", authMiddleware, upload.single("img"), uploadProfileImage);
+router.get("/profile-image/:id", authMiddleware, getUserProfle);
+
 /* ============================
-   Web CRM — PROFILE (เพิ่มใหม่)
+   Web CRM — PROFILE
    ============================ */
 
 // ดึงโปรไฟล์สำหรับหน้าเว็บ
@@ -34,40 +51,53 @@ router.get("/profile", authMiddleware, async (req: AuthRequest, res) => {
         name: true,
         email: true,
         tol: true,
-        img: true,
+        img: true, // filename
         role: true,
       },
     });
 
     if (!user) return res.status(404).json({ message: "User not found" });
-    return res.json({ user });
+
+    return res.json({
+      user: {
+        ...user,
+        img: buildProfileImageUrl(user.id, user.img), // ✅ ส่ง URL เต็ม
+      },
+    });
   } catch (err) {
     console.error("GET /profile error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 });
 
-// อัปเดตโปรไฟล์บนเว็บ
+// อัปเดตโปรไฟล์บนเว็บ (ข้อมูล text ปกติ)
 router.put("/profile", authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const { name, email, tol, img } = req.body;
+    const { name, email, tol } = req.body;
 
     const updated = await prisma.user.update({
       where: { id: req.user!.id },
-      data: { name, email, tol, img },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(email !== undefined ? { email } : {}),
+        ...(tol !== undefined ? { tol } : {}),
+      },
       select: {
         id: true,
         name: true,
         email: true,
         tol: true,
-        img: true,
+        img: true, // filename
         role: true,
       },
     });
 
     return res.json({
       message: "Profile updated",
-      user: updated,
+      user: {
+        ...updated,
+        img: buildProfileImageUrl(updated.id, updated.img), // ✅ ส่ง URL เต็ม
+      },
     });
   } catch (err) {
     console.error("PUT /profile error:", err);
@@ -75,31 +105,18 @@ router.put("/profile", authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
+// (ทางเลือก) อัปโหลดรูปโปรไฟล์สำหรับหน้าเว็บ (ใช้ตัวเดียวกับ /me/profile-image ได้)
+router.put("/profile/profile-image", authMiddleware, upload.single("img"), uploadProfileImage);
+
 /* ============================
    Web CRM (Admin / Manager)
    ============================ */
 
-// ⭐ ต้องวาง /sales ก่อน /:id
-router.get(
-  "/sales",
-  authMiddleware,
-  verifyAdmin,
-  listSales
-);
-
-// list users
+router.get("/sales", authMiddleware, verifyAdmin, listSales);
 router.get("/", authMiddleware, verifyAdmin, listUsers);
-
-// get user by id
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);
-
-// create user
 router.post("/", authMiddleware, verifyAdmin, createUser);
-
-// update user
 router.put("/:id", authMiddleware, verifyAdmin, updateUser);
-
-// delete user
 router.delete("/:id", authMiddleware, verifyAdmin, deleteUser);
 
 export default router;
