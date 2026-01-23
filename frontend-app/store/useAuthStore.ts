@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persist, createJSONStorage } from "zustand/middleware";
+import axios from "axios";
+
+const API_BASE_URL = "http://10.0.2.2:3000";
+// Android Emulator ใช้ 10.0.2.2
+// iOS Simulator ใช้ http://localhost:3000
+// มือถือจริงให้ใช้ IP เครื่อง เช่น http://192.168.x.x:3000
 
 export type UserPayload = {
   id: number;
@@ -8,30 +14,129 @@ export type UserPayload = {
   email: string;
   tol: string;
   role: "CUSTOMER" | "SALE" | "MANAGER" | "ADMIN";
+  img?: string | null;
 };
 
 type AuthState = {
   user: UserPayload | null;
   token: string | null;
+
   setAuthAfterLogin: (user: UserPayload, token: string) => Promise<void>;
-  setUser: (user: UserPayload | null) => void;   
+  setUser: (user: UserPayload | null) => void;
+
+  // ✅ เพิ่ม: ดึงโปรไฟล์
+  fetchMe: () => Promise<UserPayload>;
+
+  // ✅ อัปโหลดรูป
+  uploadProfileImage: (uri: string) => Promise<UserPayload>;
+
   logout: () => Promise<void>;
+};
+
+const normalizeImg = (user: UserPayload): UserPayload => {
+  const img = user.img;
+
+  if (!img) return user;
+
+  // URL เต็มแล้ว
+  if (img.startsWith("http://") || img.startsWith("https://")) return user;
+
+  // เป็น path เช่น "/uploads/..."
+  if (img.startsWith("/")) {
+    return { ...user, img: `${API_BASE_URL}${img}` };
+  }
+
+  // เป็น key (minio) เช่น "profiles/1/xxx.jpg"
+  // fallback: ใช้ proxy endpoint ผ่าน backend
+  return { ...user, img: `${API_BASE_URL}/api/users/profile-image/${user.id}?b=${Date.now()}` };
 };
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
 
-      // ใช้ตอน login ปกติ
       setAuthAfterLogin: async (user, token) => {
-        set({ user, token });
+        set({ user: normalizeImg(user), token });
       },
 
-      // ใช้ตอนแก้โปรไฟล์ (อัปเดตเฉพาะ user ไม่ยุ่งกับ token)
       setUser: (user) => {
-        set({ user });
+        set({ user: user ? normalizeImg(user) : null });
+      },
+
+      // ✅ GET /api/users/me (ดึงโปรไฟล์ล่าสุด)
+      fetchMe: async () => {
+        const token = get().token;
+        if (!token) throw new Error("No token");
+
+        const res = await axios.get(`${API_BASE_URL}/api/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // backend อาจส่ง {user:{...}} หรือส่งตรง
+        const raw: UserPayload = res.data?.user ?? res.data;
+        const normalized = normalizeImg(raw);
+
+        set({ user: normalized });
+        return normalized;
+      },
+
+      // ✅ PUT /api/users/me/profile-image (form-data key = "img")
+      uploadProfileImage: async (uri: string) => {
+        const token = get().token;
+        const currentUser = get().user;
+        if (!token) throw new Error("No token");
+        if (!currentUser?.id) throw new Error("No user");
+
+        const filename = uri.split("/").pop() || `profile_${Date.now()}.jpg`;
+        const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+
+        const mime =
+          ext === "png"
+            ? "image/png"
+            : ext === "webp"
+            ? "image/webp"
+            : ext === "gif"
+            ? "image/gif"
+            : "image/jpeg";
+
+        const formData = new FormData();
+
+        // ✅ สำคัญ: ต้องเป็น "img" ให้ตรง backend upload.single("img")
+        formData.append(
+          "img",
+          {
+            uri,
+            name: filename,
+            type: mime,
+          } as any
+        );
+
+        // ✅ อย่าตั้ง Content-Type เอง (ให้ axios ใส่ boundary)
+        const res = await axios.put(
+          `${API_BASE_URL}/api/users/me/profile-image`,
+          formData,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const rawUpdated: UserPayload = res.data?.user ?? res.data;
+
+        // ✅ ทำ cache bust เผื่อรูป URL เดิมโดนแคช
+        let updated: UserPayload = normalizeImg(rawUpdated);
+        if (updated.img && (updated.img.startsWith("http://") || updated.img.startsWith("https://"))) {
+          updated = {
+            ...updated,
+            img: `${updated.img}${updated.img.includes("?") ? "&" : "?"}b=${Date.now()}`,
+          };
+        }
+
+        set({ user: updated });
+        return updated;
       },
 
       logout: async () => {

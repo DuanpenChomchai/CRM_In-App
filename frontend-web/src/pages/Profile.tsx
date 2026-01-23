@@ -1,40 +1,35 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import {
-  Pencil,
-  Save,
-  X,
-  User,
-  Mail,
-  Phone,
-  Shield,
-  Camera,
-} from "lucide-react";
+import { Pencil, Save, X, Shield, Camera } from "lucide-react";
 
-// *** นำ Dialog มาใช้เหมือนหน้า UserManagement ***
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
 
 interface UserProfile {
+  id: number;
   name: string;
   email: string;
   phone: string;
   role: string;
-  avatar?: string | null;
+  avatar?: string | null; // URL สำหรับโชว์รูป
 }
 
 export default function Profile() {
+  const API_HOST =
+    (import.meta as any)?.env?.VITE_API_HOST ||
+    (import.meta as any)?.env?.VITE_API_BASE_URL ||
+    "http://localhost:3000";
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
@@ -42,85 +37,137 @@ export default function Profile() {
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [editedProfile, setEditedProfile] = useState<UserProfile | null>(null);
-  const [previewImg, setPreviewImg] = useState<string | null>(null);
 
-  // ⭐ เพิ่ม state สำหรับ popup เหมือนหน้า “ลบผู้ใช้”
+  const [previewImg, setPreviewImg] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  const [uploadingImg, setUploadingImg] = useState(false);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogType, setDialogType] = useState<"success" | "error">("success");
   const [dialogMsg, setDialogMsg] = useState("");
+
+  const dialogTitle = dialogType === "success" ? "สำเร็จ" : "ข้อผิดพลาด";
+
+  // ✅ ใช้ backend proxy แทน minio ตรง ๆ เพื่อไม่ติด CORS
+  // backend จะรับ token จาก query ?t=... (เพราะ <img> ส่ง Authorization header ไม่ได้)
+  const buildImageFromBackend = useMemo(() => {
+    return (userId: number, token: string, bust?: string) => {
+      const b = bust || Date.now().toString();
+      return `${API_HOST}/api/users/profile-image/${userId}?t=${encodeURIComponent(
+        token
+      )}&b=${encodeURIComponent(b)}`;
+    };
+  }, [API_HOST]);
 
   // =====================================================
   // LOAD PROFILE
   // =====================================================
   useEffect(() => {
     const token = localStorage.getItem("token");
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
-    fetch("http://localhost:3000/api/users/profile", {
+    fetch(`${API_HOST}/api/users/profile`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.message || "โหลดโปรไฟล์ไม่สำเร็จ");
+        return data;
+      })
       .then((data) => {
         const u = data.user;
 
         const mapped: UserProfile = {
+          id: u.id,
           name: u.name,
           email: u.email,
           phone: u.tol || "",
-          role: u.role.toUpperCase(),
-          avatar: u.img,
+          role: String(u.role || "").toUpperCase(),
+          avatar: null,
         };
 
-        setProfile(mapped);
-        setEditedProfile(mapped);
-        setPreviewImg(mapped.avatar);
+        // ✅ ให้ใช้ URL รูปผ่าน backend proxy เสมอ
+        const imgUrl = buildImageFromBackend(mapped.id, token);
+
+        setProfile({ ...mapped, avatar: imgUrl });
+        setEditedProfile({ ...mapped, avatar: imgUrl });
+        setAvatarUrl(imgUrl);
+        setPreviewImg(imgUrl);
+
+        console.log("PROFILE user.id:", mapped.id);
+        console.log("PROFILE image url:", imgUrl);
+      })
+      .catch((err: any) => {
+        console.error("load profile error:", err);
+        setDialogType("error");
+        setDialogMsg(err.message || "โหลดโปรไฟล์ล้มเหลว");
+        setDialogOpen(true);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [API_HOST, buildImageFromBackend]);
 
   const handleEdit = () => setIsEditing(true);
 
   const handleCancel = () => {
     setEditedProfile(profile);
-    setPreviewImg(profile?.avatar || null);
+    setAvatarUrl(profile?.avatar ?? null);
+    setPreviewImg(profile?.avatar ?? null);
     setIsEditing(false);
+
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // =====================================================
-  // SAVE PROFILE + POPUP แบบ dialog
+  // SAVE PROFILE
   // =====================================================
   const handleSave = async () => {
     if (!editedProfile) return;
     const token = localStorage.getItem("token");
+    if (!token) return;
 
     const payload = {
       name: editedProfile.name,
       email: editedProfile.email,
       tol: editedProfile.phone,
-      img: previewImg,
     };
 
-    const res = await fetch("http://localhost:3000/api/users/profile", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const res = await fetch(`${API_HOST}/api/users/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (res.ok) {
-      setProfile(editedProfile);
+      if (!res.ok) {
+        throw new Error(data?.message || "เกิดข้อผิดพลาดในการบันทึก");
+      }
+
+      // ✅ เก็บรูปเดิมไว้
+      const updated: UserProfile = {
+        ...editedProfile,
+        avatar: avatarUrl ?? editedProfile.avatar ?? null,
+      };
+
+      setProfile(updated);
+      setEditedProfile(updated);
       setIsEditing(false);
 
-      // เปิด popup success
       setDialogType("success");
       setDialogMsg("ข้อมูลโปรไฟล์ของคุณได้รับการอัปเดตแล้ว");
       setDialogOpen(true);
-    } else {
+    } catch (err: any) {
+      console.error("save profile error:", err);
       setDialogType("error");
-      setDialogMsg(data.message || "เกิดข้อผิดพลาดในการบันทึก");
+      setDialogMsg(err.message || "เกิดข้อผิดพลาดในการบันทึก");
       setDialogOpen(true);
     }
   };
@@ -130,19 +177,68 @@ export default function Profile() {
   // =====================================================
   const handleImageClick = () => isEditing && fileInputRef.current?.click();
 
-  const handleImageChange = (e: any) => {
-    const file = e.target.files[0];
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    if (!editedProfile) return;
+
+    // preview local ก่อน (ให้ผู้ใช้เห็นทันที)
     const localUrl = URL.createObjectURL(file);
     setPreviewImg(localUrl);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (editedProfile)
-        setEditedProfile({ ...editedProfile, avatar: reader.result as string });
-    };
-    reader.readAsDataURL(file);
+    try {
+      setUploadingImg(true);
+
+      const formData = new FormData();
+      // ✅ backend ใช้ upload.single("img") ต้องส่ง key = "img"
+      formData.append("img", file);
+
+      // ✅ route สำหรับ Web CRM
+      const res = await fetch(`${API_HOST}/api/users/profile/profile-image`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || "อัปโหลดรูปไม่สำเร็จ");
+      }
+
+      console.log("UPLOAD success:", data);
+
+      // ✅ หลังอัปโหลด ให้โชว์ผ่าน backend proxy พร้อม cache-bust
+      const busted = Date.now().toString();
+      const imgUrl = buildImageFromBackend(editedProfile.id, token, busted);
+
+      setAvatarUrl(imgUrl);
+      setPreviewImg(imgUrl);
+
+      setEditedProfile({ ...editedProfile, avatar: imgUrl });
+      if (profile) setProfile({ ...profile, avatar: imgUrl });
+
+      setDialogType("success");
+      setDialogMsg("อัปโหลดรูปโปรไฟล์สำเร็จ");
+      setDialogOpen(true);
+    } catch (err: any) {
+      console.error("upload image error:", err);
+
+      setDialogType("error");
+      setDialogMsg(err.message || "เกิดข้อผิดพลาดในการอัปโหลดรูป");
+      setDialogOpen(true);
+
+      // revert
+      setPreviewImg(avatarUrl ?? profile?.avatar ?? null);
+    } finally {
+      setUploadingImg(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleChange = (e: any) => {
@@ -157,18 +253,14 @@ export default function Profile() {
       .join("")
       .toUpperCase();
 
-  const dialogTitle = dialogType === "success" ? "สำเร็จ" : "ข้อผิดพลาด";
-
-  if (loading)
-    return <div className="p-10 text-center">กำลังโหลดข้อมูล...</div>;
+  if (loading) return <div className="p-10 text-center">กำลังโหลดข้อมูล...</div>;
+  if (!profile || !editedProfile) return <div className="p-10 text-center">ไม่พบข้อมูลผู้ใช้</div>;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto py-12 px-4 max-w-5xl">
         <h1 className="text-4xl font-bold mb-2">โปรไฟล์ผู้ใช้</h1>
-        <p className="text-lg text-muted-foreground">
-          จัดการข้อมูลส่วนตัวของคุณ
-        </p>
+        <p className="text-lg text-muted-foreground">จัดการข้อมูลส่วนตัวของคุณ</p>
 
         <Card className="shadow-card border-0 overflow-hidden mt-10">
           <CardHeader className="pb-4">
@@ -178,19 +270,18 @@ export default function Profile() {
                 <input
                   ref={fileInputRef}
                   type="file"
+                  accept="image/*"
                   className="hidden"
                   onChange={handleImageChange}
                 />
 
                 <div onClick={handleImageClick} className="cursor-pointer">
                   <Avatar className="h-32 w-32 border-4 shadow-xl">
-                    <AvatarImage src={previewImg ?? undefined} />
-                    <AvatarFallback className="text-3xl">
-                      {getInitials(profile!.name)}
-                    </AvatarFallback>
+                    <AvatarImage key={previewImg ?? "no-img"} src={previewImg ?? undefined} />
+                    <AvatarFallback className="text-3xl">{getInitials(profile.name)}</AvatarFallback>
                   </Avatar>
 
-                  {isEditing && (
+                  {(isEditing || uploadingImg) && (
                     <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-full">
                       <Camera className="w-10 h-10 text-white" />
                     </div>
@@ -202,12 +293,11 @@ export default function Profile() {
               <div className="flex-1 pt-4">
                 <div className="flex justify-between">
                   <div>
-                    <h3 className="text-2xl font-bold">{profile!.name}</h3>
+                    <h3 className="text-2xl font-bold">{profile.name}</h3>
 
-                    {/* 🔥 ROLE BADGE (สีชมพูตามที่ต้องการ) */}
                     <Badge className="mt-2 bg-pink-400 text-white flex items-center gap-1 px-3 py-1">
                       <Shield className="w-4 h-4" />
-                      {profile!.role}
+                      {profile.role}
                     </Badge>
                   </div>
 
@@ -228,50 +318,31 @@ export default function Profile() {
               <div className="space-y-2">
                 <Label>ชื่อ - นามสกุล</Label>
                 {isEditing ? (
-                  <Input
-                    name="name"
-                    value={editedProfile!.name}
-                    onChange={handleChange}
-                  />
+                  <Input name="name" value={editedProfile.name} onChange={handleChange} />
                 ) : (
-                  <div className="px-4 py-3 bg-muted/30 rounded-lg">
-                    {profile!.name}
-                  </div>
+                  <div className="px-4 py-3 bg-muted/30 rounded-lg">{profile.name}</div>
                 )}
               </div>
 
               <div className="space-y-2">
                 <Label>อีเมล</Label>
                 {isEditing ? (
-                  <Input
-                    name="email"
-                    value={editedProfile!.email}
-                    onChange={handleChange}
-                  />
+                  <Input name="email" value={editedProfile.email} onChange={handleChange} />
                 ) : (
-                  <div className="px-4 py-3 bg-muted/30 rounded-lg">
-                    {profile!.email}
-                  </div>
+                  <div className="px-4 py-3 bg-muted/30 rounded-lg">{profile.email}</div>
                 )}
               </div>
 
               <div className="space-y-2">
                 <Label>เบอร์โทรศัพท์</Label>
                 {isEditing ? (
-                  <Input
-                    name="phone"
-                    value={editedProfile!.phone}
-                    onChange={handleChange}
-                  />
+                  <Input name="phone" value={editedProfile.phone} onChange={handleChange} />
                 ) : (
-                  <div className="px-4 py-3 bg-muted/30 rounded-lg">
-                    {profile!.phone}
-                  </div>
+                  <div className="px-4 py-3 bg-muted/30 rounded-lg">{profile.phone}</div>
                 )}
               </div>
             </div>
 
-            {/* Action Buttons */}
             {isEditing && (
               <div className="flex justify-end gap-3 pt-6 border-t">
                 <Button variant="outline" onClick={handleCancel}>
@@ -287,32 +358,35 @@ export default function Profile() {
         </Card>
       </div>
 
-      {/* ================================================
-          POPUP SUCCESS 
-      ================================================= */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md rounded-2xl p-6 shadow-xl">
-          {/* X Button */}
           <button
             className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 transition"
             onClick={() => setDialogOpen(false)}
           ></button>
 
           <DialogHeader className="text-center">
-            <DialogTitle className="text-green-600 text-2xl font-bold">
-              บันทึกข้อมูลสำเร็จ!
+            <DialogTitle
+              className={`text-2xl font-bold ${
+                dialogType === "success" ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {dialogTitle}
             </DialogTitle>
 
-            {/* 🔥 ข้อความ อยู่กลางลงมาพอดี */}
-            <DialogDescription className="text-gray-600 text-center mt-33 mb-8 text-base leading-relaxed">
+            <DialogDescription className="text-gray-600 text-center mt-6 mb-8 text-base leading-relaxed">
               {dialogMsg}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex justify-center mt-4 mb-2">
+          <div className="flex justify-center mt-2 mb-2">
             <Button
               onClick={() => setDialogOpen(false)}
-              className="bg-green-500 hover:bg-green-600 text-white text-base px-6 py-2 rounded-lg shadow-md"
+              className={
+                dialogType === "success"
+                  ? "bg-green-500 hover:bg-green-600 text-white text-base px-6 py-2 rounded-lg shadow-md"
+                  : "bg-red-500 hover:bg-red-600 text-white text-base px-6 py-2 rounded-lg shadow-md"
+              }
             >
               ตกลง
             </Button>

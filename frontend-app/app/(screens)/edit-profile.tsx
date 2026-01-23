@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   View,
@@ -8,15 +8,19 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, Link, useRouter } from "expo-router";
 import { useAuthStore } from "../../store/useAuthStore";
 import { API_BASE_URL } from "../../config/api";
+import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileEditScreen() {
   const router = useRouter();
-  const { user, token, setUser } = useAuthStore();
+
+  // ✅ ดึง uploadProfileImage เพิ่ม
+  const { user, token, setUser, fetchMe, uploadProfileImage } = useAuthStore() as any;
 
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
@@ -24,12 +28,86 @@ export default function ProfileEditScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!user) {
-      router.replace("/(auth)/login");
-    }
-  }, [user]);
+  const [uploadingImg, setUploadingImg] = useState(false);
 
+  useEffect(() => {
+    if (!user) router.replace("/(auth)/login");
+  }, [user, router]);
+
+  useEffect(() => {
+    setName(user?.name ?? "");
+    setEmail(user?.email ?? "");
+    setPhone(user?.tol ?? "");
+  }, [user?.id]);
+
+  // ✅ รูปสำหรับโชว์ในหน้า edit
+  const avatarUri = useMemo(() => {
+    if (!user?.img) return null;
+    return user.img; // store เรา normalize ให้เป็น URL ใช้งานได้แล้ว
+  }, [user?.img]);
+
+  // =========================
+  // UPLOAD IMAGE (เลือกจากเครื่อง + อัปโหลด)
+  // =========================
+  const onPickAndUpload = async () => {
+    if (!uploadProfileImage) {
+      Alert.alert("Error", "ยังไม่ได้เชื่อมฟังก์ชัน uploadProfileImage ใน store");
+      return;
+    }
+    if (!token) {
+      Alert.alert("Error", "ไม่พบ token");
+      return;
+    }
+
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission", "กรุณาอนุญาตเข้าถึงรูปภาพก่อน");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.9,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets?.[0];
+      if (!asset?.uri) return;
+
+      setUploadingImg(true);
+
+      // ✅ ยิง PUT /api/users/me/profile-image ผ่าน store
+      const updatedUser = await uploadProfileImage(asset.uri);
+
+      // ✅ อัปเดต user ใน store (กันบาง backend ส่งไม่ครบ)
+      setUser({
+        ...(user ?? {}),
+        ...(updatedUser ?? {}),
+        img: updatedUser?.img ?? user?.img ?? null,
+      });
+
+      // ✅ ถ้ามี fetchMe ก็ sync อีกครั้ง
+      if (typeof fetchMe === "function") {
+        try {
+          await fetchMe();
+        } catch {}
+      }
+
+      Alert.alert("สำเร็จ", "อัปโหลดรูปโปรไฟล์เรียบร้อยแล้ว");
+    } catch (e: any) {
+      console.log("upload image error:", e);
+      Alert.alert("Error", e?.message || "อัปโหลดรูปไม่สำเร็จ");
+    } finally {
+      setUploadingImg(false);
+    }
+  };
+
+  // =========================
+  // SAVE TEXT PROFILE
+  // =========================
   const handleSave = async () => {
     if (!user || !token) {
       Alert.alert("Error", "ไม่พบข้อมูลผู้ใช้หรือ token");
@@ -44,7 +122,7 @@ export default function ProfileEditScreen() {
     try {
       setLoading(true);
 
-      const res = await fetch(`${API_BASE_URL}/users/me`, {
+      const res = await fetch(`${API_BASE_URL}/api/users/me/profile-image`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -54,7 +132,7 @@ export default function ProfileEditScreen() {
           name: name.trim(),
           email: email.trim(),
           tol: phone.trim(),
-          ...(password ? { password } : {}),
+          ...(password.trim() ? { password: password.trim() } : {}),
         }),
       });
 
@@ -64,7 +142,21 @@ export default function ProfileEditScreen() {
         throw new Error(data?.message || "อัปเดตโปรไฟล์ไม่สำเร็จ");
       }
 
-      setUser(data);
+      const updatedUser = data?.user ?? data;
+
+      const merged = {
+        ...user,
+        ...updatedUser,
+        img: updatedUser?.img ?? user.img ?? null,
+      };
+
+      setUser(merged);
+
+      if (typeof fetchMe === "function") {
+        try {
+          await fetchMe();
+        } catch {}
+      }
 
       Alert.alert("สำเร็จ", "บันทึกโปรไฟล์เรียบร้อยแล้ว", [
         { text: "OK", onPress: () => router.replace("/(screens)/profile") },
@@ -93,9 +185,7 @@ export default function ProfileEditScreen() {
           </Link>
 
           <View className="flex-1 items-center -ml-10">
-            <Text className="text-lg font-semibold text-gray-900">
-              Edit Profile
-            </Text>
+            <Text className="text-lg font-semibold text-gray-900">Edit Profile</Text>
           </View>
           <View className="h-10 w-10" />
         </View>
@@ -106,10 +196,42 @@ export default function ProfileEditScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
+          {/* ✅ Avatar + Upload */}
           <View className="items-center mt-2 mb-6">
-            <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center">
-              <Ionicons name="person" size={48} color="#0f5132" />
-            </View>
+            <Pressable
+              onPress={onPickAndUpload}
+              disabled={uploadingImg}
+              className="items-center"
+            >
+              <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center overflow-hidden">
+                {avatarUri ? (
+                  <Image source={{ uri: avatarUri }} style={{ width: 96, height: 96 }} resizeMode="cover" />
+                ) : (
+                  <Ionicons name="person" size={48} color="#0f5132" />
+                )}
+
+                {uploadingImg && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "rgba(0,0,0,0.25)",
+                    }}
+                  >
+                    <ActivityIndicator color="#fff" />
+                  </View>
+                )}
+              </View>
+
+              <View className="mt-3 flex-row items-center">
+                <Ionicons name="camera" size={18} color="#047857" />
+                <Text className="ml-2 text-emerald-800 font-semibold">
+                  {uploadingImg ? "Uploading..." : "Change Photo"}
+                </Text>
+              </View>
+            </Pressable>
           </View>
 
           <View className="space-y-4">
@@ -174,7 +296,7 @@ export default function ProfileEditScreen() {
           <Pressable
             className="mt-6 bg-emerald-700 rounded-xl items-center justify-center py-3"
             onPress={handleSave}
-            disabled={loading}
+            disabled={loading || uploadingImg}
           >
             {loading ? (
               <ActivityIndicator color="#ffffff" />

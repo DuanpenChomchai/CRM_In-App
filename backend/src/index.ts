@@ -4,7 +4,6 @@ import cors from "cors";
 import http from "http";
 
 import authRoutes from "./routes/auth.route";
-import { checkBucket } from "./config/minioclient";
 import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
@@ -39,12 +38,6 @@ async function main() {
     "SERVER START with JWT_SECRET =",
     process.env.JWT_SECRET ? "[SET]" : "[MISSING]"
   );
-
-  try {
-    await checkBucket();
-  } catch (e) {
-    console.error("MinIO checkBucket failed:", e);
-  }
 
   // ⭐ สร้าง HTTP server + WebSocket
   const server = http.createServer(app);
