@@ -9,7 +9,6 @@ import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
-import propertyRoute from "./routes/property.route";
 import { initWs } from "./ws"; 
 
 async function main() {
@@ -35,7 +34,6 @@ async function main() {
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
   app.use("/api/chat", chatMessageRoutes);
-  app.use("/api/properties", propertyRoute);
 
   console.log(
     "SERVER START with JWT_SECRET =",
