@@ -1,9 +1,9 @@
-import { View, Text } from "react-native";
-
-export default function Home() {
+import { Text, View } from "react-native";
+import "./global.css";
+export default function Index() {
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-      <Text>Home Screen</Text>
+    <View className="flex-1 items-center justify-center bg-blue-500">
+      <Text className="">Edit app/index.tsx to edit this screen.ss</Text>
     </View>
   );
 }
