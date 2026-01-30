@@ -302,8 +302,8 @@ const UserManagement = () => {
             เพิ่มและจัดการผู้ใช้งานในระบบ
           </p>
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
-          <UserPlus className="h-4 w-4" />
+        <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2 gradient-primary text-white hover:opacity-90">
+          <UserPlus className="h-4 w-4 " />
           เพิ่มผู้ใช้งาน
         </Button>
       </div>
@@ -406,7 +406,7 @@ const UserManagement = () => {
      
       {/* ADD USER DIALOG */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-lg w-full rounded-xl">
+        <DialogContent className="max-w-lg w-full rounded-xl ">
           <DialogHeader>
             <DialogTitle>เพิ่มผู้ใช้งานใหม่</DialogTitle>
             <DialogDescription>
@@ -490,7 +490,9 @@ const UserManagement = () => {
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               ยกเลิก
             </Button>
-            <Button onClick={handleAddUser}>เพิ่มผู้ใช้งาน</Button>
+            <Button onClick={handleAddUser} className="gradient-primary text-white hover:opacity-90">
+              เพิ่มผู้ใช้งาน
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
