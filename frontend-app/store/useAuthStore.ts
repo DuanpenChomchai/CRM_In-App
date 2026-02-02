@@ -2,11 +2,10 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persist, createJSONStorage } from "zustand/middleware";
 import axios from "axios";
+import { Platform } from "react-native";
 
-const API_BASE_URL = "http://10.0.2.2:3000";
-// Android Emulator ใช้ 10.0.2.2
-// iOS Simulator ใช้ http://localhost:3000
-// มือถือจริงให้ใช้ IP เครื่อง เช่น http://192.168.x.x:3000
+export const API_HOST = "http://10.0.2.2:3000";
+export const API_BASE_URL = `${API_HOST}/api`;
 
 export type UserPayload = {
   id: number;
@@ -24,10 +23,7 @@ type AuthState = {
   setAuthAfterLogin: (user: UserPayload, token: string) => Promise<void>;
   setUser: (user: UserPayload | null) => void;
 
-  // ✅ เพิ่ม: ดึงโปรไฟล์
   fetchMe: () => Promise<UserPayload>;
-
-  // ✅ อัปโหลดรูป
   uploadProfileImage: (uri: string) => Promise<UserPayload>;
 
   logout: () => Promise<void>;
@@ -35,20 +31,28 @@ type AuthState = {
 
 const normalizeImg = (user: UserPayload): UserPayload => {
   const img = user.img;
-
   if (!img) return user;
 
   // URL เต็มแล้ว
   if (img.startsWith("http://") || img.startsWith("https://")) return user;
 
-  // เป็น path เช่น "/uploads/..."
-  if (img.startsWith("/")) {
-    return { ...user, img: `${API_BASE_URL}${img}` };
-  }
+  // เป็น path เช่น "/uploads/.."
+  if (img.startsWith("/")) return { ...user, img: `${API_HOST}${img}` };
 
-  // เป็น key (minio) เช่น "profiles/1/xxx.jpg"
-  // fallback: ใช้ proxy endpoint ผ่าน backend
-  return { ...user, img: `${API_BASE_URL}/api/users/profile-image/${user.id}?b=${Date.now()}` };
+  // เป็น filename/key -> ใช้ proxy endpoint ผ่าน backend
+  return {
+    ...user,
+    img: `${API_BASE_URL}/users/profile-image/${user.id}?b=${Date.now()}`,
+  };
+};
+
+const guessMime = (filename: string) => {
+  const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "gif") return "image/gif";
+  if (ext === "heic") return "image/heic";
+  return "image/jpeg";
 };
 
 export const useAuthStore = create<AuthState>()(
@@ -65,69 +69,61 @@ export const useAuthStore = create<AuthState>()(
         set({ user: user ? normalizeImg(user) : null });
       },
 
-      // ✅ GET /api/users/me (ดึงโปรไฟล์ล่าสุด)
       fetchMe: async () => {
         const token = get().token;
         if (!token) throw new Error("No token");
 
-        const res = await axios.get(`${API_BASE_URL}/api/users/me`, {
+        const res = await axios.get(`${API_BASE_URL}/users/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        // backend อาจส่ง {user:{...}} หรือส่งตรง
         const raw: UserPayload = res.data?.user ?? res.data;
         const normalized = normalizeImg(raw);
-
         set({ user: normalized });
         return normalized;
       },
 
-      // ✅ PUT /api/users/me/profile-image (form-data key = "img")
       uploadProfileImage: async (uri: string) => {
         const token = get().token;
         const currentUser = get().user;
         if (!token) throw new Error("No token");
         if (!currentUser?.id) throw new Error("No user");
 
-        const filename = uri.split("/").pop() || `profile_${Date.now()}.jpg`;
-        const ext = (filename.split(".").pop() || "jpg").toLowerCase();
+        // iOS บางเครื่องต้องตัด file://
+        const safeUri =
+          Platform.OS === "ios" && uri.startsWith("file://")
+            ? uri.replace("file://", "")
+            : uri;
 
-        const mime =
-          ext === "png"
-            ? "image/png"
-            : ext === "webp"
-            ? "image/webp"
-            : ext === "gif"
-            ? "image/gif"
-            : "image/jpeg";
+        const filename = uri.split("/").pop() || `profile_${Date.now()}.jpg`;
+        const mime = guessMime(filename);
 
         const formData = new FormData();
-
-        // ✅ สำคัญ: ต้องเป็น "img" ให้ตรง backend upload.single("img")
         formData.append(
           "img",
           {
-            uri,
+            uri: safeUri,
             name: filename,
             type: mime,
           } as any
         );
 
-        // ✅ อย่าตั้ง Content-Type เอง (ให้ axios ใส่ boundary)
         const res = await axios.put(
-          `${API_BASE_URL}/api/users/me/profile-image`,
+          `${API_BASE_URL}/users/me/profile-image`,
           formData,
           {
             headers: {
               Authorization: `Bearer ${token}`,
+              "Content-Type": "multipart/form-data",
             },
+            timeout: 60000,
           }
         );
 
         const rawUpdated: UserPayload = res.data?.user ?? res.data;
+        let updated = normalizeImg(rawUpdated);
 
-        // ✅ ทำ cache bust เผื่อรูป URL เดิมโดนแคช
-        let updated: UserPayload = normalizeImg(rawUpdated);
+        // cache bust เผื่อแคชรูป
         if (updated.img && (updated.img.startsWith("http://") || updated.img.startsWith("https://"))) {
           updated = {
             ...updated,

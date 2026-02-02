@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, TouchableOpacity, Pressable, Image, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Pressable,
+  Image,
+  ActivityIndicator,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -8,7 +15,10 @@ import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout, uploadProfileImage, fetchMe } = useAuthStore();
+
+  // ✅ เพิ่ม token
+  const { user, token, logout, uploadProfileImage, fetchMe } = useAuthStore() as any;
+
   const [uploading, setUploading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
@@ -20,7 +30,7 @@ export default function ProfileScreen() {
       }
       try {
         setLoadingProfile(true);
-        await fetchMe(); // ✅ ดึงโปรไฟล์ล่าสุด
+        await fetchMe();
       } catch (e) {
         console.log("fetchMe error:", e);
       } finally {
@@ -30,9 +40,14 @@ export default function ProfileScreen() {
     run();
   }, []);
 
+  /**
+   * ✅ ใช้ endpoint รูปที่คุณมีอยู่ (จาก log)
+   * ใส่ cache buster กันรูปค้าง
+   */
   const avatarUri = useMemo(() => {
-    return user?.img || null; // ✅ store normalize ให้แล้ว
-  }, [user?.img]);
+    if (!user?.id) return null;
+    return `http://10.0.2.2:3000/api/users/profile-image/${user.id}?t=${Date.now()}`;
+  }, [user?.id, user?.img]); // ใส่ user.img เพื่อให้ rerender หลังอัปโหลด
 
   const onPickAndUpload = async () => {
     try {
@@ -51,8 +66,8 @@ export default function ProfileScreen() {
       if (!asset?.uri) return;
 
       setUploading(true);
-      await uploadProfileImage(asset.uri); // ✅ ยิง API + อัปเดต user ใน store
-      await fetchMe(); // ✅ ดึงใหม่กันเหนียว (ถ้า backend เปลี่ยน field อื่น)
+      await uploadProfileImage(asset.uri);
+      await fetchMe();
     } catch (e) {
       console.log("Upload profile image error:", e);
     } finally {
@@ -68,31 +83,31 @@ export default function ProfileScreen() {
         {/* Avatar */}
         <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center mb-4 overflow-hidden">
           {avatarUri ? (
-            <Image source={{ uri: avatarUri }} className="w-24 h-24" resizeMode="cover" />
+            <Image
+              source={{
+                uri: avatarUri,
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+              }}
+              className="w-24 h-24"
+              resizeMode="cover"
+              onError={(e) => console.log("Image load error:", e.nativeEvent)}
+            />
           ) : (
             <Ionicons name="person" size={48} color="#0f5132" />
           )}
-        </View>
 
-        {/* Change photo */}
-        <TouchableOpacity
-          activeOpacity={0.9}
-          className="mb-4 bg-emerald-100 px-4 py-2 rounded-xl flex-row items-center"
-          onPress={onPickAndUpload}
-          disabled={uploading}
-        >
-          {uploading ? <ActivityIndicator /> : <Ionicons name="camera" size={18} color="#047857" />}
-          <Text className="ml-2 text-emerald-800 font-semibold">
-            {uploading ? "Uploading..." : "Change Photo"}
-          </Text>
-        </TouchableOpacity>
+          {uploading && (
+            <View className="absolute inset-0 bg-black/40 items-center justify-center">
+              <ActivityIndicator color="#fff" />
+            </View>
+          )}
+        </View>
 
         {loadingProfile ? (
           <ActivityIndicator />
         ) : (
           <>
             <Text className="text-3xl font-bold text-gray-900">{user.name}</Text>
-            <Text className="text-xl text-gray-600 mt-1">{user.tol}</Text>
             <Text className="text-base text-gray-600 mt-1">{user.email}</Text>
           </>
         )}
@@ -105,7 +120,7 @@ export default function ProfileScreen() {
 
         <TouchableOpacity
           activeOpacity={0.9}
-          className="mt-6 bg-slate-500 px-6 py-3 rounded-xl"
+          className="mt-6 bg-slate-500 px-6 py-3 rounded-xl "
           onPress={async () => {
             try {
               await logout();

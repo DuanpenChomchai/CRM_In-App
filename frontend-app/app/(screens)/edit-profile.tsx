@@ -19,8 +19,8 @@ import * as ImagePicker from "expo-image-picker";
 export default function ProfileEditScreen() {
   const router = useRouter();
 
-  // ✅ ดึง uploadProfileImage เพิ่ม
-  const { user, token, setUser, fetchMe, uploadProfileImage } = useAuthStore() as any;
+  const { user, token, setUser, fetchMe, uploadProfileImage } =
+    useAuthStore() as any;
 
   const [name, setName] = useState(user?.name ?? "");
   const [email, setEmail] = useState(user?.email ?? "");
@@ -40,10 +40,9 @@ export default function ProfileEditScreen() {
     setPhone(user?.tol ?? "");
   }, [user?.id]);
 
-  // ✅ รูปสำหรับโชว์ในหน้า edit
   const avatarUri = useMemo(() => {
     if (!user?.img) return null;
-    return user.img; // store เรา normalize ให้เป็น URL ใช้งานได้แล้ว
+    return user.img; // ต้องเป็น URL ที่ device เข้าได้ (อย่าเป็น localhost)
   }, [user?.img]);
 
   // =========================
@@ -67,10 +66,11 @@ export default function ProfileEditScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.9,
-      });
+  mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  allowsEditing: true,
+  quality: 0.9,
+});
+
 
       if (result.canceled) return;
 
@@ -79,17 +79,17 @@ export default function ProfileEditScreen() {
 
       setUploadingImg(true);
 
-      // ✅ ยิง PUT /api/users/me/profile-image ผ่าน store
+      // ✅ PUT /api/users/me/profile-image (multipart) ผ่าน store
       const updatedUser = await uploadProfileImage(asset.uri);
 
-      // ✅ อัปเดต user ใน store (กันบาง backend ส่งไม่ครบ)
+      // ✅ merge user local (กัน backend ส่งมาไม่ครบ)
       setUser({
         ...(user ?? {}),
         ...(updatedUser ?? {}),
         img: updatedUser?.img ?? user?.img ?? null,
       });
 
-      // ✅ ถ้ามี fetchMe ก็ sync อีกครั้ง
+      // ✅ sync อีกครั้ง (ถ้ามี)
       if (typeof fetchMe === "function") {
         try {
           await fetchMe();
@@ -98,7 +98,7 @@ export default function ProfileEditScreen() {
 
       Alert.alert("สำเร็จ", "อัปโหลดรูปโปรไฟล์เรียบร้อยแล้ว");
     } catch (e: any) {
-      console.log("upload image error:", e);
+      console.log("upload image error:", e?.response?.data ?? e);
       Alert.alert("Error", e?.message || "อัปโหลดรูปไม่สำเร็จ");
     } finally {
       setUploadingImg(false);
@@ -122,7 +122,12 @@ export default function ProfileEditScreen() {
     try {
       setLoading(true);
 
-      const res = await fetch(`${API_BASE_URL}/api/users/me/profile-image`, {
+      // ✅ สำคัญ:
+      // ให้ API_BASE_URL เป็น ".../api" แล้วค่อยต่อ "/users/me"
+      // ห้ามเติม "/api" ซ้ำ ไม่งั้นจะกลายเป็น /api/api/users/me แล้วได้ HTML กลับมา
+      const url = `${API_BASE_URL}/users/me`;
+
+      const res = await fetch(url, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -136,7 +141,16 @@ export default function ProfileEditScreen() {
         }),
       });
 
-      const data = await res.json();
+      // ✅ กันเคส server ส่ง HTML กลับมา (เริ่มด้วย "<")
+      const rawText = await res.text();
+
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        console.log("Update profile non-JSON response:", rawText.slice(0, 300));
+        throw new Error("Server ตอบกลับไม่ใช่ JSON (เช็ค URL /api ซ้ำ หรือ server error)");
+      }
 
       if (!res.ok) {
         throw new Error(data?.message || "อัปเดตโปรไฟล์ไม่สำเร็จ");
@@ -185,7 +199,9 @@ export default function ProfileEditScreen() {
           </Link>
 
           <View className="flex-1 items-center -ml-10">
-            <Text className="text-lg font-semibold text-gray-900">Edit Profile</Text>
+            <Text className="text-lg font-semibold text-gray-900">
+              Edit Profile
+            </Text>
           </View>
           <View className="h-10 w-10" />
         </View>
@@ -196,7 +212,7 @@ export default function ProfileEditScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ✅ Avatar + Upload */}
+          {/* Avatar + Upload */}
           <View className="items-center mt-2 mb-6">
             <Pressable
               onPress={onPickAndUpload}
@@ -205,7 +221,11 @@ export default function ProfileEditScreen() {
             >
               <View className="w-24 h-24 rounded-full bg-emerald-200 items-center justify-center overflow-hidden">
                 {avatarUri ? (
-                  <Image source={{ uri: avatarUri }} style={{ width: 96, height: 96 }} resizeMode="cover" />
+                  <Image
+                    source={{ uri: avatarUri }}
+                    style={{ width: 96, height: 96 }}
+                    resizeMode="cover"
+                  />
                 ) : (
                   <Ionicons name="person" size={48} color="#0f5132" />
                 )}
@@ -276,7 +296,7 @@ export default function ProfileEditScreen() {
               />
             </View>
 
-            {/* Password (optional) */}
+            {/* Password */}
             <View>
               <Text className="mb-2 text-gray-700">
                 Password (ถ้าไม่เปลี่ยนให้เว้นว่าง)
