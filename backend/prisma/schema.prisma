@@ -4,7 +4,7 @@
 
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -14,6 +14,7 @@ generator client {
 // ===========================================================
 // ENUMS
 // ===========================================================
+
 enum Role {
   CUSTOMER
   SALE
@@ -47,6 +48,7 @@ enum CustomerStatus {
 // ===========================================================
 // USER (ลูกค้า/เซลล์/ผู้จัดการ/แอดมิน)
 // ===========================================================
+
 model User {
   id       Int     @id @default(autoincrement())
   name     String
@@ -56,27 +58,31 @@ model User {
   img      String?
   role     Role    @default(CUSTOMER)
 
-  customers       Customer[]              @relation("CustomerOwner")
-  salesCustomers  Customer[]              @relation("SaleCustomers")
-  closedDeals     ClosedDeal[]
-  communications  Communications[]
+  customers      Customer[]       @relation("CustomerOwner")
+  salesCustomers Customer[]       @relation("SaleCustomers")
+  closedDeals    ClosedDeal[]
+  communications Communications[]
 
-  saleCalls       Call[] @relation("SaleCallUser")
-  customerCalls   Call[] @relation("CustomerCallUser")
+  saleCalls     Call[] @relation("SaleCallUser")
+  customerCalls Call[] @relation("CustomerCallUser")
+
+  // ✅ เพิ่ม: อสังหาฯที่ user คนนี้สร้าง (admin)
+  properties Property[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 // ===========================================================
-// PRODUCT
+// PRODUCT (สำหรับ Proposal)
 // ===========================================================
+
 model Product {
-  id        Int      @id @default(autoincrement())
-  name      String
-  price     Decimal  @db.Decimal(12, 2)
-  property  String?
-  img       String?
+  id       Int     @id @default(autoincrement())
+  name     String
+  price    Decimal @db.Decimal(12, 2)
+  property String?
+  img      String?
 
   proposals Proposal[]
 
@@ -85,15 +91,58 @@ model Product {
 }
 
 // ===========================================================
+// PROPERTY (อสังหาริมทรัพย์)
+// ===========================================================
+
+enum PropertyType {
+  HOUSE
+  CONDO
+  TOWNHOME
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+}
+
+model Property {
+  id          Int            @id @default(autoincrement())
+  name        String
+  type        PropertyType
+  location    String
+  address     String?
+  price       Decimal        @db.Decimal(12, 2)
+  bedrooms    Int            @default(0)
+  bathrooms   Int            @default(0)
+  size        Int            @default(0) // ตร.ม.
+  status      PropertyStatus @default(AVAILABLE)
+  description String?
+  img         String? // เช่น /api/properties/image/<key>
+
+  createdById Int
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([location])
+  @@index([createdById])
+}
+
+// ===========================================================
 // CUSTOMER
 // ===========================================================
+
 model Customer {
-  id        Int     @id @default(autoincrement())
-  name      String
-  tol       String?
-  email     String  @unique
-  img       String?
-  password  String?
+  id       Int     @id @default(autoincrement())
+  name     String
+  tol      String?
+  email    String  @unique
+  img      String?
+  password String?
 
   productType String?
   priceBudget Decimal? @db.Decimal(12, 2)
@@ -110,12 +159,12 @@ model Customer {
   negotiations   Negotiation[]
   closedDeals    ClosedDeal[]
 
-  calls          Call[]
-  chatMessages   ChatMessage[]
+  calls        Call[]
+  chatMessages ChatMessage[]
 
-  mainStatus  CustomerStatus? @default(NEW)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  mainStatus CustomerStatus? @default(NEW)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   @@index([userId])
   @@index([saleId])
@@ -124,6 +173,7 @@ model Customer {
 // ===========================================================
 // COMMUNICATIONS
 // ===========================================================
+
 model Communications {
   id        Int     @id @default(autoincrement())
   phone     String?
@@ -134,10 +184,10 @@ model Communications {
   customer   Customer @relation(fields: [customerId], references: [id])
 
   userId Int?
-  user   User?       @relation(fields: [userId], references: [id])
+  user   User? @relation(fields: [userId], references: [id])
 
   callId Int?
-  call   Call?       @relation(fields: [callId], references: [id])
+  call   Call? @relation(fields: [callId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -150,15 +200,16 @@ model Communications {
 // ===========================================================
 // CONTACTED
 // ===========================================================
+
 model Contacted {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   status    String
   topic     String?
   note      String?
-  stateDate DateTime @default(now())
+  stateDate DateTime  @default(now())
   endDate   DateTime?
 
-  customerId Int    @unique
+  customerId Int      @unique
   customer   Customer @relation(fields: [customerId], references: [id])
 
   createdAt DateTime @default(now())
@@ -168,20 +219,21 @@ model Contacted {
 // ===========================================================
 // QUOTATION
 // ===========================================================
+
 model Quotation {
-  id              Int      @id @default(autoincrement())
+  id              Int       @id @default(autoincrement())
   status          String
-  stateDate       DateTime @default(now())
+  stateDate       DateTime  @default(now())
   terms           String?
-  quotationNumber String   @unique
-  totalAmount     Decimal  @db.Decimal(12, 2)
+  quotationNumber String    @unique
+  totalAmount     Decimal   @db.Decimal(12, 2)
   note            String?
   endDate         DateTime?
 
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  proposals  Proposal[]
+  proposals Proposal[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -193,14 +245,15 @@ model Quotation {
 // ===========================================================
 // PROPOSAL
 // ===========================================================
+
 model Proposal {
-  id           Int      @id @default(autoincrement())
+  id           Int     @id @default(autoincrement())
   quotation    String
   terms        String?
-  priceOffered Decimal   @db.Decimal(12, 2)
+  priceOffered Decimal @db.Decimal(12, 2)
 
-  productId   Int?
-  product     Product?  @relation(fields: [productId], references: [id])
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id])
 
   quotationId Int
   quotationDb Quotation @relation(fields: [quotationId], references: [id])
@@ -215,10 +268,11 @@ model Proposal {
 // ===========================================================
 // NEGOTIATION
 // ===========================================================
+
 model Negotiation {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   status    String
-  stateDate DateTime @default(now())
+  stateDate DateTime  @default(now())
   note      String?
   endDate   DateTime?
 
@@ -235,12 +289,13 @@ model Negotiation {
 // ===========================================================
 // CLOSED DEAL
 // ===========================================================
+
 model ClosedDeal {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   status      String
-  stateDate   DateTime @default(now())
-  finalValue  Decimal? @db.Decimal(12, 2)
-  discount    Decimal? @db.Decimal(12, 2)
+  stateDate   DateTime  @default(now())
+  finalValue  Decimal?  @db.Decimal(12, 2)
+  discount    Decimal?  @db.Decimal(12, 2)
   dealStatus  String?
   closingDate DateTime?
   note        String?
@@ -263,30 +318,31 @@ model ClosedDeal {
 // ===========================================================
 // CALL (ประวัติการโทร)
 // ===========================================================
+
 model Call {
-  id                Int      @id @default(autoincrement())
-  customerId        Int?
-  customer          Customer? @relation(fields: [customerId], references: [id])
+  id         Int       @id @default(autoincrement())
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 
-  saleUserId        Int?
-  saleUser          User? @relation("SaleCallUser", fields: [saleUserId], references: [id])
+  saleUserId Int?
+  saleUser   User? @relation("SaleCallUser", fields: [saleUserId], references: [id])
 
-  customerUserId    Int?
-  customerUser      User? @relation("CustomerCallUser", fields: [customerUserId], references: [id])
+  customerUserId Int?
+  customerUser   User? @relation("CustomerCallUser", fields: [customerUserId], references: [id])
 
-  direction         CallDirection
-  status            CallStatus
+  direction CallDirection
+  status    CallStatus
 
-  startedAt         DateTime
-  endedAt           DateTime?
-  durationSec       Int?
+  startedAt   DateTime
+  endedAt     DateTime?
+  durationSec Int?
 
   recordingKey         String?
   recordingDurationSec Int?
   transcript           String?
   note                 String?
 
-  communications    Communications[]
+  communications Communications[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -300,6 +356,7 @@ model Call {
 // ===========================================================
 // CHAT MESSAGE (ประวัติการแชทจริง ๆ ของ WebSocket)
 // ===========================================================
+
 model ChatMessage {
   id          Int      @id @default(autoincrement())
   roomId      String
@@ -307,14 +364,14 @@ model ChatMessage {
   senderName  String
   cid         String?
   customerId  Int?
-  imgMessage   String?
-  fileMessage  String?
+  imgMessage  String?
+  fileMessage String?
   createdAt   DateTime @default(now())
 
   readByCustomerAt DateTime?
   readBySaleAt     DateTime?
 
-  customer    Customer? @relation(fields: [customerId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
 
   @@index([roomId, createdAt])
   @@index([customerId, createdAt])

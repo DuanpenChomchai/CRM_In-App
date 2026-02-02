@@ -1,3 +1,4 @@
+// src/index.ts
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -8,7 +9,11 @@ import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
-import { initWs } from "./ws"; 
+
+// ✅ ใช้ route เดียวกัน (Properties.route.ts)
+import propertiesRoutes from "./routes/Properties.route";
+
+import { initWs } from "./ws";
 
 async function main() {
   const app = express();
@@ -27,22 +32,24 @@ async function main() {
 
   app.get("/", (_req, res) => res.json({ ok: true }));
 
-  // routes หลักทั้งหมด
   app.use("/api", authRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
   app.use("/api/chat", chatMessageRoutes);
 
+  // ✅ ของใหม่ที่ FE ใช้จริง
+  app.use("/api/properties", propertiesRoutes);
+
+  // ✅ กันโค้ดเก่าที่เคยเรียก /api/products (ถ้ามีหน้าอื่นใช้)
+  app.use("/api/products", propertiesRoutes);
+
   console.log(
     "SERVER START with JWT_SECRET =",
     process.env.JWT_SECRET ? "[SET]" : "[MISSING]"
   );
 
-  // ⭐ สร้าง HTTP server + WebSocket
   const server = http.createServer(app);
-
-  // ⬇️ ใช้ WebSocket ตัวใหม่จาก ws.ts
   initWs(server);
 
   server.listen(port, "0.0.0.0", () => {
