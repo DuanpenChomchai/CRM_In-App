@@ -45,6 +45,14 @@ enum CustomerStatus {
   CLOSED
 }
 
+// ======= ประเภทข้อความแชท =======
+enum ChatMessageType {
+  TEXT
+  IMAGE
+  FILE
+}
+
+
 // ===========================================================
 // USER (ลูกค้า/เซลล์/ผู้จัดการ/แอดมิน)
 // ===========================================================
@@ -358,15 +366,29 @@ model Call {
 // ===========================================================
 
 model ChatMessage {
-  id          Int      @id @default(autoincrement())
-  roomId      String
-  text        String
-  senderName  String
-  cid         String?
-  customerId  Int?
+  id         Int    @id @default(autoincrement())
+  roomId     String
+
+  // ✅ เดิม text เป็น required แต่รองรับ image/file จะต้อง optional
+  text       String?
+
+  senderName String
+  cid        String?
+  customerId Int?
+
+  // ✅ ของเดิม (แนะนำให้คงไว้ก่อนเพื่อไม่ให้ข้อมูลเก่าหาย)
+  // เก็บเป็น key/url ก็ได้ตามที่คุณใช้จริง
   imgMessage  String?
   fileMessage String?
-  createdAt   DateTime @default(now())
+
+  // ✅ ใหม่: type + metadata สำหรับไฟล์/รูป (แนะนำให้ใช้ fileKey เป็นหลัก)
+  type     ChatMessageType @default(TEXT)
+  fileKey  String?
+  fileName String?
+  fileMime String?
+  fileSize Int?
+
+  createdAt DateTime @default(now())
 
   readByCustomerAt DateTime?
   readBySaleAt     DateTime?
@@ -376,3 +398,4 @@ model ChatMessage {
   @@index([roomId, createdAt])
   @@index([customerId, createdAt])
 }
+

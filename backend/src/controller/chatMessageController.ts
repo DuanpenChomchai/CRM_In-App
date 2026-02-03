@@ -22,9 +22,12 @@ const buildChatWhere = (roomId?: string, customerId?: number, q?: string) => {
 
   if (q?.trim()) {
     const keyword = q.trim();
+
+    // ✅ รองรับ text ที่เป็น null + ค้นจาก fileName ได้
     where.OR = [
       { text: { contains: keyword, mode: "insensitive" } },
       { senderName: { contains: keyword, mode: "insensitive" } },
+      { fileName: { contains: keyword, mode: "insensitive" } }, // ✅ ใหม่
     ];
   }
 
@@ -42,6 +45,18 @@ const baseSelect = {
   createdAt: true,
   readByCustomerAt: true,
   readBySaleAt: true,
+
+  // ✅ เพิ่ม: รองรับรูป/ไฟล์
+  type: true,
+  fileKey: true,
+  fileName: true,
+  fileMime: true,
+  fileSize: true,
+
+  // ✅ fallback ของเดิม (เผื่อข้อมูลเก่า)
+  imgMessage: true,
+  fileMessage: true,
+
   customer: {
     select: { id: true, name: true, email: true },
   },
@@ -283,11 +298,8 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
       const io = getIO();
       const payload = { roomId, customerUnread, saleUnread };
 
-      // คนที่ join ห้องนี้
       io.to(roomId).emit("unread-count", payload);
-      // ทุก socket ที่เป็นลูกค้า
       io.to("role:CUSTOMER").emit("unread-count", payload);
-      // ทุก socket ที่เป็นเซลล์
       io.to("role:SALE").emit("unread-count", payload);
     } catch (e) {
       console.error("emit unread-count after mark-read error:", e);

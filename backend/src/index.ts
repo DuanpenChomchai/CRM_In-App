@@ -9,6 +9,8 @@ import userRoutes from "./routes/user.route";
 import communicationRoutes from "./routes/communication.route";
 import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
+import fileRoutes from "./routes/file.routes";
+import chatRoutes from "./routes/chat.routes";
 
 // ✅ ใช้ route เดียวกัน (Properties.route.ts)
 import propertiesRoutes from "./routes/Properties.route";
@@ -37,6 +39,8 @@ async function main() {
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
   app.use("/api/chat", chatMessageRoutes);
+  app.use("/api/files", fileRoutes);
+  app.use("/api/chat", chatRoutes);
 
   // ✅ ของใหม่ที่ FE ใช้จริง
   app.use("/api/properties", propertiesRoutes);
