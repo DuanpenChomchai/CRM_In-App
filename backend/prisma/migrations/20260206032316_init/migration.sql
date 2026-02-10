@@ -11,6 +11,9 @@ CREATE TYPE "CallStatus" AS ENUM ('RINGING', 'ONGOING', 'COMPLETED', 'MISSED', '
 CREATE TYPE "CustomerStatus" AS ENUM ('NEW', 'CONTACTED', 'NEGOTIATING', 'CLOSED');
 
 -- CreateEnum
+CREATE TYPE "ChatMessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE');
+
+-- CreateEnum
 CREATE TYPE "PropertyType" AS ENUM ('HOUSE', 'CONDO', 'TOWNHOME');
 
 -- CreateEnum
@@ -203,12 +206,17 @@ CREATE TABLE "Call" (
 CREATE TABLE "ChatMessage" (
     "id" SERIAL NOT NULL,
     "roomId" TEXT NOT NULL,
-    "text" TEXT NOT NULL,
+    "text" TEXT,
     "senderName" TEXT NOT NULL,
     "cid" TEXT,
     "customerId" INTEGER,
     "imgMessage" TEXT,
     "fileMessage" TEXT,
+    "type" "ChatMessageType" NOT NULL DEFAULT 'TEXT',
+    "fileKey" TEXT,
+    "fileName" TEXT,
+    "fileMime" TEXT,
+    "fileSize" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "readByCustomerAt" TIMESTAMP(3),
     "readBySaleAt" TIMESTAMP(3),
@@ -302,6 +310,9 @@ CREATE INDEX "ChatMessage_roomId_createdAt_idx" ON "ChatMessage"("roomId", "crea
 
 -- CreateIndex
 CREATE INDEX "ChatMessage_customerId_createdAt_idx" ON "ChatMessage"("customerId", "createdAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ChatMessage_roomId_senderName_cid_key" ON "ChatMessage"("roomId", "senderName", "cid");
 
 -- AddForeignKey
 ALTER TABLE "Property" ADD CONSTRAINT "Property_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

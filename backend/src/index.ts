@@ -11,16 +11,18 @@ import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
 import fileRoutes from "./routes/file.routes";
 import chatRoutes from "./routes/chat.routes";
-
-// ✅ ใช้ route เดียวกัน (Properties.route.ts)
 import propertiesRoutes from "./routes/Properties.route";
 
 import { initWs } from "./ws";
+import { getProfile } from "./controller/userController";
 
 async function main() {
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
+  // =========================
+  // CORS
+  // =========================
   app.use(
     cors({
       origin: "*",
@@ -29,24 +31,69 @@ async function main() {
     })
   );
 
+  // =========================
+  // Body parsers
+  // =========================
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // =========================
+  // ✅ Request logger (ช่วย debug)
+  // =========================
+  app.use((req, res, next) => {
+    const start = Date.now();
+    const { method, originalUrl } = req;
+
+    res.on("finish", () => {
+      const ms = Date.now() - start;
+      // log เฉพาะ /api ก็ได้ แต่ตอนนี้ log ทุกอันให้ชัด
+      console.log(`[HTTP] ${method} ${originalUrl} -> ${res.statusCode} (${ms}ms)`);
+    });
+
+    next();
+  });
+
+  // =========================
+  // Health
+  // =========================
   app.get("/", (_req, res) => res.json({ ok: true }));
 
+  // =========================
+  // ✅ Guard กันเรียก method ผิด (เคส GET /api/chat/upload)
+  // =========================
+  app.all("/api/chat/upload", (req, res, next) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ message: "Method Not Allowed. Use POST /api/chat/upload" });
+    }
+    next();
+  });
+
+  // =========================
+  // Routes
+  // =========================
   app.use("/api", authRoutes);
+
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
-  app.use("/api/chat", chatMessageRoutes);
+
+  // ✅ ไฟล์: /api/files/...
   app.use("/api/files", fileRoutes);
+
+  // ✅ แชท (upload/send) ก่อน
+  // เช่น POST /api/chat/upload, POST /api/chat/send
   app.use("/api/chat", chatRoutes);
 
-  // ✅ ของใหม่ที่ FE ใช้จริง
-  app.use("/api/properties", propertiesRoutes);
+  // ✅ แชท (history/room/mark-read) ทีหลัง
+  // เช่น GET /api/chat/room/:roomId
+  app.use("/api/chat", chatMessageRoutes);
 
-  // ✅ กันโค้ดเก่าที่เคยเรียก /api/products (ถ้ามีหน้าอื่นใช้)
-  app.use("/api/products", propertiesRoutes);
+  // ✅ properties
+  app.use("/api/properties", propertiesRoutes);
+  app.use("/api/products", propertiesRoutes); // backward compat
+
+  // ✅ profile route
+  app.get("/api/myprofile/:id", getProfile);
 
   console.log(
     "SERVER START with JWT_SECRET =",

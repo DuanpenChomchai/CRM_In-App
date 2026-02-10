@@ -10,7 +10,7 @@ const endpoint = rawEndpoint.startsWith("http")
 
 const s3Client = new S3Client({
   region: "us-east-1",
-  endpoint,
+  endpoint: "http://10.155.191.26:9000",
   credentials: {
     accessKeyId: process.env.MINIO_ROOT_USER!,
     secretAccessKey: process.env.MINIO_ROOT_PASSWORD!,

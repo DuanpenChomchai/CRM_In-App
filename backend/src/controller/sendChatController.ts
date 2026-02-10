@@ -5,7 +5,7 @@ import { getIO } from "../ws";
 interface AuthUser {
   id: number;
   email: string;
-  role: string;
+  role: string; // "SALE" | "CUSTOMER" | ...
   name?: string;
 }
 
@@ -22,7 +22,6 @@ function parseCustomerIdFromRoomId(roomId: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-// helper log: ตัดข้อมูลให้สั้นและไม่เสี่ยง
 const pickBodyForLog = (body: any) => ({
   roomId: body?.roomId,
   customerId: body?.customerId,
@@ -40,7 +39,7 @@ const pickBodyForLog = (body: any) => ({
  */
 export const sendChatMessage = async (req: AuthRequest, res: Response) => {
   const startedAt = Date.now();
-  const rid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; // request id ไว้ตาม trace
+  const rid = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   try {
     const authUser = req.user;
@@ -55,7 +54,7 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
     console.log(`[CHAT:SEND][${rid}] body=`, pickBodyForLog(req.body));
 
     if (!authUser?.id) {
-      console.log(`[CHAT:SEND][${rid}] -> 401 Unaunthenticated`);
+      console.log(`[CHAT:SEND][${rid}] -> 401 Unauthenticated`);
       return res.status(401).json({ message: "Unauthenticated" });
     }
 
@@ -72,7 +71,9 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
     }
 
     const cid = req.body.cid != null ? String(req.body.cid) : null;
-    const senderName = authUser.name || authUser.email || "User";
+
+    // ✅ แนะนำให้ใช้ email เป็น senderName เพื่อ FE fromMe เทียบง่าย ไม่เพี้ยน
+    const senderName = authUser.email || authUser.name || "User";
 
     const text = req.body.text != null ? String(req.body.text) : null;
 
@@ -81,9 +82,7 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
     const fileMime = req.body.fileMime != null ? String(req.body.fileMime) : null;
 
     const fileSize =
-      req.body.fileSize == null || req.body.fileSize === ""
-        ? null
-        : Number(req.body.fileSize);
+      req.body.fileSize == null || req.body.fileSize === "" ? null : Number(req.body.fileSize);
 
     if (fileSize !== null && Number.isNaN(fileSize)) {
       console.log(`[CHAT:SEND][${rid}] -> 400 fileSize invalid`, req.body.fileSize);
@@ -125,7 +124,7 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       if (customer?.id) customerId = customer.id;
     }
 
-    // ✅ 3) normalize roomId ให้เป็น cust:<customerId> ถ้าเรามี customerId แล้ว
+    // ✅ 3) normalize roomId ให้เป็น cust:<customerId> ถ้ามี customerId แล้ว
     if (customerId != null) {
       const oldRoom = roomId;
       roomId = `cust:${customerId}`;
@@ -134,7 +133,14 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    console.log(`[CHAT:SEND][${rid}] final roomId=`, roomId, "final customerId=", customerId, "type=", type);
+    console.log(
+      `[CHAT:SEND][${rid}] final roomId=`,
+      roomId,
+      "final customerId=",
+      customerId,
+      "type=",
+      type
+    );
 
     // ===== Validate ตาม type =====
     if (type === "TEXT") {
@@ -153,6 +159,11 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // ✅ ผู้ส่ง “อ่านแล้ว” ทันที (แก้ badge ขึ้นฝั่งผู้ส่ง + unread นับผิด)
+    const now = new Date();
+    const readBySaleAt = authUser.role === "SALE" ? now : null;
+    const readByCustomerAt = authUser.role === "CUSTOMER" ? now : null;
+
     // ===== บันทึก DB =====
     console.log(`[CHAT:SEND][${rid}] creating DB...`);
 
@@ -165,7 +176,6 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
         cid,
 
         type: type as any,
-
         text: type === "TEXT" ? text : null,
 
         fileKey: type !== "TEXT" ? fileKey : null,
@@ -175,6 +185,10 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
 
         imgMessage: type === "IMAGE" ? fileKey : null,
         fileMessage: type === "FILE" ? fileKey : null,
+
+        // ✅ สำคัญมาก
+        readBySaleAt,
+        readByCustomerAt,
       },
       select: {
         id: true,
@@ -203,10 +217,12 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
     // ===== broadcast realtime =====
     try {
       const io = getIO();
-      console.log(`[CHAT:SEND][${rid}] emit chat:message to room=`, roomId);
 
+      // 1) ส่ง message realtime ให้ทุกคนในห้อง (ทั้ง sale + customer ที่อยู่ห้องเดียวกัน)
+      console.log(`[CHAT:SEND][${rid}] emit chat:message to room=`, roomId);
       io.to(roomId).emit("chat:message", created);
 
+      // 2) unread-count คำนวณจาก DB หลัง set readBy.. ของผู้ส่งแล้ว
       if (created.customerId) {
         console.log(`[CHAT:SEND][${rid}] counting unread for customerId=`, created.customerId);
 
@@ -227,9 +243,15 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
 
         console.log(`[CHAT:SEND][${rid}] emit unread-count payload=`, payload);
 
+        // ส่งเข้า roomId เสมอ (เอาไว้ให้หน้าที่เปิดห้องนั้นอยู่ update ได้)
         io.to(payload.roomId).emit("unread-count", payload);
-        io.to("role:CUSTOMER").emit("unread-count", payload);
-        io.to("role:SALE").emit("unread-count", payload);
+
+        // ✅ ส่งให้ “ฝั่งรับ” เท่านั้น (แก้ badge ขึ้นฝั่งผู้ส่ง)
+        if (authUser.role === "SALE") {
+          io.to("role:CUSTOMER").emit("unread-count", payload);
+        } else if (authUser.role === "CUSTOMER") {
+          io.to("role:SALE").emit("unread-count", payload);
+        }
       }
     } catch (e) {
       console.error(`[CHAT:SEND][${rid}] emit error:`, e);

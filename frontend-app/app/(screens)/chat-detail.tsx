@@ -44,11 +44,17 @@ type BaseMsg = {
 
 type Msg =
   | (BaseMsg & { type: "text"; text: string })
-  | (BaseMsg & { type: "image"; uri: string | null; fileKey?: string | null })
+  | (BaseMsg & {
+      type: "image";
+      uri: string | null;
+      // เก็บ name ไว้ได้ แต่ "ไม่แสดงชื่อรูป" ตามที่ขอ
+      name?: string;
+      fileKey?: string | null;
+    })
   | (BaseMsg & {
       type: "file";
       uri: string | null;
-      name: string;
+      name: string; // ✅ ต้องใช้แสดงชื่อไฟล์ (PDF)
       size?: number | null;
       mimeType?: string | null;
       fileKey?: string | null;
@@ -69,6 +75,47 @@ const guessMimeFromName = (filename: string) => {
 };
 
 const normalizeEmail = (v?: string | null) => String(v || "").trim().toLowerCase();
+
+/** ========= DEDUPE HELPERS ========= */
+const isTempId = (id: string) =>
+  id.startsWith("temp-") || id.startsWith("img-") || id.startsWith("file-");
+
+const msgKey = (m: Msg) => {
+  if (m.cid != null && String(m.cid).trim() !== "") return `cid:${String(m.cid)}`;
+  return `id:${m.id}`;
+};
+
+const pickBetter = (a: Msg, b: Msg): Msg => {
+  const aTemp = isTempId(a.id);
+  const bTemp = isTempId(b.id);
+  if (aTemp !== bTemp) return aTemp ? b : a;
+
+  if (a.type === "image" && b.type === "image") {
+    const au = !!a.uri;
+    const bu = !!b.uri;
+    if (au !== bu) return au ? a : b;
+  }
+  if (a.type === "file" && b.type === "file") {
+    const au = !!a.uri;
+    const bu = !!b.uri;
+    if (au !== bu) return au ? a : b;
+  }
+
+  return a.ts >= b.ts ? a : b;
+};
+
+const mergeAndDedupe = (lists: Msg[][]) => {
+  const map = new Map<string, Msg>();
+  for (const list of lists) {
+    for (const m of list) {
+      const k = msgKey(m);
+      const prev = map.get(k);
+      map.set(k, prev ? pickBetter(prev, m) : m);
+    }
+  }
+  return Array.from(map.values()).sort((x, y) => x.ts - y.ts);
+};
+/** =============================== */
 
 export default function ChatDetailScreen() {
   const params = useLocalSearchParams();
@@ -101,7 +148,6 @@ export default function ChatDetailScreen() {
         const res = await fetch(`${API_BASE_URL}/chat/my-messages?pageSize=1`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-
         if (!res.ok) return;
 
         const json = await res.json();
@@ -118,7 +164,7 @@ export default function ChatDetailScreen() {
   const effectiveRoomId = effectiveCustomerId ? `cust:${effectiveCustomerId}` : idParam ?? "general";
 
   // =========================================================
-  // socket (ส่ง username เป็น email ให้ตรงกัน)
+  // socket
   // =========================================================
   const {
     connected,
@@ -130,7 +176,6 @@ export default function ChatDetailScreen() {
 
   // =========================================================
   // signed url helper
-  // GET /api/files/signed?key=... -> { url }
   // =========================================================
   const getSignedUrlForKey = async (key?: string | null) => {
     if (!key || !token) return null;
@@ -256,15 +301,22 @@ export default function ChatDetailScreen() {
   const [historyMessages, setHistoryMessages] = useState<Msg[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
+  const [localAttachBuf, setLocalAttachBuf] = useState<Msg[]>([]);
+
+  useEffect(() => {
+    setHistoryMessages([]);
+    setLocalTextBuf([]);
+    setLocalAttachBuf([]);
+  }, [effectiveRoomId]);
+
   useEffect(() => {
     let cancelled = false;
 
     const computeFromMe = (m: any) => {
-      // ✅ ถ้า backend มี senderId / userId ให้ใช้ก่อน (แม่นสุด)
       const senderId = m.senderId ?? m.userId ?? null;
       if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
 
-      // ✅ fallback เทียบ email (normalize)
       const senderEmail = normalizeEmail(m.senderEmail ?? m.senderName ?? m.sender ?? "");
       return senderEmail && myEmail ? senderEmail === myEmail : false;
     };
@@ -274,11 +326,9 @@ export default function ChatDetailScreen() {
         if (!token || !isFocused) return;
         setLoadingHistory(true);
 
-        const res = await fetch(
-          `${API_BASE_URL}/chat/room/${encodeURIComponent(effectiveRoomId)}?pageSize=200`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-
+        const res = await fetch(`${API_BASE_URL}/chat/room/${encodeURIComponent(effectiveRoomId)}?pageSize=200`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) return;
 
         const json = await res.json();
@@ -299,17 +349,27 @@ export default function ChatDetailScreen() {
             cid: m.cid ?? undefined,
           };
 
-          if (t === "IMAGE") return { ...base, type: "image", uri: null, fileKey };
-          if (t === "FILE")
+          if (t === "IMAGE") {
+            return {
+              ...base,
+              type: "image",
+              uri: null,
+              fileKey,
+              name: m.fileName ?? m.filename ?? m.file_name ?? undefined, // เก็บไว้ แต่ไม่แสดง
+            };
+          }
+
+          if (t === "FILE") {
             return {
               ...base,
               type: "file",
               uri: null,
               fileKey,
-              name: m.fileName ?? "file",
-              size: m.fileSize ?? null,
-              mimeType: m.fileMime ?? null,
+              name: m.fileName ?? m.filename ?? m.file_name ?? "file", // ✅ ชื่อ PDF ต้องมา
+              size: m.fileSize ?? m.size ?? null,
+              mimeType: m.fileMime ?? m.mimeType ?? m.mimetype ?? null,
             };
+          }
 
           return { ...base, type: "text", text: m.text ?? "" };
         });
@@ -317,7 +377,6 @@ export default function ChatDetailScreen() {
         if (cancelled) return;
         setHistoryMessages(mappedBase);
 
-        // เติม signed url
         const needSign = mappedBase.filter(
           (x) => (x.type === "image" || x.type === "file") && (x as any).fileKey
         );
@@ -379,18 +438,15 @@ export default function ChatDetailScreen() {
   // =========================================================
   // socket texts
   // =========================================================
-  const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
-  const [localAttachBuf, setLocalAttachBuf] = useState<Msg[]>([]);
-
   const textMsgs: Msg[] = useMemo(
     () =>
       socketMessages.map((m) => {
         const ts = Number(m.ts ?? Date.now());
         return {
-          id: m.id,
+          id: String(m.id),
           fromMe: normalizeEmail(m.user) === myEmail,
           type: "text",
-          text: m.text,
+          text: String(m.text ?? ""),
           time: formatClock(new Date(ts)),
           ts,
           cid: m.cid,
@@ -408,10 +464,7 @@ export default function ChatDetailScreen() {
   }, [socketMessages, myEmail]);
 
   const mergedMessages: Msg[] = useMemo(() => {
-    const all = [...historyMessages, ...textMsgs, ...localAttachBuf, ...localTextBuf];
-    const map = new Map<string, Msg>();
-    for (const m of all) map.set(m.id, m);
-    return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+    return mergeAndDedupe([historyMessages, textMsgs, localAttachBuf, localTextBuf]);
   }, [historyMessages, textMsgs, localAttachBuf, localTextBuf]);
 
   const [input, setInput] = useState("");
@@ -453,7 +506,7 @@ export default function ChatDetailScreen() {
     setInput("");
 
     try {
-      await sendToServer({
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -461,11 +514,32 @@ export default function ChatDetailScreen() {
         text: t,
       });
 
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "text",
+              text: created?.text ?? t,
+              time: formatClock(createdAt),
+              ts,
+            },
+          ],
+        ])
+      );
+
       sendSocketText(t, cid);
       setLocalTextBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     } catch (e: any) {
       console.error("[send text] error:", e);
       Alert.alert("ส่งข้อความไม่สำเร็จ", e?.message ?? "unknown error");
+      setLocalTextBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     }
   };
 
@@ -490,7 +564,7 @@ export default function ChatDetailScreen() {
       if (!perm.granted) return;
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // (ยัง deprecate warning ได้ แต่ไม่พัง)
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
         allowsEditing: false,
       });
@@ -500,7 +574,10 @@ export default function ChatDetailScreen() {
       const asset = result.assets?.[0];
       if (!asset?.uri) return;
 
-      // preview local
+      const fileName = (asset as any).fileName ?? `image-${Date.now()}.jpg`;
+      const mimeHint = (asset as any).mimeType ?? guessMimeFromName(fileName);
+
+      // preview local (ไม่แสดงชื่อรูปใน UI)
       setLocalAttachBuf((prev) => [
         ...prev,
         {
@@ -509,18 +586,16 @@ export default function ChatDetailScreen() {
           fromMe: true,
           type: "image",
           uri: asset.uri,
+          name: fileName,
           time: formatClock(new Date(now)),
           ts: now,
           fileKey: null,
         },
       ]);
 
-      const fileName = (asset as any).fileName ?? `image-${Date.now()}.jpg`;
-      const mimeHint = (asset as any).mimeType ?? guessMimeFromName(fileName);
-
       const up = await uploadToServer(asset.uri, fileName, mimeHint);
 
-      await sendToServer({
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -537,9 +612,31 @@ export default function ChatDetailScreen() {
       setLocalAttachBuf((prev) =>
         prev.map((m: any) =>
           m.cid === cid && m.type === "image"
-            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey }
+            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey, name: up.fileName ?? m.name }
             : m
         )
+      );
+
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-img-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "image",
+              uri: signed ?? null,
+              fileKey: up.fileKey,
+              name: up.fileName ?? fileName,
+              time: formatClock(createdAt),
+              ts,
+            } as Msg,
+          ],
+        ])
       );
     } catch (e: any) {
       console.error("[pickImage] ERROR", e);
@@ -570,6 +667,10 @@ export default function ChatDetailScreen() {
       const file = resPick.assets?.[0];
       if (!file?.uri) return;
 
+      const fileName = file.name ?? `file-${Date.now()}`;
+      const mimeHint = file.mimeType ?? guessMimeFromName(fileName);
+
+      // preview local (✅ ต้องมีชื่อไฟล์)
       setLocalAttachBuf((prev) => [
         ...prev,
         {
@@ -578,21 +679,18 @@ export default function ChatDetailScreen() {
           fromMe: true,
           type: "file",
           uri: file.uri,
-          name: file.name ?? "file",
+          name: fileName,
           size: file.size ?? null,
-          mimeType: file.mimeType ?? null,
+          mimeType: file.mimeType ?? mimeHint ?? null,
           time: formatClock(new Date(now)),
           ts: now,
           fileKey: null,
         },
       ]);
 
-      const fileName = file.name ?? `file-${Date.now()}`;
-      const mimeHint = file.mimeType ?? guessMimeFromName(fileName);
-
       const up = await uploadToServer(file.uri, fileName, mimeHint);
 
-      await sendToServer({
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -609,9 +707,33 @@ export default function ChatDetailScreen() {
       setLocalAttachBuf((prev) =>
         prev.map((m: any) =>
           m.cid === cid && m.type === "file"
-            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey }
+            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey, name: up.fileName ?? m.name }
             : m
         )
+      );
+
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-file-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "file",
+              uri: signed ?? null,
+              fileKey: up.fileKey,
+              name: up.fileName ?? fileName,
+              size: up.size ?? null,
+              mimeType: up.mimeType ?? mimeHint ?? null,
+              time: formatClock(createdAt),
+              ts,
+            } as Msg,
+          ],
+        ])
       );
     } catch (e: any) {
       console.error("[pickFile] ERROR", e);
@@ -659,7 +781,13 @@ export default function ChatDetailScreen() {
 
     return (
       <View className={`mb-2 ${align}`}>
-        <View className={`max-w-[78%] rounded-2xl px-3 py-2 ${bg}`}>
+        <View
+          className={`rounded-2xl px-3 py-2 ${bg}`}
+          style={{
+            maxWidth: "78%",
+            minWidth: item.type === "file" ? 220 : undefined, // ✅ กันบีบจนไม่เหลือที่ให้ชื่อไฟล์
+          }}
+        >
           {item.type === "text" ? (
             <>
               <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
@@ -667,19 +795,20 @@ export default function ChatDetailScreen() {
             </>
           ) : item.type === "image" ? (
             <>
-              <Pressable onPress={() => openUrl(item.uri)} style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}>
+              <Pressable
+                onPress={() => openUrl(item.uri)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+              >
                 {item.uri ? (
                   <Image
                     source={{ uri: item.uri }}
                     style={{ width: 220, height: 220, borderRadius: 14 }}
                     resizeMode="cover"
                     onError={async () => {
-                      // signed หมดอายุ -> ขอใหม่
                       await refreshSignedForMessage(item);
                     }}
                   />
                 ) : (
-                  // ✅ placeholder กัน source.uri warning
                   <View
                     style={{
                       width: 220,
@@ -695,14 +824,21 @@ export default function ChatDetailScreen() {
                 )}
               </Pressable>
 
+              {/* ✅ เอาชื่อรูปออก (ไม่แสดง item.name) */}
               <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
             </>
           ) : (
             <>
-              <Pressable onPress={() => openUrl(item.uri)} style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}>
+              <Pressable
+                onPress={() => openUrl(item.uri)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+              >
+                {/* แถวไอคอน */}
                 <View className="flex-row items-center">
                   <View
-                    className={`w-9 h-9 rounded-full ${isMe ? "bg-emerald-700" : "bg-gray-200"} items-center justify-center mr-2`}
+                    className={`w-9 h-9 rounded-full ${
+                      isMe ? "bg-emerald-700" : "bg-gray-200"
+                    } items-center justify-center mr-2`}
                   >
                     <Ionicons
                       name="document-text-outline"
@@ -711,21 +847,28 @@ export default function ChatDetailScreen() {
                     />
                   </View>
 
-                  <View className="flex-1">
-                    <Text className={`${textColor} text-[14px]`} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text className={`${subColor} text-[11px]`} numberOfLines={1}>
-                      {item.mimeType ?? "file"}
-                    </Text>
-                  </View>
+                  <Text className={`${subColor} text-[11px]`}>
+                    {item.mimeType?.includes("pdf") ? "PDF" : item.mimeType ?? "file"}
+                  </Text>
                 </View>
+
+                {/* ✅ บรรทัดชื่อไฟล์ (แยกออกมาเพื่อให้ “ขึ้นแน่ๆ”) */}
+                <Text
+                  className={`${textColor} text-[14px] mt-1`}
+                  numberOfLines={2}
+                  style={{ flexShrink: 1 }}
+                >
+                  {item.name || "ไฟล์แนบ"}
+                </Text>
               </Pressable>
 
               <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
 
               {!item.uri && item.fileKey ? (
-                <Pressable onPress={() => refreshSignedForMessage(item)} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+                <Pressable
+                  onPress={() => refreshSignedForMessage(item)}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                >
                   <Text className={`${subColor} text-[10px] mt-1`}>แตะเพื่อโหลดลิงก์ไฟล์</Text>
                 </Pressable>
               ) : null}
@@ -807,21 +950,33 @@ export default function ChatDetailScreen() {
             <Pressable onPress={(e) => e.stopPropagation()} className="bg-white rounded-t-2xl px-4 pt-4 pb-6">
               <Text className="text-base font-semibold text-gray-900 mb-3">เลือกประเภทที่ต้องการส่ง</Text>
 
-              <Pressable className="flex-row items-center py-3" onPress={pickImage} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+              <Pressable
+                className="flex-row items-center py-3"
+                onPress={pickImage}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
                 <Ionicons name="image-outline" size={20} color="#111827" />
                 <Text className="ml-3 text-gray-900">ส่งรูปภาพ</Text>
               </Pressable>
 
               <View className="h-[1px] bg-gray-100" />
 
-              <Pressable className="flex-row items-center py-3" onPress={pickFile} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+              <Pressable
+                className="flex-row items-center py-3"
+                onPress={pickFile}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
                 <Ionicons name="document-attach-outline" size={20} color="#111827" />
                 <Text className="ml-3 text-gray-900">ส่งไฟล์</Text>
               </Pressable>
 
               <View className="h-[1px] bg-gray-100" />
 
-              <Pressable className="py-3 items-center" onPress={() => setAttachOpen(false)} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+              <Pressable
+                className="py-3 items-center"
+                onPress={() => setAttachOpen(false)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
                 <Text className="text-gray-500">ยกเลิก</Text>
               </Pressable>
             </Pressable>
@@ -851,7 +1006,11 @@ export default function ChatDetailScreen() {
           </View>
 
           {input.trim().length > 0 ? (
-            <Pressable className="px-3 py-2 rounded-2xl" onPress={onSend} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <Pressable
+              className="px-3 py-2 rounded-2xl"
+              onPress={onSend}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+            >
               <Ionicons name="send" size={20} color="#047857" />
             </Pressable>
           ) : (

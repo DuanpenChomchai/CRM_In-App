@@ -2,7 +2,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
-import { sendChatMessage } from "../controller/chatSendController";
+import { sendChatMessage } from "../controller/sendChatController";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
