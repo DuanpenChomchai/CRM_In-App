@@ -46,10 +46,27 @@ import { Textarea } from "@/components/ui/textarea";
  * ========================= */
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
+const parseJwt = (token: string) => {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(""),
+    );
+
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+};
+
 const getToken = () =>
-  localStorage.getItem("token") ||
-  localStorage.getItem("accessToken") ||
-  "";
+  localStorage.getItem("token") || localStorage.getItem("accessToken") || "";
 
 /** =========================
  * Helpers
@@ -193,8 +210,9 @@ export default function Properties() {
    * ========================= */
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | PropertyTypeUI>("all");
-  const [filterStatus, setFilterStatus] =
-    useState<"all" | PropertyStatusUI>("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | PropertyStatusUI>(
+    "all",
+  );
 
   const [page, setPage] = useState(1);
   const pageSize = 12;
@@ -236,10 +254,16 @@ export default function Properties() {
     return () => URL.revokeObjectURL(url);
   }, [form.imageFile]);
 
+  const token = getToken();
+
+  const isAdmin = useMemo(() => {
+    const decoded = parseJwt(token);
+    return decoded?.role === "ADMIN";
+  }, [token]);
+
   const authHeaders = useMemo(() => {
-    const token = getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
+  }, [token]);
 
   /** =========================
    * Fetch list (DB + pagination + search)
@@ -260,7 +284,7 @@ export default function Properties() {
           headers: {
             ...authHeaders,
           },
-        }
+        },
       );
 
       const json = await res.json();
@@ -295,7 +319,7 @@ export default function Properties() {
    * Form handlers
    * ========================= */
   const handleTextChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     const { name, value } = e.target;
 
@@ -325,6 +349,7 @@ export default function Properties() {
   };
 
   const openCreate = () => {
+    if (!isAdmin) return toast.error("สิทธิ์ไม่พอ (Admin เท่านั้น)");
     setMode("create");
     setEditId(null);
     setForm(initialForm);
@@ -332,6 +357,7 @@ export default function Properties() {
   };
 
   const openEdit = (p: PropertyUI) => {
+    if (!isAdmin) return toast.error("สิทธิ์ไม่พอ (Admin เท่านั้น)");
     setMode("edit");
     setEditId(p.id);
     setForm({
@@ -452,6 +478,7 @@ export default function Properties() {
    * Delete
    * ========================= */
   const confirmDelete = (p: PropertyUI) => {
+    if (!isAdmin) return toast.error("สิทธิ์ไม่พอ (Admin เท่านั้น)");
     setDeleteId(p.id);
     setDeleteName(p.name);
     setDeleteOpen(true);
@@ -487,16 +514,22 @@ export default function Properties() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">อสังหาริมทรัพย์</h1>
-          <p className="text-muted-foreground">จัดการรายการอสังหาริมทรัพย์ของคุณ</p>
+          <h1 className="text-3xl font-bold text-foreground">
+            อสังหาริมทรัพย์
+          </h1>
+          <p className="text-muted-foreground">
+            จัดการรายการอสังหาริมทรัพย์ของคุณ
+          </p>
         </div>
-        <Button
-          onClick={openCreate}
-           className="gradient-primary text-white hover:opacity-90"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          เพิ่มอสังหาฯ
-        </Button>
+        {isAdmin && (
+          <Button
+            onClick={openCreate}
+            className="gradient-primary text-white hover:opacity-90"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            เพิ่มอสังหาฯ
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -625,17 +658,25 @@ export default function Properties() {
                 ดูรายละเอียด
               </Button>
 
-              <Button variant="outline" onClick={() => openEdit(p)} title="แก้ไข">
-                <Pencil className="w-4 h-4" />
-              </Button>
+              {isAdmin && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => openEdit(p)}
+                    title="แก้ไข"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
 
-              <Button
-                variant="outline"
-                onClick={() => confirmDelete(p)}
-                title="ลบ"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => confirmDelete(p)}
+                    title="ลบ"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
             </CardFooter>
           </Card>
         ))}
@@ -736,38 +777,36 @@ export default function Properties() {
                 </p>
               </div>
 
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setDetailOpen(false)}
-                >
+              <div className="grid grid-cols-3 gap-3">
+                <Button variant="outline" onClick={() => setDetailOpen(false)}>
                   ปิด
                 </Button>
 
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    openEdit(selected);
-                    setDetailOpen(false);
-                  }}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  แก้ไข
-                </Button>
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        openEdit(selected);
+                        setDetailOpen(false);
+                      }}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      แก้ไข
+                    </Button>
 
-                <Button
-                  variant="destructive"
-                  className="flex-1"
-                  onClick={() => {
-                    confirmDelete(selected);
-                    setDetailOpen(false);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  ลบ
-                </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => {
+                        confirmDelete(selected);
+                        setDetailOpen(false);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      ลบ
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -779,7 +818,9 @@ export default function Properties() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
-              {mode === "create" ? "เพิ่มอสังหาริมทรัพย์ใหม่" : "แก้ไขอสังหาริมทรัพย์"}
+              {mode === "create"
+                ? "เพิ่มอสังหาริมทรัพย์ใหม่"
+                : "แก้ไขอสังหาริมทรัพย์"}
             </DialogTitle>
             <DialogDescription>
               {mode === "create"
@@ -947,7 +988,9 @@ export default function Properties() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-medium">
-                        {form.imageFile ? "เลือกไฟล์แล้ว" : "ลากรูปมาวาง หรือกดเลือกไฟล์"}
+                        {form.imageFile
+                          ? "เลือกไฟล์แล้ว"
+                          : "ลากรูปมาวาง หรือกดเลือกไฟล์"}
                       </div>
                       <div className="text-xs text-muted-foreground truncate mt-1">
                         {form.imageFile
@@ -970,7 +1013,8 @@ export default function Properties() {
                         disabled={!form.imageFile}
                         onClick={() => {
                           setForm((p) => ({ ...p, imageFile: null }));
-                          if (fileInputRef.current) fileInputRef.current.value = "";
+                          if (fileInputRef.current)
+                            fileInputRef.current.value = "";
                         }}
                         title="ลบไฟล์"
                       >
@@ -994,7 +1038,9 @@ export default function Properties() {
                 </div>
 
                 <div className="text-xs text-muted-foreground mt-2">
-                  {form.imageFile ? "พร้อมอัปโหลดเมื่อกดบันทึก" : "ยังไม่ได้เลือกไฟล์"}
+                  {form.imageFile
+                    ? "พร้อมอัปโหลดเมื่อกดบันทึก"
+                    : "ยังไม่ได้เลือกไฟล์"}
                 </div>
               </div>
 
