@@ -8,6 +8,8 @@ const endpoint = rawEndpoint.startsWith("http")
   ? rawEndpoint
   : `${useSSL ? "https" : "http"}://${rawEndpoint}:${port}`;
 
+console.log("📦 Minio Endpoint:", endpoint);
+
 const s3Client = new S3Client({
   region: "us-east-1",
   endpoint, // ✅ ใช้ค่าจาก env / ที่คำนวณ
