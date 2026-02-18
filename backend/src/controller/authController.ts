@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import { Prisma } from "@prisma/client";
 
@@ -18,16 +19,46 @@ const normalizePhoneTH = (raw: string) => {
   return raw;
 };
 
-const createToken = (user: any) => {
+// ========== Access Token (อายุ 15 นาที) ==========
+const createAccessToken = (user: any) => {
   const secret = process.env.JWT_SECRET || "dev_secret";
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     secret,
-    {
-      expiresIn: "1d",
-    }
+    { expiresIn: "15m" }
   );
 };
+
+// ========== Refresh Token (อายุ 30 วัน, เก็บใน DB) ==========
+const REFRESH_TOKEN_DAYS = 30;
+
+const createRefreshToken = async (userId: number): Promise<string> => {
+  const secret = process.env.JWT_REFRESH_SECRET || "dev_refresh_secret";
+  const token = jwt.sign(
+    { userId, jti: crypto.randomBytes(16).toString("hex") },
+    secret,
+    { expiresIn: `${REFRESH_TOKEN_DAYS}d` }
+  );
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_DAYS);
+
+  await prisma.refreshToken.create({
+    data: { token, userId, expiresAt },
+  });
+
+  return token;
+};
+
+// ลบ refresh token ที่หมดอายุแล้วของ user (cleanup)
+const cleanupExpiredTokens = async (userId: number) => {
+  await prisma.refreshToken.deleteMany({
+    where: { userId, expiresAt: { lt: new Date() } },
+  });
+};
+
+// backward-compat alias
+const createToken = createAccessToken;
 
 // ====================== REGISTER CUSTOMER (APP) ======================
 export const register = async (req: Request, res: Response) => {
@@ -85,11 +116,13 @@ export const register = async (req: Request, res: Response) => {
       },
     });
 
-    const token = createToken(user);
+    const token = createAccessToken(user);
+    const refreshToken = await createRefreshToken(user.id);
 
     return res.status(201).json({
       message: "register success",
       token,
+      refreshToken,
       user,
       customer,
     });
@@ -300,9 +333,13 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "รหัสผ่านผิด!" });
     }
 
-    const token = createToken(user);
+    // cleanup expired tokens
+    await cleanupExpiredTokens(user.id);
 
-    return res.json({ message: "login success", token, user });
+    const token = createAccessToken(user);
+    const refreshToken = await createRefreshToken(user.id);
+
+    return res.json({ message: "login success", token, refreshToken, user });
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json({ message: "server error" });
@@ -419,37 +456,91 @@ export const me = async (req: any, res: Response) => {
   }
 };
 
-// ====================== REFRESH TOKEN ======================
+// ====================== REFRESH TOKEN (rotation) ======================
 export const refreshToken = async (req: Request, res: Response) => {
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ message: "missing token" });
+    const { refreshToken: incomingToken } = req.body;
+    // backward compat: also accept "token" field
+    const tokenValue = incomingToken || req.body.token;
+
+    if (!tokenValue) {
+      return res.status(400).json({ message: "missing refresh token" });
     }
 
-    const decoded: any = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "dev_secret"
-    );
+    // 1) ตรวจ JWT signature + expiry
+    const secret = process.env.JWT_REFRESH_SECRET || "dev_refresh_secret";
+    let decoded: any;
+    try {
+      decoded = jwt.verify(tokenValue, secret);
+    } catch (jwtErr) {
+      // ถ้า verify ไม่ผ่าน → ลบ token นี้ออกจาก DB (ถ้ามี)
+      await prisma.refreshToken.deleteMany({ where: { token: tokenValue } });
+      return res.status(401).json({ message: "refresh token invalid or expired" });
+    }
 
+    // 2) ตรวจว่า token อยู่ใน DB จริง (ป้องกัน reuse)
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: tokenValue },
+    });
+
+    if (!storedToken) {
+      // Token ถูก revoke ไปแล้ว หรือถูกใช้ซ้ำ → revoke ทั้งหมดของ user (security)
+      if (decoded.userId) {
+        await prisma.refreshToken.deleteMany({
+          where: { userId: decoded.userId },
+        });
+      }
+      return res.status(401).json({ message: "refresh token revoked" });
+    }
+
+    // 3) ตรวจว่ายังไม่หมดอายุ
+    if (storedToken.expiresAt < new Date()) {
+      await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      return res.status(401).json({ message: "refresh token expired" });
+    }
+
+    // 4) ดึง user
     const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
+      where: { id: storedToken.userId },
     });
 
     if (!user) {
-      return res.status(401).json({ message: "token invalid" });
+      await prisma.refreshToken.delete({ where: { id: storedToken.id } });
+      return res.status(401).json({ message: "user not found" });
     }
 
-    const newToken = createToken(user);
+    // 5) Token rotation: ลบ token เก่า → สร้าง token ใหม่ทั้งคู่
+    await prisma.refreshToken.delete({ where: { id: storedToken.id } });
 
-    return res.json({ token: newToken });
+    const newAccessToken = createAccessToken(user);
+    const newRefreshToken = await createRefreshToken(user.id);
+
+    return res.json({
+      token: newAccessToken,
+      refreshToken: newRefreshToken,
+      user,
+    });
   } catch (err) {
     console.error("RefreshToken error:", err);
-    return res.status(401).json({ message: "token invalid" });
+    return res.status(401).json({ message: "refresh token invalid" });
   }
 };
 
 // ====================== LOGOUT ======================
 export const logout = async (req: Request, res: Response) => {
-  return res.json({ message: "logout success" });
+  try {
+    const { refreshToken: incomingToken } = req.body;
+
+    if (incomingToken) {
+      // ลบ refresh token ออกจาก DB
+      await prisma.refreshToken.deleteMany({
+        where: { token: incomingToken },
+      });
+    }
+
+    return res.json({ message: "logout success" });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.json({ message: "logout success" });
+  }
 };

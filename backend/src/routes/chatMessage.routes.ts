@@ -8,7 +8,7 @@ import {
   markRoomAsRead,
 } from "../controller/chatMessageController";
 import { uploadChatFile } from "../controller/uploadController";
-import { sendChatMessage } from "../controller/chatSendController";
+import { sendChatMessage } from "../controller/sendChatController";
 
 const router = Router();
 

@@ -4,11 +4,13 @@ import prisma from "../config/prismaclient";
 import { AuthRequest } from "../middlewares/authMiddleware";
 
 // ✅ MinIO via AWS SDK v3
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3Client, { BUCKET_NAME } from "../config/minioclient";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { randomUUID } from "crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "stream";
+import { log } from "console";
 /* =======================
    Utility: Normalize Phone
    ======================= */
@@ -308,8 +310,10 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     if (!me) return res.status(404).json({ message: "ไม่พบผู้ใช้" });
 
     return res.json({
-      ...me,
-      img: buildProfileImageUrl(me.id, me.img),
+      user: {
+        ...me,
+        img: buildProfileImageUrl(me.id, me.img),
+      },
     });
   } catch (err) {
     console.error("getMe error:", err);
@@ -415,8 +419,10 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     });
 
     return res.json({
-      ...updated,
-      img: buildProfileImageUrl(updated.id, updated.img),
+      user: {
+        ...updated,
+        img: buildProfileImageUrl(updated.id, updated.img),
+      },
     });
   } catch (err: any) {
     console.error("updateMe error:", err);
@@ -478,7 +484,6 @@ export const getUserProfle = async (req: Request, res: Response) => {
   }
 };
 
-
 export const uploadProfileImage = async (
   req: AuthRequestWithFile,
   res: Response,
@@ -537,4 +542,37 @@ export const uploadProfileImage = async (
     console.error("uploadProfileImage error:", err);
     return res.status(500).json({ message: "อัปโหลดรูปโปรไฟล์ล้มเหลว" });
   }
+};
+
+export const getProfile = async (req: Request, res: Response) => {
+  const userId = Number(req.params.id);
+
+  if (Number.isNaN(userId)) {
+    return res.status(400).json({ message: "Invalid id" });
+  }
+
+  const profile = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  console.log("profile", profile);
+
+  if (!profile?.img) {
+    return res.json({
+      message: "No profile image",
+    });
+  }
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: profile.img,
+  });
+  
+
+  const signedUrl = await getSignedUrl(s3Client, command, {
+    expiresIn: 3600,
+  });
+
+  return res.json({
+    img: signedUrl,
+  })
 };

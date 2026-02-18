@@ -16,11 +16,15 @@ import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
 
 import { initWs } from "./ws";
+import { getProfile } from "./controller/userController";
 
 async function main() {
   const app = express();
   const port = Number(process.env.PORT) || 3000;
 
+  // =========================
+  // CORS
+  // =========================
   app.use(
     cors({
       origin: "*",
@@ -29,27 +33,70 @@ async function main() {
     })
   );
 
+  // =========================
+  // Body parsers
+  // =========================
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  // =========================
+  // ✅ Request logger (ช่วย debug)
+  // =========================
+  app.use((req, res, next) => {
+    const start = Date.now();
+    const { method, originalUrl } = req;
+
+    res.on("finish", () => {
+      const ms = Date.now() - start;
+      console.log(`[HTTP] ${method} ${originalUrl} -> ${res.statusCode} (${ms}ms)`);
+    });
+
+    next();
+  });
+
+  // =========================
+  // Health
+  // =========================
   app.get("/", (_req, res) => res.json({ ok: true }));
 
+  // =========================
+  // ✅ Guard กันเรียก method ผิด (เคส GET /api/chat/upload)
+  // =========================
+  app.all("/api/chat/upload", (req, res, next) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ message: "Method Not Allowed. Use POST /api/chat/upload" });
+    }
+    next();
+  });
+
+  // =========================
+  // Routes
+  // =========================
   app.use("/api", authRoutes);
+
   app.use("/api/users", userRoutes);
   app.use("/api/communications", communicationRoutes);
   app.use("/api/customers", customerRoutes);
-  app.use("/api/chat", chatMessageRoutes);
+
+  // ✅ ไฟล์: /api/files/...
   app.use("/api/files", fileRoutes);
+
+  // ✅ แชท (upload/send) ก่อน
   app.use("/api/chat", chatRoutes);
 
+  // ✅ แชท (history/room/mark-read) ทีหลัง
+  app.use("/api/chat", chatMessageRoutes);
+
+  // ✅ Pipeline & Quotation
   app.use("/api/pipeline", pipelineRoutes);
   app.use("/api/quotations", quotationRoutes);
 
-  // ✅ ของใหม่ที่ FE ใช้จริง
+  // ✅ Properties
   app.use("/api/properties", propertiesRoutes);
+  app.use("/api/products", propertiesRoutes); // backward compat
 
-  // ✅ กันโค้ดเก่าที่เคยเรียก /api/products (ถ้ามีหน้าอื่นใช้)
-  app.use("/api/products", propertiesRoutes);
+  // ✅ profile route
+  app.get("/api/myprofile/:id", getProfile);
 
   console.log(
     "SERVER START with JWT_SECRET =",

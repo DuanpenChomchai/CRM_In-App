@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   View,
@@ -9,8 +9,9 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, useRouter } from "expo-router";
+import { Link, useRouter, useFocusEffect } from "expo-router";
 import { useAuthStore } from "../../store/useAuthStore";
+import { API_BASE_URL } from "../../config/api";
 import * as ImagePicker from "expo-image-picker";
 
 export default function ProfileScreen() {
@@ -22,32 +23,40 @@ export default function ProfileScreen() {
   const [uploading, setUploading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
-  useEffect(() => {
-    const run = async () => {
-      if (!user) {
-        router.replace("/(auth)/login");
-        return;
-      }
-      try {
-        setLoadingProfile(true);
-        await fetchMe();
-      } catch (e) {
-        console.log("fetchMe error:", e);
-      } finally {
-        setLoadingProfile(false);
-      }
-    };
-    run();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const run = async () => {
+        if (!user) {
+          router.replace("/(auth)/login");
+          return;
+        }
+        try {
+          setLoadingProfile(true);
+          await fetchMe();
+        } catch (e) {
+          console.log("fetchMe error:", e);
+        } finally {
+          if (!cancelled) setLoadingProfile(false);
+        }
+      };
+      run();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [user?.id])
+  );
 
   /**
    * ✅ ใช้ endpoint รูปที่คุณมีอยู่ (จาก log)
    * ใส่ cache buster กันรูปค้าง
    */
   const avatarUri = useMemo(() => {
-    if (!user?.id) return null;
-    return `http://10.0.2.2:3000/api/users/profile-image/${user.id}?t=${Date.now()}`;
-  }, [user?.id, user?.img]); // ใส่ user.img เพื่อให้ rerender หลังอัปโหลด
+    if (!user?.id || !token) return null;
+    return `${API_BASE_URL}/users/profile-image/${user.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`;
+  }, [user?.id, user?.img, token]); // ใส่ user.img เพื่อให้ rerender หลังอัปโหลด
 
   const onPickAndUpload = async () => {
     try {
@@ -86,7 +95,6 @@ export default function ProfileScreen() {
             <Image
               source={{
                 uri: avatarUri,
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
               }}
               className="w-24 h-24"
               resizeMode="cover"

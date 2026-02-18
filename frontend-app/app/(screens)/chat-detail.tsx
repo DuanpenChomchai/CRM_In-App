@@ -10,8 +10,8 @@ import {
   Image,
   Modal,
   Linking,
-  Alert,
 } from "react-native";
+import Toast from "react-native-toast-message";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams } from "expo-router";
@@ -22,11 +22,40 @@ import { API_BASE_URL } from "../../config/api";
 
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 
+
+// ===============================
+// Utils
+// ===============================
 function formatClock(t = new Date()) {
   const h = t.getHours().toString().padStart(2, "0");
   const m = t.getMinutes().toString().padStart(2, "0");
   return `${h}:${m}`;
+}
+
+const THAI_MONTHS = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+
+function formatDateLabel(ts: number): string {
+  const msgDate = new Date(ts);
+  const today = new Date();
+
+  const toDateKey = (d: Date) =>
+    `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+  if (toDateKey(msgDate) === toDateKey(today)) return "วันนี้";
+
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (toDateKey(msgDate) === toDateKey(yesterday)) return "เมื่อวาน";
+
+  const d = msgDate.getDate();
+  const m = THAI_MONTHS[msgDate.getMonth()];
+  const y = msgDate.getFullYear() + 543; // พ.ศ.
+  return `${d} ${m} ${y}`;
 }
 
 type ChatPartner = {
@@ -44,11 +73,16 @@ type BaseMsg = {
 
 type Msg =
   | (BaseMsg & { type: "text"; text: string })
-  | (BaseMsg & { type: "image"; uri: string | null; fileKey?: string | null })
+  | (BaseMsg & {
+      type: "image";
+      uri: string | null;
+      name?: string;
+      fileKey?: string | null;
+    })
   | (BaseMsg & {
       type: "file";
       uri: string | null;
-      name: string;
+      name: string; // ✅ ต้องใช้แสดงชื่อไฟล์ (PDF)
       size?: number | null;
       mimeType?: string | null;
       fileKey?: string | null;
@@ -69,6 +103,47 @@ const guessMimeFromName = (filename: string) => {
 };
 
 const normalizeEmail = (v?: string | null) => String(v || "").trim().toLowerCase();
+
+/** ========= DEDUPE HELPERS ========= */
+const isTempId = (id: string) =>
+  id.startsWith("temp-") || id.startsWith("img-") || id.startsWith("file-");
+
+const msgKey = (m: Msg) => {
+  if (m.cid != null && String(m.cid).trim() !== "") return `cid:${String(m.cid)}`;
+  return `id:${m.id}`;
+};
+
+const pickBetter = (a: Msg, b: Msg): Msg => {
+  const aTemp = isTempId(a.id);
+  const bTemp = isTempId(b.id);
+  if (aTemp !== bTemp) return aTemp ? b : a;
+
+  if (a.type === "image" && b.type === "image") {
+    const au = !!a.uri;
+    const bu = !!b.uri;
+    if (au !== bu) return au ? a : b;
+  }
+  if (a.type === "file" && b.type === "file") {
+    const au = !!a.uri;
+    const bu = !!b.uri;
+    if (au !== bu) return au ? a : b;
+  }
+
+  return a.ts >= b.ts ? a : b;
+};
+
+const mergeAndDedupe = (lists: Msg[][]) => {
+  const map = new Map<string, Msg>();
+  for (const list of lists) {
+    for (const m of list) {
+      const k = msgKey(m);
+      const prev = map.get(k);
+      map.set(k, prev ? pickBetter(prev, m) : m);
+    }
+  }
+  return Array.from(map.values()).sort((x, y) => x.ts - y.ts);
+};
+/** =============================== */
 
 export default function ChatDetailScreen() {
   const params = useLocalSearchParams();
@@ -101,7 +176,6 @@ export default function ChatDetailScreen() {
         const res = await fetch(`${API_BASE_URL}/chat/my-messages?pageSize=1`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-
         if (!res.ok) return;
 
         const json = await res.json();
@@ -118,7 +192,7 @@ export default function ChatDetailScreen() {
   const effectiveRoomId = effectiveCustomerId ? `cust:${effectiveCustomerId}` : idParam ?? "general";
 
   // =========================================================
-  // socket (ส่ง username เป็น email ให้ตรงกัน)
+  // socket
   // =========================================================
   const {
     connected,
@@ -129,8 +203,7 @@ export default function ChatDetailScreen() {
   } = useSocketRoom(effectiveRoomId, myEmail || "user");
 
   // =========================================================
-  // signed url helper
-  // GET /api/files/signed?key=... -> { url }
+  // signed url helpers (GET for preview + PUT for direct upload)
   // =========================================================
   const getSignedUrlForKey = async (key?: string | null) => {
     if (!key || !token) return null;
@@ -147,42 +220,58 @@ export default function ChatDetailScreen() {
     }
   };
 
-  // =========================================================
-  // upload -> /chat/upload
-  // =========================================================
-  const uploadToServer = async (localUri: string, name?: string, mimeTypeHint?: string | null) => {
+  /**
+   * Backend ต้องทำ endpoint นี้ให้คืน:
+   * { key: string, uploadUrl: string }
+   * โดย uploadUrl เป็น pre-signed PUT URL ไปที่ MinIO/S3
+   */
+  const getSignedPutForFile = async (fileName: string, mimeType: string) => {
     if (!token) throw new Error("no token");
-
-    const filename = name ?? localUri.split("/").pop() ?? "file";
-    const mimeType = mimeTypeHint || guessMimeFromName(filename);
-
-    const form = new FormData();
-    form.append("file", { uri: localUri, name: filename, type: mimeType } as any);
-
-    const res = await fetch(`${API_BASE_URL}/chat/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      body: form,
-    });
-
+    const res = await fetch(
+      `${API_BASE_URL}/files/signed-put?name=${encodeURIComponent(fileName)}&mime=${encodeURIComponent(mimeType)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      throw new Error(`upload failed: ${res.status} ${t}`);
+      throw new Error(`signed-put failed: ${res.status} ${t}`);
     }
+    return (await res.json()) as { key: string; uploadUrl: string };
+  };
 
-    return (await res.json()) as {
-      fileKey: string;
-      fileName: string;
-      mimeType: string;
-      size: number;
+  // ✅ PUT file directly to MinIO using signed PUT URL (no UploadType, no EncodingType)
+  const putToMinio = async (uploadUrl: string, localUri: string, mimeType: string) => {
+    const r = await FileSystem.uploadAsync(uploadUrl, localUri, {
+      httpMethod: "PUT",
+      headers: {
+        "Content-Type": mimeType,
+      },
+    });
+
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(`PUT upload failed: ${r.status} ${r.body ?? ""}`);
+    }
+  };
+
+  // Helper: signed PUT + PUT + return metadata
+  const uploadDirectToMinio = async (
+    localUri: string,
+    fileName: string,
+    mimeType: string,
+    size?: number | null
+  ) => {
+    const { key, uploadUrl } = await getSignedPutForFile(fileName, mimeType);
+    await putToMinio(uploadUrl, localUri, mimeType);
+
+    return {
+      fileKey: key,
+      fileName,
+      mimeType,
+      size: size ?? null,
     };
   };
 
   // =========================================================
-  // send -> /chat/send
+  // send -> /chat/send (save message metadata)
   // =========================================================
   const sendToServer = async (payload: {
     roomId: string;
@@ -256,15 +345,22 @@ export default function ChatDetailScreen() {
   const [historyMessages, setHistoryMessages] = useState<Msg[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
+  const [localAttachBuf, setLocalAttachBuf] = useState<Msg[]>([]);
+
+  useEffect(() => {
+    setHistoryMessages([]);
+    setLocalTextBuf([]);
+    setLocalAttachBuf([]);
+  }, [effectiveRoomId]);
+
   useEffect(() => {
     let cancelled = false;
 
     const computeFromMe = (m: any) => {
-      // ✅ ถ้า backend มี senderId / userId ให้ใช้ก่อน (แม่นสุด)
       const senderId = m.senderId ?? m.userId ?? null;
       if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
 
-      // ✅ fallback เทียบ email (normalize)
       const senderEmail = normalizeEmail(m.senderEmail ?? m.senderName ?? m.sender ?? "");
       return senderEmail && myEmail ? senderEmail === myEmail : false;
     };
@@ -274,11 +370,9 @@ export default function ChatDetailScreen() {
         if (!token || !isFocused) return;
         setLoadingHistory(true);
 
-        const res = await fetch(
-          `${API_BASE_URL}/chat/room/${encodeURIComponent(effectiveRoomId)}?pageSize=200`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-
+        const res = await fetch(`${API_BASE_URL}/chat/room/${encodeURIComponent(effectiveRoomId)}?pageSize=200`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!res.ok) return;
 
         const json = await res.json();
@@ -299,17 +393,27 @@ export default function ChatDetailScreen() {
             cid: m.cid ?? undefined,
           };
 
-          if (t === "IMAGE") return { ...base, type: "image", uri: null, fileKey };
-          if (t === "FILE")
+          if (t === "IMAGE") {
+            return {
+              ...base,
+              type: "image",
+              uri: null,
+              fileKey,
+              name: m.fileName ?? m.filename ?? m.file_name ?? undefined, // เก็บไว้ แต่ไม่แสดง
+            };
+          }
+
+          if (t === "FILE") {
             return {
               ...base,
               type: "file",
               uri: null,
               fileKey,
-              name: m.fileName ?? "file",
-              size: m.fileSize ?? null,
-              mimeType: m.fileMime ?? null,
+              name: m.fileName ?? m.filename ?? m.file_name ?? "file",
+              size: m.fileSize ?? m.size ?? null,
+              mimeType: m.fileMime ?? m.mimeType ?? m.mimetype ?? null,
             };
+          }
 
           return { ...base, type: "text", text: m.text ?? "" };
         });
@@ -317,7 +421,6 @@ export default function ChatDetailScreen() {
         if (cancelled) return;
         setHistoryMessages(mappedBase);
 
-        // เติม signed url
         const needSign = mappedBase.filter(
           (x) => (x.type === "image" || x.type === "file") && (x as any).fileKey
         );
@@ -379,18 +482,15 @@ export default function ChatDetailScreen() {
   // =========================================================
   // socket texts
   // =========================================================
-  const [localTextBuf, setLocalTextBuf] = useState<Msg[]>([]);
-  const [localAttachBuf, setLocalAttachBuf] = useState<Msg[]>([]);
-
   const textMsgs: Msg[] = useMemo(
     () =>
       socketMessages.map((m) => {
         const ts = Number(m.ts ?? Date.now());
         return {
-          id: m.id,
+          id: String(m.id),
           fromMe: normalizeEmail(m.user) === myEmail,
           type: "text",
-          text: m.text,
+          text: String(m.text ?? ""),
           time: formatClock(new Date(ts)),
           ts,
           cid: m.cid,
@@ -408,10 +508,7 @@ export default function ChatDetailScreen() {
   }, [socketMessages, myEmail]);
 
   const mergedMessages: Msg[] = useMemo(() => {
-    const all = [...historyMessages, ...textMsgs, ...localAttachBuf, ...localTextBuf];
-    const map = new Map<string, Msg>();
-    for (const m of all) map.set(m.id, m);
-    return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+    return mergeAndDedupe([historyMessages, textMsgs, localAttachBuf, localTextBuf]);
   }, [historyMessages, textMsgs, localAttachBuf, localTextBuf]);
 
   const [input, setInput] = useState("");
@@ -430,7 +527,7 @@ export default function ChatDetailScreen() {
     if (!t) return;
 
     if (user?.role === "CUSTOMER" && !effectiveCustomerId) {
-      Alert.alert("ยังส่งข้อความไม่ได้", "ยังโหลด customerId ไม่เสร็จ ลองใหม่อีกครั้ง");
+      Toast.show({ type: "info", text1: "Cannot Send Yet", text2: "Customer ID is still loading, please try again" });
       return;
     }
 
@@ -453,7 +550,7 @@ export default function ChatDetailScreen() {
     setInput("");
 
     try {
-      await sendToServer({
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -461,16 +558,37 @@ export default function ChatDetailScreen() {
         text: t,
       });
 
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "text",
+              text: created?.text ?? t,
+              time: formatClock(createdAt),
+              ts,
+            },
+          ],
+        ])
+      );
+
       sendSocketText(t, cid);
       setLocalTextBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     } catch (e: any) {
       console.error("[send text] error:", e);
-      Alert.alert("ส่งข้อความไม่สำเร็จ", e?.message ?? "unknown error");
+      Toast.show({ type: "error", text1: "Message Failed", text2: e?.message ?? "Unknown error" });
+      setLocalTextBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     }
   };
 
   // =========================================================
-  // Attach pickers
+  // Attach pickers (UPLOAD DIRECT TO MINIO)
   // =========================================================
   const [attachOpen, setAttachOpen] = useState(false);
 
@@ -482,15 +600,18 @@ export default function ChatDetailScreen() {
       setAttachOpen(false);
 
       if (user?.role === "CUSTOMER" && !effectiveCustomerId) {
-        Alert.alert("ยังส่งรูปไม่ได้", "ยังโหลด customerId ไม่เสร็จ ลองใหม่อีกครั้ง");
+        Toast.show({ type: "info", text1: "Cannot Send Image", text2: "Customer ID is still loading, please try again" });
         return;
       }
 
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) return;
+      if (!perm.granted) {
+        Toast.show({ type: "info", text1: "Permission Required", text2: "Please allow access to your photo library" });
+        return;
+      }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // (ยัง deprecate warning ได้ แต่ไม่พัง)
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.9,
         allowsEditing: false,
       });
@@ -500,7 +621,11 @@ export default function ChatDetailScreen() {
       const asset = result.assets?.[0];
       if (!asset?.uri) return;
 
-      // preview local
+      const fileName = (asset as any).fileName ?? `image-${Date.now()}.jpg`;
+      const mimeHint = (asset as any).mimeType ?? guessMimeFromName(fileName);
+      const sizeHint = (asset as any).fileSize ?? null;
+
+      // preview local (ไม่แสดงชื่อรูปใน UI)
       setLocalAttachBuf((prev) => [
         ...prev,
         {
@@ -509,18 +634,18 @@ export default function ChatDetailScreen() {
           fromMe: true,
           type: "image",
           uri: asset.uri,
+          name: fileName,
           time: formatClock(new Date(now)),
           ts: now,
           fileKey: null,
         },
       ]);
 
-      const fileName = (asset as any).fileName ?? `image-${Date.now()}.jpg`;
-      const mimeHint = (asset as any).mimeType ?? guessMimeFromName(fileName);
+      // ✅ DIRECT UPLOAD TO MINIO (signed PUT)
+      const up = await uploadDirectToMinio(asset.uri, fileName, mimeHint, sizeHint);
 
-      const up = await uploadToServer(asset.uri, fileName, mimeHint);
-
-      await sendToServer({
+      // Save message metadata only
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -528,22 +653,46 @@ export default function ChatDetailScreen() {
         fileKey: up.fileKey,
         fileName: up.fileName,
         fileMime: up.mimeType,
-        fileSize: up.size,
+        fileSize: up.size ?? null,
         text: null,
       });
 
+      // Signed GET for preview
       const signed = await getSignedUrlForKey(up.fileKey);
 
+      // Update local preview with remote signed url
       setLocalAttachBuf((prev) =>
         prev.map((m: any) =>
           m.cid === cid && m.type === "image"
-            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey }
+            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey, name: up.fileName ?? m.name }
             : m
         )
       );
+
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-img-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "image",
+              uri: signed ?? null,
+              fileKey: up.fileKey,
+              name: up.fileName ?? fileName,
+              time: formatClock(createdAt),
+              ts,
+            } as Msg,
+          ],
+        ])
+      );
     } catch (e: any) {
       console.error("[pickImage] ERROR", e);
-      Alert.alert("อัปโหลดรูปไม่สำเร็จ", e?.message ?? "Network request failed");
+      Toast.show({ type: "error", text1: "Image Upload Failed", text2: e?.message ?? "Network request failed" });
       setLocalAttachBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     }
   };
@@ -556,7 +705,7 @@ export default function ChatDetailScreen() {
       setAttachOpen(false);
 
       if (user?.role === "CUSTOMER" && !effectiveCustomerId) {
-        Alert.alert("ยังส่งไฟล์ไม่ได้", "ยังโหลด customerId ไม่เสร็จ ลองใหม่อีกครั้ง");
+        Toast.show({ type: "info", text1: "Cannot Send File", text2: "Customer ID is still loading, please try again" });
         return;
       }
 
@@ -570,6 +719,11 @@ export default function ChatDetailScreen() {
       const file = resPick.assets?.[0];
       if (!file?.uri) return;
 
+      const fileName = file.name ?? `file-${Date.now()}`;
+      const mimeHint = file.mimeType ?? guessMimeFromName(fileName);
+      const sizeHint = file.size ?? null;
+
+      // preview local (✅ ต้องมีชื่อไฟล์)
       setLocalAttachBuf((prev) => [
         ...prev,
         {
@@ -578,21 +732,19 @@ export default function ChatDetailScreen() {
           fromMe: true,
           type: "file",
           uri: file.uri,
-          name: file.name ?? "file",
+          name: fileName,
           size: file.size ?? null,
-          mimeType: file.mimeType ?? null,
+          mimeType: file.mimeType ?? mimeHint ?? null,
           time: formatClock(new Date(now)),
           ts: now,
           fileKey: null,
         },
       ]);
 
-      const fileName = file.name ?? `file-${Date.now()}`;
-      const mimeHint = file.mimeType ?? guessMimeFromName(fileName);
+      // ✅ DIRECT UPLOAD TO MINIO (signed PUT)
+      const up = await uploadDirectToMinio(file.uri, fileName, mimeHint, sizeHint);
 
-      const up = await uploadToServer(file.uri, fileName, mimeHint);
-
-      await sendToServer({
+      const created = await sendToServer({
         roomId: effectiveRoomId,
         customerId: effectiveCustomerId ?? null,
         cid,
@@ -600,7 +752,7 @@ export default function ChatDetailScreen() {
         fileKey: up.fileKey,
         fileName: up.fileName,
         fileMime: up.mimeType,
-        fileSize: up.size,
+        fileSize: up.size ?? null,
         text: null,
       });
 
@@ -609,13 +761,37 @@ export default function ChatDetailScreen() {
       setLocalAttachBuf((prev) =>
         prev.map((m: any) =>
           m.cid === cid && m.type === "file"
-            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey }
+            ? { ...m, uri: signed ?? m.uri, fileKey: up.fileKey, name: up.fileName ?? m.name }
             : m
         )
       );
+
+      const createdAt = new Date(created?.createdAt || Date.now());
+      const ts = createdAt.getTime();
+
+      setHistoryMessages((prev) =>
+        mergeAndDedupe([
+          prev,
+          [
+            {
+              id: String(created?.id ?? `db-file-${cid}`),
+              cid: created?.cid ?? cid,
+              fromMe: true,
+              type: "file",
+              uri: signed ?? null,
+              fileKey: up.fileKey,
+              name: up.fileName ?? fileName,
+              size: (up.size ?? null) as any,
+              mimeType: up.mimeType ?? mimeHint ?? null,
+              time: formatClock(createdAt),
+              ts,
+            } as Msg,
+          ],
+        ])
+      );
     } catch (e: any) {
       console.error("[pickFile] ERROR", e);
-      Alert.alert("อัปโหลดไฟล์ไม่สำเร็จ", e?.message ?? "Network request failed");
+      Toast.show({ type: "error", text1: "File Upload Failed", text2: e?.message ?? "Network request failed" });
       setLocalAttachBuf((prev) => prev.filter((m: any) => m.cid !== cid));
     }
   };
@@ -624,13 +800,13 @@ export default function ChatDetailScreen() {
     if (!url) return;
 
     if (url.startsWith("file:") || url.startsWith("content:")) {
-      Alert.alert("ไฟล์ยังอัปโหลดไม่เสร็จ", "รอสักครู่แล้วลองเปิดใหม่");
+      Toast.show({ type: "info", text1: "File Still Uploading", text2: "Please wait and try again" });
       return;
     }
 
     const ok = await Linking.canOpenURL(url);
     if (!ok) {
-      Alert.alert("เปิดไฟล์ไม่ได้", "ไม่สามารถเปิดลิงก์นี้ได้");
+      Toast.show({ type: "error", text1: "Cannot Open File", text2: "Unable to open this link" });
       return;
     }
     Linking.openURL(url);
@@ -650,89 +826,147 @@ export default function ChatDetailScreen() {
     );
   };
 
-  const renderMessage = ({ item }: { item: Msg }) => {
+  const renderMessage = ({ item, index }: { item: Msg; index: number }) => {
     const isMe = item.fromMe;
     const align = isMe ? "items-end" : "items-start";
     const bg = isMe ? "bg-emerald-600" : "bg-gray-100";
     const textColor = isMe ? "text-white" : "text-gray-900";
     const subColor = isMe ? "text-emerald-100" : "text-gray-400";
 
+    // ── Date Divider ──
+    let showDateDivider = false;
+    const msgDateKey = new Date(item.ts).toDateString();
+    if (index === 0) {
+      showDateDivider = true;
+    } else {
+      const prevDateKey = new Date(mergedMessages[index - 1].ts).toDateString();
+      showDateDivider = msgDateKey !== prevDateKey;
+    }
+
     return (
-      <View className={`mb-2 ${align}`}>
-        <View className={`max-w-[78%] rounded-2xl px-3 py-2 ${bg}`}>
-          {item.type === "text" ? (
-            <>
-              <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
-              <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
-            </>
-          ) : item.type === "image" ? (
-            <>
-              <Pressable onPress={() => openUrl(item.uri)} style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}>
-                {item.uri ? (
-                  <Image
-                    source={{ uri: item.uri }}
-                    style={{ width: 220, height: 220, borderRadius: 14 }}
-                    resizeMode="cover"
-                    onError={async () => {
-                      // signed หมดอายุ -> ขอใหม่
-                      await refreshSignedForMessage(item);
-                    }}
-                  />
-                ) : (
-                  // ✅ placeholder กัน source.uri warning
-                  <View
-                    style={{
-                      width: 220,
-                      height: 220,
-                      borderRadius: 14,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: isMe ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.06)",
-                    }}
-                  >
-                    <Text className={`${subColor} text-[11px]`}>กำลังโหลดรูป…</Text>
-                  </View>
-                )}
-              </Pressable>
+      <>
+        {showDateDivider && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginVertical: 12,
+              paddingHorizontal: 8,
+            }}
+          >
+            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+            <View
+              style={{
+                backgroundColor: "#F3F4F6",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                marginHorizontal: 10,
+              }}
+            >
+              <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "500" }}>
+                {formatDateLabel(item.ts)}
+              </Text>
+            </View>
+            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+          </View>
+        )}
 
-              <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
-            </>
-          ) : (
-            <>
-              <Pressable onPress={() => openUrl(item.uri)} style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}>
-                <View className="flex-row items-center">
-                  <View
-                    className={`w-9 h-9 rounded-full ${isMe ? "bg-emerald-700" : "bg-gray-200"} items-center justify-center mr-2`}
-                  >
-                    <Ionicons
-                      name="document-text-outline"
-                      size={18}
-                      color={isMe ? "#ffffff" : "#111827"}
+        <View className={`mb-2 ${align}`}>
+          <View
+            className={`rounded-2xl px-3 py-2 ${bg}`}
+            style={{
+              maxWidth: "78%",
+              minWidth: item.type === "file" ? 220 : undefined,
+            }}
+          >
+            {item.type === "text" ? (
+              <>
+                <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
+                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
+              </>
+            ) : item.type === "image" ? (
+              <>
+                <Pressable
+                  onPress={() => openUrl(item.uri)}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+                >
+                  {item.uri ? (
+                    <Image
+                      source={{ uri: item.uri }}
+                      style={{ width: 220, height: 220, borderRadius: 14 }}
+                      resizeMode="cover"
+                      onError={async () => {
+                        await refreshSignedForMessage(item);
+                      }}
                     />
-                  </View>
-
-                  <View className="flex-1">
-                    <Text className={`${textColor} text-[14px]`} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text className={`${subColor} text-[11px]`} numberOfLines={1}>
-                      {item.mimeType ?? "file"}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-
-              <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
-
-              {!item.uri && item.fileKey ? (
-                <Pressable onPress={() => refreshSignedForMessage(item)} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
-                  <Text className={`${subColor} text-[10px] mt-1`}>แตะเพื่อโหลดลิงก์ไฟล์</Text>
+                  ) : (
+                    <View
+                      style={{
+                        width: 220,
+                        height: 220,
+                        borderRadius: 14,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: isMe ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.06)",
+                      }}
+                    >
+                      <Text className={`${subColor} text-[11px]`}>กำลังโหลดรูป…</Text>
+                    </View>
+                  )}
                 </Pressable>
-              ) : null}
-            </>
-          )}
+
+                {/* ✅ เอาชื่อรูปออก */}
+                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  onPress={() => openUrl(item.uri)}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.85 : 1 }]}
+                >
+                  <View className="flex-row items-center">
+                    <View
+                      className={`w-9 h-9 rounded-full ${
+                        isMe ? "bg-emerald-700" : "bg-gray-200"
+                      } items-center justify-center mr-2`}
+                    >
+                      <Ionicons
+                        name="document-text-outline"
+                        size={18}
+                        color={isMe ? "#ffffff" : "#111827"}
+                      />
+                    </View>
+
+                    <Text className={`${subColor} text-[11px]`}>
+                      {item.mimeType?.includes("pdf") ? "PDF" : item.mimeType ?? "file"}
+                    </Text>
+                  </View>
+
+                  <Text
+                    className={`${textColor} text-[14px] mt-1`}
+                    numberOfLines={2}
+                    style={{ flexShrink: 1 }}
+                  >
+                    {item.name || "ไฟล์แนบ"}
+                  </Text>
+                </Pressable>
+
+                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
+
+                {!item.uri && item.fileKey ? (
+                  <Pressable
+                    onPress={() => refreshSignedForMessage(item)}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+                  >
+                    <Text className={`${subColor} text-[10px] mt-1`}>แตะเพื่อโหลดลิงก์ไฟล์</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            )}
+          </View>
         </View>
-      </View>
+      </>
     );
   };
 
@@ -776,60 +1010,37 @@ export default function ChatDetailScreen() {
     <SafeAreaView className="flex-1 bg-white">
       {ListHeader}
 
-      <FlatList
-        ref={listRef}
-        data={mergedMessages}
-        keyExtractor={(m) => m.id}
-        contentContainerStyle={{ padding: 12 }}
-        renderItem={renderMessage}
-        ListEmptyComponent={
-          loadingHistory ? (
-            <View className="py-8 items-center">
-              <Text className="text-xs text-gray-400">กำลังโหลดประวัติแชท...</Text>
-            </View>
-          ) : (
-            <View className="py-8 items-center">
-              <Text className="text-xs text-gray-400">ยังไม่มีประวัติการคุย</Text>
-            </View>
-          )
-        }
-      />
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      >
+        <FlatList
+          ref={listRef}
+          data={mergedMessages}
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={{ padding: 12 }}
+          renderItem={renderMessage}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            loadingHistory ? (
+              <View className="py-8 items-center">
+                <Text className="text-xs text-gray-400">กำลังโหลดประวัติแชท...</Text>
+              </View>
+            ) : (
+              <View className="py-8 items-center">
+                <Text className="text-xs text-gray-400">ยังไม่มีประวัติการคุย</Text>
+              </View>
+            )
+          }
+        />
 
-      {othersTyping.length > 0 && (
-        <View className="px-4 py-2 bg-emerald-50 border-t border-emerald-100">
-          <Text className="text-emerald-700 text-xs">{othersTyping.join(", ")} is typing…</Text>
-        </View>
-      )}
-
-      <Modal transparent visible={attachOpen} animationType="fade" onRequestClose={() => setAttachOpen(false)}>
-        <Pressable className="flex-1 bg-black/30" onPress={() => setAttachOpen(false)}>
-          <View className="flex-1 justify-end">
-            <Pressable onPress={(e) => e.stopPropagation()} className="bg-white rounded-t-2xl px-4 pt-4 pb-6">
-              <Text className="text-base font-semibold text-gray-900 mb-3">เลือกประเภทที่ต้องการส่ง</Text>
-
-              <Pressable className="flex-row items-center py-3" onPress={pickImage} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
-                <Ionicons name="image-outline" size={20} color="#111827" />
-                <Text className="ml-3 text-gray-900">ส่งรูปภาพ</Text>
-              </Pressable>
-
-              <View className="h-[1px] bg-gray-100" />
-
-              <Pressable className="flex-row items-center py-3" onPress={pickFile} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
-                <Ionicons name="document-attach-outline" size={20} color="#111827" />
-                <Text className="ml-3 text-gray-900">ส่งไฟล์</Text>
-              </Pressable>
-
-              <View className="h-[1px] bg-gray-100" />
-
-              <Pressable className="py-3 items-center" onPress={() => setAttachOpen(false)} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
-                <Text className="text-gray-500">ยกเลิก</Text>
-              </Pressable>
-            </Pressable>
+        {othersTyping.length > 0 && (
+          <View className="px-4 py-2 bg-emerald-50 border-t border-emerald-100">
+            <Text className="text-emerald-700 text-xs">{othersTyping.join(", ")} is typing…</Text>
           </View>
-        </Pressable>
-      </Modal>
+        )}
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white">
           <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
             <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
@@ -851,7 +1062,11 @@ export default function ChatDetailScreen() {
           </View>
 
           {input.trim().length > 0 ? (
-            <Pressable className="px-3 py-2 rounded-2xl" onPress={onSend} style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <Pressable
+              className="px-3 py-2 rounded-2xl"
+              onPress={onSend}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+            >
               <Ionicons name="send" size={20} color="#047857" />
             </Pressable>
           ) : (
@@ -861,6 +1076,46 @@ export default function ChatDetailScreen() {
           )}
         </View>
       </KeyboardAvoidingView>
+
+      <Modal transparent visible={attachOpen} animationType="fade" onRequestClose={() => setAttachOpen(false)}>
+        <Pressable className="flex-1 bg-black/30" onPress={() => setAttachOpen(false)}>
+          <View className="flex-1 justify-end">
+            <Pressable onPress={(e) => e.stopPropagation()} className="bg-white rounded-t-2xl px-4 pt-4 pb-6">
+              <Text className="text-base font-semibold text-gray-900 mb-3">เลือกประเภทที่ต้องการส่ง</Text>
+
+              <Pressable
+                className="flex-row items-center py-3"
+                onPress={pickImage}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="image-outline" size={20} color="#111827" />
+                <Text className="ml-3 text-gray-900">ส่งรูปภาพ</Text>
+              </Pressable>
+
+              <View className="h-[1px] bg-gray-100" />
+
+              <Pressable
+                className="flex-row items-center py-3"
+                onPress={pickFile}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="document-attach-outline" size={20} color="#111827" />
+                <Text className="ml-3 text-gray-900">ส่งไฟล์</Text>
+              </Pressable>
+
+              <View className="h-[1px] bg-gray-100" />
+
+              <Pressable
+                className="py-3 items-center"
+                onPress={() => setAttachOpen(false)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Text className="text-gray-500">ยกเลิก</Text>
+              </Pressable>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }

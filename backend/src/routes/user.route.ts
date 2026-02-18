@@ -9,7 +9,8 @@ import {
   updateMe,
   listSales,
   uploadProfileImage,
-  getUserProfle
+  getUserProfle,
+  getProfile
 } from "../controller/userController";
 
 import { authMiddleware, verifyAdmin, AuthRequest } from "../middlewares/authMiddleware";
@@ -120,5 +121,6 @@ router.get("/:id", authMiddleware, verifyAdmin, getUserById);
 router.post("/", authMiddleware, verifyAdmin, createUser);
 router.put("/:id", authMiddleware, verifyAdmin, updateUser);
 router.delete("/:id", authMiddleware, verifyAdmin, deleteUser);
+
 
 export default router;

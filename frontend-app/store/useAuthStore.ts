@@ -3,9 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { persist, createJSONStorage } from "zustand/middleware";
 import axios from "axios";
 import { Platform } from "react-native";
-
-export const API_HOST = "http://10.0.2.2:3000";
-export const API_BASE_URL = `${API_HOST}/api`;
+import { API_BASE_URL } from "../config/api";
 
 export type UserPayload = {
   id: number;
@@ -16,11 +14,14 @@ export type UserPayload = {
   img?: string | null;
 };
 
+const API_HOST = API_BASE_URL.replace(/\/api$/, "");
+
 type AuthState = {
   user: UserPayload | null;
   token: string | null;
+  refreshToken: string | null;
 
-  setAuthAfterLogin: (user: UserPayload, token: string) => Promise<void>;
+  setAuthAfterLogin: (user: UserPayload, token: string, refreshToken: string) => Promise<void>;
   setUser: (user: UserPayload | null) => void;
 
   fetchMe: () => Promise<UserPayload>;
@@ -60,9 +61,10 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       token: null,
+      refreshToken: null,
 
-      setAuthAfterLogin: async (user, token) => {
-        set({ user: normalizeImg(user), token });
+      setAuthAfterLogin: async (user, token, refreshToken) => {
+        set({ user: normalizeImg(user), token, refreshToken });
       },
 
       setUser: (user) => {
@@ -136,7 +138,20 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: async () => {
-        set({ user: null, token: null });
+        const rt = get().refreshToken;
+
+        // เรียก backend revoke refresh token
+        if (rt) {
+          try {
+            await axios.post(`${API_BASE_URL}/logout`, {
+              refreshToken: rt,
+            });
+          } catch {
+            // silent — ถ้า call ไม่ได้ก็ไม่เป็นไร token จะหมดอายุเอง
+          }
+        }
+
+        set({ user: null, token: null, refreshToken: null });
         await AsyncStorage.removeItem("auth-storage");
       },
     }),
