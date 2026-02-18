@@ -47,12 +47,13 @@ import { toast } from "sonner";
 interface Customer {
   id: number;
   name: string;
-  tol: string; // เบอร์โทรตรง backend
+  tol: string;
   email: string;
   productType?: string | null;
   priceBudget?: number | null;
   saleId?: number | null;
   saleName?: string | null;
+  mainStatus?: string | null;
 }
 
 interface SaleUser {
@@ -71,6 +72,7 @@ const mapApiCustomerToUi = (c: any): Customer => {
     priceBudget: c.priceBudget ? Number(c.priceBudget) : null,
     saleId: c.saleId ?? null,
     saleName: c.sale?.name ?? null,
+    mainStatus: c.mainStatus ?? "CONTACTED",
   };
 };
 
@@ -174,7 +176,7 @@ const Customer = () => {
       );
     });
 
-    return () => socket.disconnect();
+    return () => { socket.disconnect(); };
   }, []);
 
   // ================================
@@ -469,6 +471,7 @@ const Customer = () => {
                   <TableHead>ประเภทอสังหา</TableHead>
                   <TableHead>งบประมาณ</TableHead>
                   <TableHead>พนักงานที่ดูแล</TableHead>
+                  <TableHead>สถานะ Pipeline</TableHead>
                   <TableHead className="text-center">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
@@ -532,6 +535,25 @@ const Customer = () => {
                       )}
                     </TableCell>
 
+                    {/* Pipeline Status */}
+                    <TableCell>
+                      {(() => {
+                        const s = customer.mainStatus || "CONTACTED";
+                        const map: Record<string, { label: string; color: string }> = {
+                          CONTACTED: { label: "Contacted", color: "bg-blue-100 text-blue-700" },
+                          NEGOTIATING: { label: "Negotiation", color: "bg-yellow-100 text-yellow-700" },
+                          QUOTATION: { label: "Quotation", color: "bg-purple-100 text-purple-700" },
+                          CLOSED: { label: "Closed Deal", color: "bg-green-100 text-green-700" },
+                        };
+                        const info = map[s] || map["CONTACTED"];
+                        return (
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${info.color}`}>
+                            {info.label}
+                          </span>
+                        );
+                      })()}
+                    </TableCell>
+
                     <TableCell className="text-center">
                       <Button
                         variant="ghost"
@@ -566,6 +588,50 @@ const Customer = () => {
             <DialogTitle>รายละเอียดลูกค้า</DialogTitle>
             <DialogDescription>ข้อมูลทั้งหมดของลูกค้า</DialogDescription>
           </DialogHeader>
+
+          {/* Pipeline Progress Stepper */}
+          <div className="py-2">
+            <div className="flex items-center w-full">
+              {[
+                { id: "CONTACTED", label: "Contacted", step: 1 },
+                { id: "NEGOTIATING", label: "Negotiation", step: 2 },
+                { id: "QUOTATION", label: "Quotation", step: 3 },
+                { id: "CLOSED", label: "Closed Deal", step: 4 },
+              ].map((s, idx, arr) => {
+                const order = ["CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"];
+                const currentIdx = order.indexOf(selectedCustomer?.mainStatus || "CONTACTED");
+                const thisIdx = order.indexOf(s.id);
+                const isDone = thisIdx < currentIdx;
+                const isActive = thisIdx === currentIdx;
+                return (
+                  <div key={s.id} className="flex items-center flex-1 min-w-0">
+                    <div className="flex flex-col items-center flex-shrink-0">
+                      <div className={[
+                        "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all",
+                        isDone ? "bg-primary border-primary text-white" :
+                          isActive ? "bg-primary/20 border-primary text-primary" :
+                            "bg-muted border-border text-muted-foreground"
+                      ].join(" ")}>
+                        {isDone ? "✓" : s.step}
+                      </div>
+                      <span className={[
+                        "text-[10px] mt-1 font-medium text-center leading-tight",
+                        isActive ? "text-primary" : isDone ? "text-primary/70" : "text-muted-foreground"
+                      ].join(" ")}>
+                        {s.label}
+                      </span>
+                    </div>
+                    {idx < arr.length - 1 && (
+                      <div className={[
+                        "h-0.5 flex-1 mx-1 rounded transition-all",
+                        thisIdx < currentIdx ? "bg-primary" : "bg-border"
+                      ].join(" ")} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -719,9 +785,9 @@ const Customer = () => {
                   setEditCustomer(
                     editCustomer
                       ? {
-                          ...editCustomer,
-                          priceBudget: Number(e.target.value),
-                        }
+                        ...editCustomer,
+                        priceBudget: Number(e.target.value),
+                      }
                       : null
                   )
                 }
@@ -736,12 +802,12 @@ const Customer = () => {
                   setEditCustomer(
                     editCustomer
                       ? {
-                          ...editCustomer,
-                          saleId: Number(value),
-                          saleName:
-                            salesTeam.find((s) => s.id === Number(value))
-                              ?.name || null,
-                        }
+                        ...editCustomer,
+                        saleId: Number(value),
+                        saleName:
+                          salesTeam.find((s) => s.id === Number(value))
+                            ?.name || null,
+                      }
                       : null
                   )
                 }
@@ -775,7 +841,7 @@ const Customer = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 };
 

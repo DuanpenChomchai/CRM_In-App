@@ -113,6 +113,8 @@ router.put("/profile/profile-image", authMiddleware, upload.single("img"), uploa
    ============================ */
 
 router.get("/sales", authMiddleware, verifyAdmin, listSales);
+// ดึงรายชื่อเซลล์สำหรับ dropdown (ทุก role เข้าได้ แค่ login)
+router.get("/sales-list", authMiddleware, listSales);
 router.get("/", authMiddleware, verifyAdmin, listUsers);
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);
 router.post("/", authMiddleware, verifyAdmin, createUser);

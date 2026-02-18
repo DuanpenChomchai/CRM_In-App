@@ -87,7 +87,7 @@ export const assignSales = async (req: Request, res: Response) => {
     // อัปเดตลง DB
     const updated = await prisma.customer.update({
       where: { id },
-      data: { 
+      data: {
         saleId: saleUserId,
         mainStatus: "CONTACTED", // เปลี่ยนสถานะเป็น CONTACTED
       },
@@ -260,6 +260,7 @@ export const createCustomer = async (req: Request, res: Response) => {
             ? new Prisma.Decimal(budget)
             : null,
         saleId: saleId ? Number(saleId) : null,
+        mainStatus: "CONTACTED", // ลูกค้าใหม่เริ่มที่ Contacted เสมอ
       },
       include: {
         sale: {

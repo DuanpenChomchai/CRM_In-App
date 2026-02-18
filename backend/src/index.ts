@@ -11,8 +11,8 @@ import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
 import fileRoutes from "./routes/file.routes";
 import chatRoutes from "./routes/chat.routes";
-
-// ✅ ใช้ route เดียวกัน (Properties.route.ts)
+import pipelineRoutes from "./routes/pipeline.route";
+import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
 
 import { initWs } from "./ws";
@@ -41,6 +41,9 @@ async function main() {
   app.use("/api/chat", chatMessageRoutes);
   app.use("/api/files", fileRoutes);
   app.use("/api/chat", chatRoutes);
+
+  app.use("/api/pipeline", pipelineRoutes);
+  app.use("/api/quotations", quotationRoutes);
 
   // ✅ ของใหม่ที่ FE ใช้จริง
   app.use("/api/properties", propertiesRoutes);
