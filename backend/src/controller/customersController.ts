@@ -168,11 +168,19 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
           },
         });
 
+        // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา
+        const lastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: c.id },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
         return {
           id: c.id,
           name: c.name,
           email: c.email,
           unreadCount,
+          lastMessageAt: lastMsg?.createdAt ?? null,
         };
       })
     );
@@ -406,11 +414,19 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // ✅ หาข้อความล่าสุดเพื่อแสดงเวลา
+    const lastMsg = await prisma.chatMessage.findFirst({
+      where: { customerId: customer.id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+
     return res.json({
       customerId: customer.id,
       customerName: customer.name,
       sale: customer.sale,
       unreadCount,
+      lastMessageAt: lastMsg?.createdAt ?? null,
     });
   } catch (error) {
     console.error("getMyAssignedSale error:", error);

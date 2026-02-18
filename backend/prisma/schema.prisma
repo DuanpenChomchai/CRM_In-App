@@ -77,8 +77,27 @@ model User {
   // ✅ เพิ่ม: อสังหาฯที่ user คนนี้สร้าง (admin)
   properties Property[]
 
+  // ✅ Refresh Tokens
+  refreshTokens RefreshToken[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ===========================================================
+// REFRESH TOKEN (สำหรับ JWT Refresh Token 30 วัน)
+// ===========================================================
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
 }
 
 // ===========================================================

@@ -310,8 +310,10 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     if (!me) return res.status(404).json({ message: "ไม่พบผู้ใช้" });
 
     return res.json({
-      ...me,
-      img: buildProfileImageUrl(me.id, me.img),
+      user: {
+        ...me,
+        img: buildProfileImageUrl(me.id, me.img),
+      },
     });
   } catch (err) {
     console.error("getMe error:", err);
@@ -417,8 +419,10 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     });
 
     return res.json({
-      ...updated,
-      img: buildProfileImageUrl(updated.id, updated.img),
+      user: {
+        ...updated,
+        img: buildProfileImageUrl(updated.id, updated.img),
+      },
     });
   } catch (err: any) {
     console.error("updateMe error:", err);

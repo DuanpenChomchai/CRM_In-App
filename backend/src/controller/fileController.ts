@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl as presign } from "@aws-sdk/s3-request-presigner";
 import s3Client, { BUCKET_NAME } from "../config/minioclient";
+import crypto from "crypto";
 import { pipeline } from "stream/promises";
 
 /** decode key ให้ปลอดภัย */
@@ -108,3 +109,47 @@ export const getSignedUrl = async (req: Request, res: Response) => {
     return res.status(500).json({ message: "error generating signed url" });
   }
 };
+
+/**
+ * GET /api/files/signed-put?name=<filename>&mime=<mimeType>
+ * return: { key, uploadUrl }  // pre-signed PUT URL for direct upload
+ */
+export const getSignedPutUrl = async (req: Request, res: Response) => {
+  const name = String(req.query.name ?? "").trim();
+  const mime = String(req.query.mime ?? "application/octet-stream").trim();
+
+  if (!name) return res.status(400).json({ message: "name is required" });
+
+  const bucket = BUCKET_NAME;
+  if (!bucket) return res.status(500).json({ message: "MINIO_BUCKET is not set" });
+
+  try {
+    // Generate unique key: chat/<timestamp>-<random>/<filename>
+    const now = Date.now();
+    const hash = crypto.randomBytes(16).toString("hex");
+    const ext = name.split(".").pop()?.toLowerCase() || "bin";
+    const key = `chat/${now}-${hash}.${ext}`;
+
+    const expiresIn = Number(process.env.SIGNED_URL_EXPIRES || 60 * 10); // default 10 นาที
+
+    console.log("[getSignedPutUrl] bucket:", bucket, "key:", key, "mime:", mime, "expiresIn:", expiresIn);
+
+    const cmd = new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: mime,
+    });
+
+    const uploadUrl = await presign(s3Client as any, cmd as any, { expiresIn });
+
+    return res.json({ key, uploadUrl });
+  } catch (err: any) {
+    const name = err?.name;
+    const code = err?.Code || err?.code;
+
+    console.error("[getSignedPutUrl] error:", { name, code, message: err?.message });
+
+    return res.status(500).json({ message: "error generating signed put url" });
+  }
+};
+

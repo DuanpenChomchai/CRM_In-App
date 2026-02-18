@@ -5,11 +5,12 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { API_BASE_URL } from "../../config/api";
+import Toast from "react-native-toast-message";
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -21,6 +22,10 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const isValidEmail = email.trim().toLowerCase().endsWith("@gmail.com");
+  const isValidPhone = /^\d{10}$/.test(tol.trim());
 
   const canSubmit =
     name.trim().length > 0 &&
@@ -31,6 +36,17 @@ export default function SignUpScreen() {
   const handleSignUp = async () => {
     if (loading) return;
     setErrorMsg("");
+    setSubmitted(true);
+
+    if (!isValidEmail || !isValidPhone) {
+      const msg = "กรุณาใส่ข้อมูลให้ถูกต้อง";
+      setErrorMsg(msg);
+      const errors: string[] = [];
+      if (!isValidEmail) errors.push("Email ต้องเป็น @gmail.com");
+      if (!isValidPhone) errors.push("เบอร์โทรต้องเป็นตัวเลข 10 หลัก");
+      Toast.show({ type: "error", text1: "ข้อมูลไม่ถูกต้อง", text2: errors.join(", ") });
+      return;
+    }
 
     if (!canSubmit) {
       setErrorMsg(
@@ -41,7 +57,7 @@ export default function SignUpScreen() {
 
     try {
       setLoading(true);
-      const res = await fetch("http://10.0.2.2:3000/api/register", {
+      const res = await fetch(`${API_BASE_URL}/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -64,25 +80,16 @@ export default function SignUpScreen() {
         setErrorMsg(
           data?.message || "สมัครสมาชิกไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"
         );
-        Alert.alert(
-          "สมัครไม่สำเร็จ",
-          data?.message || "กรุณาลองใหม่อีกครั้ง"
-        );
+        Toast.show({ type: "error", text1: "Sign Up Failed", text2: data?.message || "Please try again" });
         return;
       }
 
-      Alert.alert("สำเร็จ", "สมัครสมาชิกสำเร็จ", [
-        {
-          text: "ตกลง",
-          onPress: () => {
-            router.replace("/(auth)/login");
-          },
-        },
-      ]);
+      Toast.show({ type: "success", text1: "Success", text2: "Account created successfully" });
+      router.replace("/(auth)/login");
     } catch (error) {
       console.error("SignUp error:", error);
       setErrorMsg("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์");
-      Alert.alert("ข้อผิดพลาด", "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์");
+      Toast.show({ type: "error", text1: "Error", text2: "Unable to connect to server" });
     } finally {
       setLoading(false);
     }
@@ -110,7 +117,7 @@ export default function SignUpScreen() {
       </View>
 
       {/* Email */}
-      <View className="flex-row items-center border border-gray-200 rounded-2xl bg-gray-50 px-4 mt-4 mx-6">
+      <View className={`flex-row items-center border rounded-2xl bg-gray-50 px-4 mt-4 mx-6 ${submitted && !isValidEmail ? "border-red-500 border-2" : "border-gray-200"}`}>
         <Ionicons name="mail-outline" size={22} color="#9CA3AF" />
         <TextInput
           className="flex-1 py-3 ml-2"
@@ -123,7 +130,7 @@ export default function SignUpScreen() {
       </View>
 
       {/* Phone (tol) */}
-      <View className="flex-row items-center border border-gray-200 rounded-2xl bg-gray-50 px-4 mt-4 mx-6">
+      <View className={`flex-row items-center border rounded-2xl bg-gray-50 px-4 mt-4 mx-6 ${submitted && !isValidPhone ? "border-red-500 border-2" : "border-gray-200"}`}>
         <Ionicons name="call-outline" size={22} color="#9CA3AF" />
         <TextInput
           className="flex-1 py-3 ml-2"
@@ -158,13 +165,6 @@ export default function SignUpScreen() {
           />
         </TouchableOpacity>
       </View>
-
-      {/* error message */}
-      {!!errorMsg && (
-        <Text className="text-red-600 text-center text-sm mt-3 mx-6">
-          {errorMsg}
-        </Text>
-      )}
 
       {/* Sign Up button */}
       <View className="mt-6">

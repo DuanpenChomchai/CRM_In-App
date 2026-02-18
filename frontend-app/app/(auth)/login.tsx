@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useAuthStore } from "../../store/useAuthStore"; 
+import { useAuthStore } from "../../store/useAuthStore";
+import { API_BASE_URL } from "../../config/api";
+import Toast from "react-native-toast-message";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -27,12 +28,13 @@ export default function LoginScreen() {
 
     if (!identifier.trim() || !password.trim()) {
       setErrorMsg("กรุณากรอกอีเมล/เบอร์ และรหัสผ่าน");
+      Toast.show({ type: "info", text1: "Missing Information", text2: "Please enter your email/phone and password" });
       return;
     }
     try {
       setLoading(true);
 
-      const res = await fetch("http://10.0.2.2:3000/api/login", {
+      const res = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -50,18 +52,20 @@ export default function LoginScreen() {
       }
       if (!res.ok) {
         setErrorMsg(data.message || "เข้าสู่ระบบไม่สำเร็จ");
+        Toast.show({ type: "error", text1: "Login Failed", text2: data.message || "Please check your email/phone and password" });
         return;
       }
       if (!data?.token || !data?.user) {
         setErrorMsg("ข้อมูลการเข้าสู่ระบบไม่ถูกต้องจากเซิร์ฟเวอร์");
+        Toast.show({ type: "error", text1: "Error", text2: "Invalid login data from server" });
         return;
       }
-      await setAuthAfterLogin(data.user, data.token);
+      await setAuthAfterLogin(data.user, data.token, data.refreshToken ?? "");
       router.replace("/(screens)/all-chat");
     } catch (err) {
       console.error("Login error:", err);
       setErrorMsg("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์");
-      Alert.alert("Error", "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์");
+      Toast.show({ type: "error", text1: "Error", text2: "Unable to connect to server" });
     } finally {
       setLoading(false);
     }
@@ -121,13 +125,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* error message */}
-        {!!errorMsg && (
-          <Text className="text-red-600 text-center text-sm">
-            {errorMsg}
-          </Text>
-        )}
 
         {/* Login button */}
         <TouchableOpacity

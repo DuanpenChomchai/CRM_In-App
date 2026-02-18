@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyToken } from "../middlewares/authMiddleware";
-import { getFileObject, getSignedUrl } from "../controller/fileController";
+import { getFileObject, getSignedUrl, getSignedPutUrl } from "../controller/fileController";
 
 const router = Router();
 
@@ -9,5 +9,8 @@ router.get("/object", verifyToken, getFileObject);
 
 // GET /api/files/signed?key=chat/....
 router.get("/signed", verifyToken, getSignedUrl);
+
+// GET /api/files/signed-put?name=<filename>&mime=<mimeType>
+router.get("/signed-put", verifyToken, getSignedPutUrl);
 
 export default router;

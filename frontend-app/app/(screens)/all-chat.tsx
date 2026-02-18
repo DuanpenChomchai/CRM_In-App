@@ -22,10 +22,36 @@ type ChatItem = {
   id: string; // roomId เช่น "cust:4"
   name: string;
   time: string;
+  lastMessageAt?: string | null; // ISO string จาก backend
   customerId?: number;
   isSaleChat?: boolean; // true = ลูกค้าฝั่งแอพ แชทกับเซลล์
   unreadCount?: number;
 };
+
+const THAI_MONTHS = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
+
+/** แสดงเวลาล่าสุด: ถ้าวันนี้ → "HH:MM", เมื่อวาน → "เมื่อวาน", อื่นๆ → "14 ก.พ." */
+function formatLastTime(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+
+  const now = new Date();
+  const toKey = (dt: Date) => `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+
+  if (toKey(d) === toKey(now)) {
+    return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  }
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (toKey(d) === toKey(yesterday)) return "เมื่อวาน";
+
+  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]}`;
+}
 
 type WsUnreadPayload = {
   roomId: string; // เช่น "cust:4"
@@ -96,7 +122,8 @@ export default function ChatsScreen() {
               id: `cust:${data.customerId}`,
               customerId: data.customerId,
               name: data.sale.name || "Sale",
-              time: "Now",
+              time: formatLastTime(data.lastMessageAt),
+              lastMessageAt: data.lastMessageAt ?? null,
               isSaleChat: true,
               unreadCount: data.unreadCount ?? 0,
             });
@@ -151,7 +178,8 @@ export default function ChatsScreen() {
             id: `cust:${c.id}`,
             customerId: c.id,
             name: c.name || `Customer #${c.id}`,
-            time: "Now",
+            time: formatLastTime(c.lastMessageAt),
+            lastMessageAt: c.lastMessageAt ?? null,
             unreadCount: c.unreadCount ?? 0,
           }));
 
@@ -210,6 +238,13 @@ export default function ChatsScreen() {
     if (user?.role === "SALE" && saleRooms.length > 0) {
       rooms.push(...saleRooms);
     }
+
+    // เรียงตามข้อความล่าสุดไว้บนสุด
+    rooms.sort((a, b) => {
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return tb - ta;
+    });
 
     return rooms;
   }, [user?.role, saleChat, saleRooms]);

@@ -7,7 +7,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Alert,
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +14,7 @@ import { Stack, Link, useRouter } from "expo-router";
 import { useAuthStore } from "../../store/useAuthStore";
 import { API_BASE_URL } from "../../config/api";
 import * as ImagePicker from "expo-image-picker";
+import Toast from "react-native-toast-message";
 
 export default function ProfileEditScreen() {
   const router = useRouter();
@@ -41,27 +41,27 @@ export default function ProfileEditScreen() {
   }, [user?.id]);
 
   const avatarUri = useMemo(() => {
-    if (!user?.img) return null;
-    return user.img; // ต้องเป็น URL ที่ device เข้าได้ (อย่าเป็น localhost)
-  }, [user?.img]);
+    if (!user?.id || !token) return null;
+    return `${API_BASE_URL}/users/profile-image/${user.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`;
+  }, [user?.id, user?.img, token]);
 
   // =========================
   // UPLOAD IMAGE (เลือกจากเครื่อง + อัปโหลด)
   // =========================
   const onPickAndUpload = async () => {
     if (!uploadProfileImage) {
-      Alert.alert("Error", "ยังไม่ได้เชื่อมฟังก์ชัน uploadProfileImage ใน store");
+      Toast.show({ type: "error", text1: "Error", text2: "uploadProfileImage function is not connected in store" });
       return;
     }
     if (!token) {
-      Alert.alert("Error", "ไม่พบ token");
+      Toast.show({ type: "error", text1: "Error", text2: "Token not found" });
       return;
     }
 
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert("Permission", "กรุณาอนุญาตเข้าถึงรูปภาพก่อน");
+        Toast.show({ type: "info", text1: "Permission Required", text2: "Please allow access to your photo library" });
         return;
       }
 
@@ -96,10 +96,10 @@ export default function ProfileEditScreen() {
         } catch {}
       }
 
-      Alert.alert("สำเร็จ", "อัปโหลดรูปโปรไฟล์เรียบร้อยแล้ว");
+      Toast.show({ type: "success", text1: "Success", text2: "Profile photo uploaded successfully" });
     } catch (e: any) {
       console.log("upload image error:", e?.response?.data ?? e);
-      Alert.alert("Error", e?.message || "อัปโหลดรูปไม่สำเร็จ");
+      Toast.show({ type: "error", text1: "Error", text2: e?.message || "Failed to upload photo" });
     } finally {
       setUploadingImg(false);
     }
@@ -110,12 +110,12 @@ export default function ProfileEditScreen() {
   // =========================
   const handleSave = async () => {
     if (!user || !token) {
-      Alert.alert("Error", "ไม่พบข้อมูลผู้ใช้หรือ token");
+      Toast.show({ type: "error", text1: "Error", text2: "User data or token not found" });
       return;
     }
 
     if (!name.trim() || !email.trim() || !phone.trim()) {
-      Alert.alert("ข้อมูลไม่ครบ", "กรุณากรอก Name, Email และ Phone ให้ครบ");
+      Toast.show({ type: "info", text1: "Incomplete", text2: "Please fill in Name, Email, and Phone" });
       return;
     }
 
@@ -172,12 +172,11 @@ export default function ProfileEditScreen() {
         } catch {}
       }
 
-      Alert.alert("สำเร็จ", "บันทึกโปรไฟล์เรียบร้อยแล้ว", [
-        { text: "OK", onPress: () => router.replace("/(screens)/profile") },
-      ]);
+      Toast.show({ type: "success", text1: "Success", text2: "Profile saved successfully" });
+      router.replace("/(screens)/profile");
     } catch (err: any) {
       console.log("Update profile error:", err);
-      Alert.alert("Error", err?.message || "เกิดข้อผิดพลาด");
+      Toast.show({ type: "error", text1: "Error", text2: err?.message || "Something went wrong" });
     } finally {
       setLoading(false);
     }
