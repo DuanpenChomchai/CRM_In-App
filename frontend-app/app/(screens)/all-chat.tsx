@@ -11,6 +11,7 @@ import {
   TextInput,
   FlatList,
   Pressable,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, router, useFocusEffect } from "expo-router";
@@ -26,6 +27,7 @@ type ChatItem = {
   customerId?: number;
   isSaleChat?: boolean; // true = ลูกค้าฝั่งแอพ แชทกับเซลล์
   unreadCount?: number;
+  profileUserId?: number | null; // User ID สำหรับโหลดรูป profile
 };
 
 const THAI_MONTHS = [
@@ -126,6 +128,7 @@ export default function ChatsScreen() {
               lastMessageAt: data.lastMessageAt ?? null,
               isSaleChat: true,
               unreadCount: data.unreadCount ?? 0,
+              profileUserId: data.sale.id ?? null,
             });
           } else {
             setSaleChat(null);
@@ -181,6 +184,7 @@ export default function ChatsScreen() {
             time: formatLastTime(c.lastMessageAt),
             lastMessageAt: c.lastMessageAt ?? null,
             unreadCount: c.unreadCount ?? 0,
+            profileUserId: c.userId ?? null,
           }));
 
           setSaleRooms(mapped);
@@ -321,12 +325,22 @@ export default function ChatsScreen() {
         onPress={() => handlePressRoom(item)}
       >
         <View className="flex-row items-center py-4">
-          <View className="w-12 h-12 rounded-full bg-emerald-200 items-center justify-center mr-3">
-            <Ionicons
-              name={item.isSaleChat ? "person" : "people"}
-              size={20}
-              color="#0f5132"
-            />
+          <View className="w-12 h-12 rounded-full bg-emerald-200 items-center justify-center mr-3 overflow-hidden">
+            {item.profileUserId && token ? (
+              <Image
+                source={{
+                  uri: `${API_BASE_URL}/users/profile-image/${item.profileUserId}?t=${encodeURIComponent(token)}&b=${item.profileUserId}`,
+                }}
+                className="w-12 h-12"
+                resizeMode="cover"
+              />
+            ) : (
+              <Ionicons
+                name={item.isSaleChat ? "person" : "people"}
+                size={20}
+                color="#0f5132"
+              />
+            )}
           </View>
 
           <View className="flex-1">

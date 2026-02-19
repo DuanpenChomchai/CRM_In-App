@@ -154,6 +154,7 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
         id: true,
         name: true,
         email: true,
+        userId: true,
       },
       orderBy: { createdAt: "desc" },
     });
@@ -179,6 +180,7 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
           id: c.id,
           name: c.name,
           email: c.email,
+          userId: c.userId,
           unreadCount,
           lastMessageAt: lastMsg?.createdAt ?? null,
         };

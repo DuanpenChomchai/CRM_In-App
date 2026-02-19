@@ -301,6 +301,12 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
       io.to(roomId).emit("unread-count", payload);
       io.to("role:CUSTOMER").emit("unread-count", payload);
       io.to("role:SALE").emit("unread-count", payload);
+
+      // ✅ แจ้งฝั่งส่งว่าข้อความถูกอ่านแล้ว (read receipt)
+      io.to(roomId).emit("messages-read", {
+        roomId,
+        readByRole: authUser.role, // "CUSTOMER" | "SALE"
+      });
     } catch (e) {
       console.error("emit unread-count after mark-read error:", e);
     }

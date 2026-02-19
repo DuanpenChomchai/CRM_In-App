@@ -15,7 +15,7 @@ import Toast from "react-native-toast-message";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams } from "expo-router";
-import { useSocketRoom, generateCid } from "../../store/socket";
+import { useSocketRoom, generateCid, getSocket } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useIsFocused } from "@react-navigation/native";
 import { API_BASE_URL } from "../../config/api";
@@ -69,6 +69,7 @@ type BaseMsg = {
   time: string;
   ts: number;
   cid?: string | number;
+  readByOther?: boolean; // ฝั่งตรงข้ามอ่านแล้วหรือยัง
 };
 
 type Msg =
@@ -320,14 +321,23 @@ export default function ChatDetailScreen() {
           });
           if (!res.ok) return;
           const data = await res.json();
-          if (data.sale) setPartner({ name: data.sale.name || "Sale", avatarUrl: data.sale.img ?? null });
+          if (data.sale) {
+            const avatarUrl = data.sale.id
+              ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
+              : null;
+            setPartner({ name: data.sale.name || "Sale", avatarUrl });
+          }
         } else if (user?.role === "SALE" && effectiveCustomerId) {
           const res = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (!res.ok) return;
           const c = await res.json();
-          setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl: c.img ?? null });
+          const userId = c.userId ?? c.user?.id ?? null;
+          const avatarUrl = userId
+            ? `${API_BASE_URL}/users/profile-image/${userId}?t=${encodeURIComponent(token)}&b=${Date.now()}`
+            : null;
+          setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl });
         } else {
           setPartner(null);
         }
@@ -385,12 +395,26 @@ export default function ChatDetailScreen() {
           const createdAt = new Date(m.createdAt || Date.now());
           const ts = createdAt.getTime();
 
+          const isFromMe = computeFromMe(m);
+
+          // ✅ ถ้าเราเป็น SALE → ดูว่า Customer อ่านหรือยัง (readByCustomerAt)
+          // ✅ ถ้าเราเป็น CUSTOMER → ดูว่า Sale อ่านหรือยัง (readBySaleAt)
+          let readByOther = false;
+          if (isFromMe) {
+            if (user?.role === "SALE") {
+              readByOther = !!m.readByCustomerAt;
+            } else if (user?.role === "CUSTOMER") {
+              readByOther = !!m.readBySaleAt;
+            }
+          }
+
           const base: BaseMsg = {
             id: String(m.id),
-            fromMe: computeFromMe(m),
+            fromMe: isFromMe,
             time: formatClock(createdAt),
             ts,
             cid: m.cid ?? undefined,
+            readByOther,
           };
 
           if (t === "IMAGE") {
@@ -478,6 +502,45 @@ export default function ChatDetailScreen() {
 
     markRead();
   }, [token, effectiveCustomerId, isFocused]);
+
+  // =========================================================
+  // listen for messages-read (read receipt realtime)
+  // =========================================================
+  useEffect(() => {
+    const socket = getSocket();
+
+    const onMessagesRead = (payload: { roomId: string; readByRole: string }) => {
+      if (payload.roomId !== effectiveRoomId) return;
+
+      // ถ้าฝั่งตรงข้ามอ่าน → mark ข้อความของเราทั้งหมดเป็น read
+      const isOtherSide =
+        (user?.role === "SALE" && payload.readByRole === "CUSTOMER") ||
+        (user?.role === "CUSTOMER" && payload.readByRole === "SALE");
+
+      if (!isOtherSide) return;
+
+      setHistoryMessages((prev) =>
+        prev.map((m) =>
+          m.fromMe && !m.readByOther ? { ...m, readByOther: true } : m
+        )
+      );
+      setLocalTextBuf((prev) =>
+        prev.map((m) =>
+          m.fromMe && !m.readByOther ? { ...m, readByOther: true } : m
+        )
+      );
+      setLocalAttachBuf((prev) =>
+        prev.map((m) =>
+          m.fromMe && !m.readByOther ? { ...m, readByOther: true } : m
+        )
+      );
+    };
+
+    socket.on("messages-read", onMessagesRead);
+    return () => {
+      socket.off("messages-read", onMessagesRead);
+    };
+  }, [effectiveRoomId, user?.role]);
 
   // =========================================================
   // socket texts
@@ -881,10 +944,7 @@ export default function ChatDetailScreen() {
             }}
           >
             {item.type === "text" ? (
-              <>
-                <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
-                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
-              </>
+              <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
             ) : item.type === "image" ? (
               <>
                 <Pressable
@@ -915,9 +975,6 @@ export default function ChatDetailScreen() {
                     </View>
                   )}
                 </Pressable>
-
-                {/* ✅ เอาชื่อรูปออก */}
-                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
               </>
             ) : (
               <>
@@ -952,8 +1009,6 @@ export default function ChatDetailScreen() {
                   </Text>
                 </Pressable>
 
-                <Text className={`${subColor} text-[10px] mt-1`}>{item.time}</Text>
-
                 {!item.uri && item.fileKey ? (
                   <Pressable
                     onPress={() => refreshSignedForMessage(item)}
@@ -963,6 +1018,14 @@ export default function ChatDetailScreen() {
                   </Pressable>
                 ) : null}
               </>
+            )}
+          </View>
+
+          {/* ✅ เวลา + Read อยู่นอก bubble */}
+          <View className="flex-row items-center mt-1" style={{ gap: 4 }}>
+            <Text className="text-[10px] text-gray-400">{item.time}</Text>
+            {isMe && item.readByOther && (
+              <Text className="text-[10px] text-gray-400 font-medium">read</Text>
             )}
           </View>
         </View>
