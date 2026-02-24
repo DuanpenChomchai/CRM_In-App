@@ -96,6 +96,24 @@ export const listProperties = async (req: Request, res: Response) => {
 };
 
 /**
+ * GET /api/properties/simple
+ * lightweight list for dropdowns (id, name, price only)
+ */
+export const listPropertiesSimple = async (_req: Request, res: Response) => {
+  try {
+    const items = await prisma.property.findMany({
+      where: { status: "AVAILABLE" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, price: true, type: true, status: true },
+    });
+    return res.json(items);
+  } catch (err) {
+    console.error("listPropertiesSimple error:", err);
+    return res.status(500).json({ message: "ดึงรายการอสังหาฯ ล้มเหลว" });
+  }
+};
+
+/**
  * GET /api/properties/:id
  */
 export const getPropertyById = async (req: Request, res: Response) => {

@@ -37,11 +37,12 @@ enum CallStatus {
   CANCELED
 }
 
-// ======= สถานะลูกค้า (Stage หลัก) =======
+// ======= Pipeline Stage หลัก (Single Source of Truth) =======
 enum CustomerStatus {
   NEW
   CONTACTED
   NEGOTIATING
+  QUOTATION
   CLOSED
 }
 
@@ -52,6 +53,38 @@ enum ChatMessageType {
   FILE
 }
 
+// ======= สถานะใบเสนอราคา =======
+enum QuotationStatus {
+  DRAFT
+  WAIT_APPROVAL
+  SENT
+  APPROVED
+  REJECTED
+}
+
+// ======= Status รายละเอียดแต่ละ Stage =======
+enum ContactedStatus {
+  FOLLOWING_UP
+  WAITING_REPLY
+  APPOINTED
+  NOT_INTERESTED
+}
+
+enum NegotiationStatus {
+  NEGOTIATING
+  WAITING_CONFIRM
+  COUNTER_OFFER
+  PAUSED
+}
+
+enum ClosedDealStatus {
+  CLOSED
+}
+
+enum DealResult {
+  WON
+  LOST
+}
 
 // ===========================================================
 // USER (ลูกค้า/เซลล์/ผู้จัดการ/แอดมิน)
@@ -66,6 +99,10 @@ model User {
   img      String?
   role     Role    @default(CUSTOMER)
 
+  managerId Int?
+  manager   User?  @relation("UserManager", fields: [managerId], references: [id])
+  team      User[] @relation("UserManager")
+
   customers      Customer[]       @relation("CustomerOwner")
   salesCustomers Customer[]       @relation("SaleCustomers")
   closedDeals    ClosedDeal[]
@@ -74,8 +111,11 @@ model User {
   saleCalls     Call[] @relation("SaleCallUser")
   customerCalls Call[] @relation("CustomerCallUser")
 
-  // ✅ เพิ่ม: อสังหาฯที่ user คนนี้สร้าง (admin)
   properties Property[]
+
+  // ✅ Quotation ownership + approval relations
+  createdQuotations  Quotation[] @relation("QuotationCreatedBy")
+  approvedQuotations Quotation[] @relation("QuotationApprovedBy")
 
   // ✅ Refresh Tokens
   refreshTokens RefreshToken[]
@@ -111,8 +151,6 @@ model Product {
   property String?
   img      String?
 
-  proposals Proposal[]
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -142,13 +180,18 @@ model Property {
   price       Decimal        @db.Decimal(12, 2)
   bedrooms    Int            @default(0)
   bathrooms   Int            @default(0)
-  size        Int            @default(0) // ตร.ม.
+  size        Int            @default(0)
   status      PropertyStatus @default(AVAILABLE)
   description String?
-  img         String? // เช่น /api/properties/image/<key>
+  img         String?
 
   createdById Int
   createdBy   User @relation(fields: [createdById], references: [id])
+
+  interestedCustomers Customer[] @relation("InterestedProperty")
+
+  quotations     Quotation[]
+  quotationItems QuotationItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -174,6 +217,9 @@ model Customer {
   productType String?
   priceBudget Decimal? @db.Decimal(12, 2)
 
+  interestedPropertyId Int?
+  interestedProperty   Property? @relation("InterestedProperty", fields: [interestedPropertyId], references: [id])
+
   userId Int?
   user   User? @relation("CustomerOwner", fields: [userId], references: [id])
 
@@ -181,20 +227,26 @@ model Customer {
   sale   User? @relation("SaleCustomers", fields: [saleId], references: [id])
 
   communications Communications[]
-  contacted      Contacted?
-  quotations     Quotation[]
-  negotiations   Negotiation[]
-  closedDeals    ClosedDeal[]
+
+  contactedLogs Contacted[]
+
+  quotations   Quotation[]
+  negotiations Negotiation[]
+  closedDeals  ClosedDeal[]
 
   calls        Call[]
   chatMessages ChatMessage[]
 
-  mainStatus CustomerStatus? @default(NEW)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
+  mainStatus CustomerStatus @default(NEW)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([saleId])
+  @@index([mainStatus])
+  @@index([createdAt])
+  @@index([interestedPropertyId])
 }
 
 // ===========================================================
@@ -225,22 +277,26 @@ model Communications {
 }
 
 // ===========================================================
-// CONTACTED
+// CONTACTED (เก็บเป็นประวัติ)
 // ===========================================================
 
 model Contacted {
-  id        Int       @id @default(autoincrement())
-  status    String
+  id        Int             @id @default(autoincrement())
+  status    ContactedStatus
   topic     String?
   note      String?
-  stateDate DateTime  @default(now())
+  stateDate DateTime        @default(now())
   endDate   DateTime?
 
-  customerId Int      @unique
+  customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([stateDate])
+  @@index([status])
 }
 
 // ===========================================================
@@ -248,8 +304,9 @@ model Contacted {
 // ===========================================================
 
 model Quotation {
-  id              Int       @id @default(autoincrement())
-  status          String
+  id     Int             @id @default(autoincrement())
+  status QuotationStatus @default(DRAFT)
+
   stateDate       DateTime  @default(now())
   terms           String?
   quotationNumber String    @unique
@@ -257,49 +314,67 @@ model Quotation {
   note            String?
   endDate         DateTime?
 
+  propertyId Int
+  property   Property @relation(fields: [propertyId], references: [id])
+
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
-  proposals Proposal[]
+  items QuotationItem[]
+
+  // ✅ ใครเป็นคนสร้าง
+  createdById Int
+  createdBy   User @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+
+  // ✅ ใครอนุมัติ
+  approvedById Int?
+  approvedBy   User?    @relation("QuotationApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([customerId])
+  @@index([propertyId])
   @@index([stateDate])
+  @@index([status])
+  @@index([createdById])
+  @@index([approvedById])
 }
 
 // ===========================================================
-// PROPOSAL
+// QUOTATION ITEM
 // ===========================================================
 
-model Proposal {
-  id           Int     @id @default(autoincrement())
-  quotation    String
-  terms        String?
-  priceOffered Decimal @db.Decimal(12, 2)
-
-  productId Int?
-  product   Product? @relation(fields: [productId], references: [id])
+model QuotationItem {
+  id Int @id @default(autoincrement())
 
   quotationId Int
-  quotationDb Quotation @relation(fields: [quotationId], references: [id])
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  propertyId Int?
+  property   Property? @relation(fields: [propertyId], references: [id])
+
+  name      String
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2)
+  discount  Decimal @default(0) @db.Decimal(5, 2)
+  lineTotal Decimal @db.Decimal(12, 2)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([productId])
   @@index([quotationId])
 }
 
 // ===========================================================
-// NEGOTIATION
+// NEGOTIATION (ประวัติการเจรจา)
 // ===========================================================
 
 model Negotiation {
-  id        Int       @id @default(autoincrement())
-  status    String
-  stateDate DateTime  @default(now())
+  id        Int               @id @default(autoincrement())
+  status    NegotiationStatus
+  stateDate DateTime          @default(now())
   note      String?
   endDate   DateTime?
 
@@ -311,6 +386,7 @@ model Negotiation {
 
   @@index([customerId])
   @@index([stateDate])
+  @@index([status])
 }
 
 // ===========================================================
@@ -318,12 +394,14 @@ model Negotiation {
 // ===========================================================
 
 model ClosedDeal {
-  id          Int       @id @default(autoincrement())
-  status      String
+  id     Int              @id @default(autoincrement())
+  status ClosedDealStatus @default(CLOSED)
+
+  result DealResult
+
   stateDate   DateTime  @default(now())
   finalValue  Decimal?  @db.Decimal(12, 2)
   discount    Decimal?  @db.Decimal(12, 2)
-  dealStatus  String?
   closingDate DateTime?
   note        String?
   endDate     DateTime?
@@ -340,6 +418,7 @@ model ClosedDeal {
   @@index([customerId])
   @@index([userId])
   @@index([closingDate])
+  @@index([result])
 }
 
 // ===========================================================
@@ -381,11 +460,11 @@ model Call {
 }
 
 // ===========================================================
-// CHAT MESSAGE (ประวัติการแชทจริง ๆ ของ WebSocket)
+// CHAT MESSAGE
 // ===========================================================
 
 model ChatMessage {
-  id         Int    @id @default(autoincrement())
+  id         Int     @id @default(autoincrement())
   roomId     String
   text       String?
 

@@ -8,16 +8,28 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 
 const Navbar = () => {
   const navigate = useNavigate();
 
-  // ดึง user จริงจาก localStorage
   const storedUser = localStorage.getItem("user");
   const user = storedUser ? JSON.parse(storedUser) : null;
   const userEmail = user?.email || "ไม่พบอีเมล";
+  const userId = user?.id;
+
+  const API_HOST = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:3000";
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token || !userId) return;
+    // โหลดรูปผ่าน backend proxy
+    const url = `${API_HOST}/api/users/profile-image/${userId}?t=${encodeURIComponent(token)}&b=${Date.now()}`;
+    setAvatarUrl(url);
+  }, [API_HOST, userId]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -43,6 +55,12 @@ const Navbar = () => {
               className="relative h-10 w-10 rounded-full bg-white/20 hover:bg-white/30"
             >
               <Avatar>
+                {avatarUrl && (
+                  <AvatarImage
+                    src={avatarUrl}
+                    onError={() => setAvatarUrl(null)}
+                  />
+                )}
                 <AvatarFallback className="bg-gradient-to-r from-green-400 to-pink-400 text-white font-bold">
                   {userEmail[0]?.toUpperCase() || "?"}
                 </AvatarFallback>

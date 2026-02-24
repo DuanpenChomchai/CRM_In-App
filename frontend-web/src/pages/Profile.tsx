@@ -275,15 +275,20 @@ export default function Profile() {
                   onChange={handleImageChange}
                 />
 
-                <div onClick={handleImageClick} className="cursor-pointer">
+                <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer relative">
                   <Avatar className="h-32 w-32 border-4 shadow-xl">
                     <AvatarImage key={previewImg ?? "no-img"} src={previewImg ?? undefined} />
                     <AvatarFallback className="text-3xl">{getInitials(profile.name)}</AvatarFallback>
                   </Avatar>
 
-                  {(isEditing || uploadingImg) && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-full">
-                      <Camera className="w-10 h-10 text-white" />
+                  {/* ไอคอนกล้องแสดงตลอดเวลา */}
+                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center rounded-full opacity-0 hover:opacity-100 transition-opacity">
+                    <Camera className="w-10 h-10 text-white" />
+                  </div>
+
+                  {uploadingImg && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-full">
+                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     </div>
                   )}
                 </div>
@@ -367,9 +372,8 @@ export default function Profile() {
 
           <DialogHeader className="text-center">
             <DialogTitle
-              className={`text-2xl font-bold ${
-                dialogType === "success" ? "text-green-600" : "text-red-600"
-              }`}
+              className={`text-2xl font-bold ${dialogType === "success" ? "text-green-600" : "text-red-600"
+                }`}
             >
               {dialogTitle}
             </DialogTitle>

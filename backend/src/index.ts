@@ -11,6 +11,8 @@ import customerRoutes from "./routes/customers.route";
 import chatMessageRoutes from "./routes/chatMessage.routes";
 import fileRoutes from "./routes/file.routes";
 import chatRoutes from "./routes/chat.routes";
+import pipelineRoutes from "./routes/pipeline.route";
+import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
 
 import { initWs } from "./ws";
@@ -46,7 +48,6 @@ async function main() {
 
     res.on("finish", () => {
       const ms = Date.now() - start;
-      // log เฉพาะ /api ก็ได้ แต่ตอนนี้ log ทุกอันให้ชัด
       console.log(`[HTTP] ${method} ${originalUrl} -> ${res.statusCode} (${ms}ms)`);
     });
 
@@ -81,14 +82,16 @@ async function main() {
   app.use("/api/files", fileRoutes);
 
   // ✅ แชท (upload/send) ก่อน
-  // เช่น POST /api/chat/upload, POST /api/chat/send
   app.use("/api/chat", chatRoutes);
 
   // ✅ แชท (history/room/mark-read) ทีหลัง
-  // เช่น GET /api/chat/room/:roomId
   app.use("/api/chat", chatMessageRoutes);
 
-  // ✅ properties
+  // ✅ Pipeline & Quotation
+  app.use("/api/pipeline", pipelineRoutes);
+  app.use("/api/quotations", quotationRoutes);
+
+  // ✅ Properties
   app.use("/api/properties", propertiesRoutes);
   app.use("/api/products", propertiesRoutes); // backward compat
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,7 +59,28 @@ interface Deal {
   closingDate?: Date;
 }
 
+type ApiStage = "CONTACTED" | "NEGOTIATING" | "QUOTATION" | "CLOSED";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+
+const getToken = () => localStorage.getItem("token") || "";
+
+const uiToApi = (s: Deal["stage"]): ApiStage => {
+  if (s === "contacted") return "CONTACTED";
+  if (s === "negotiation") return "NEGOTIATING";
+  if (s === "quotation") return "QUOTATION";
+  return "CLOSED";
+};
+
+const apiToUi = (s: ApiStage): Deal["stage"] => {
+  if (s === "CONTACTED") return "contacted";
+  if (s === "NEGOTIATING") return "negotiation";
+  if (s === "QUOTATION") return "quotation";
+  return "closed";
+};
+
 const StageBased = () => {
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentStage, setCurrentStage] = useState<Deal["stage"]>("contacted");
@@ -73,64 +94,75 @@ const StageBased = () => {
     })
   );
 
-  const [deals, setDeals] = useState<Deal[]>([
-    {
-      id: 1,
-      customerId: 1,
-      customerName: "คุณสมศักดิ์ เจริญสุข",
-      phone: "081-234-5678",
-      propertyType: "คอนโด",
-      budget: 3500000,
-      stage: "contacted",
-      status: "กำลังติดต่อ",
-      startDate: new Date(2024, 0, 15),
-      endDate: new Date(2024, 0, 20),
-    },
-    {
-      id: 2,
-      customerId: 2,
-      customerName: "คุณวิภา สวยงาม",
-      phone: "082-345-6789",
-      propertyType: "บ้านเดี่ยว",
-      budget: 8500000,
-      stage: "negotiation",
-      status: "เจรจาต่อรอง",
-      startDate: new Date(2024, 0, 10),
-      endDate: new Date(2024, 0, 25),
-      assignedSales: "สมชาย ใจดี",
-    },
-    {
-      id: 3,
-      customerId: 3,
-      customerName: "Naruemon",
-      phone: "089-xxx-xxxx",
-      propertyType: "House",
-      budget: 350000000,
-      stage: "quotation",
-      startDate: new Date(2025, 8, 17),
-      assignedSales: "สมจิต ใจเย็น",
-      priceOffered: 3450000,
-      terms: "15 y",
-      quotationNumbers: ["KT-2025-045", "KT-2025-046"],
-    },
-    {
-      id: 4,
-      customerId: 4,
-      customerName: "Naruemon",
-      phone: "089-xxx-xxxx",
-      propertyType: "House",
-      budget: 350000000,
-      stage: "closed",
-      startDate: new Date(2025, 8, 18),
-      assignedSales: "สมหมาย ใจดี",
-      priceOffered: 3450000,
-      terms: "15 y",
-      quotationNumbers: ["KT-2025-045"],
-      finalValue: 3400000,
-      dealStatus: "lost",
-      closingDate: new Date(2025, 8, 20),
-    },
-  ]);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [salesList, setSalesList] = useState<{ id: number; name: string }[]>([]);
+
+  // ─── fetch board from backend ───────────────────────────────────────────────
+  const fetchBoard = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/board`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (!res.ok) throw new Error("Load board failed");
+      const data = await res.json();
+
+      const mapped: Deal[] = [];
+      const pushCol = (apiStage: ApiStage, list: any[]) => {
+        for (const c of list) {
+          const latestQ = c.quotations?.[0];
+          const latestClosed = c.closedDeals?.[0];
+          const latestNego = c.negotiations?.[0];
+          const latestLog = c.contactedLogs?.[0];
+          const rawResult = (latestClosed?.result ?? "").toUpperCase();
+
+          mapped.push({
+            id: c.id,
+            customerId: c.id,
+            customerName: c.name || "-",
+            phone: c.tel ?? c.tol ?? "-",
+            propertyType: c.interestedProperty?.type ?? c.productType ?? "-",
+            budget: Number(c.priceBudget || 0),
+            stage: apiToUi(apiStage),
+            assignedSales: c.sale?.name,
+            status: latestLog?.status ?? latestNego?.status ?? undefined,
+            startDate: c.updatedAt ? new Date(c.updatedAt) : undefined,
+            quotationNumbers: (c.quotations || []).map((q: any) => q.quotationNumber).filter(Boolean),
+            priceOffered: latestQ ? Number(latestQ.totalAmount || 0) : undefined,
+            terms: latestQ?.terms,
+            finalValue: latestClosed?.finalValue ? Number(latestClosed.finalValue) : undefined,
+            closingDate: latestClosed?.closingDate ? new Date(latestClosed.closingDate) : undefined,
+            dealStatus: rawResult === "WON" ? "won" : rawResult === "LOST" ? "lost" : undefined,
+          });
+        }
+      };
+
+      pushCol("CONTACTED", data.columns.CONTACTED || []);
+      pushCol("NEGOTIATING", data.columns.NEGOTIATING || []);
+      pushCol("QUOTATION", data.columns.QUOTATION || []);
+      pushCol("CLOSED", data.columns.CLOSED || []);
+
+      setDeals(mapped);
+    } catch (e: any) {
+      console.error(e);
+      toast.error("โหลด Pipeline ไม่สำเร็จ");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchBoard(); }, []);
+
+  // ─── fetch sales staff ──────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch(`${API_BASE}/api/users/sales-list`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then(r => r.json())
+      .then(d => setSalesList(d.data || []))
+      .catch(() => { });
+  }, []);
+
 
   const stages = [
     { id: "contacted", title: "Contacted", color: "bg-blue-500" },
@@ -148,8 +180,8 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    
-    setSelectedDeal({ ...deal }); 
+
+    setSelectedDeal({ ...deal });
     setCurrentStage(stage);
     setIsDialogOpen(true);
   };
@@ -159,45 +191,64 @@ const StageBased = () => {
     setActiveDeal(deal || null);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
-    
-    if (!over) {
+
+    if (!over) { setActiveDeal(null); return; }
+
+    const dealId = Number(active.id);
+    const newStage = over.id as Deal["stage"];
+
+    if (!["contacted", "negotiation", "quotation", "closed"].includes(newStage)) {
       setActiveDeal(null);
       return;
     }
 
-    const dealId = Number(active.id);
-    const newStage = over.id as Deal["stage"];
-    
-    if (newStage && ["contacted", "negotiation", "quotation", "closed"].includes(newStage)) {
-      setDeals(prevDeals =>
-        prevDeals.map(deal =>
-          deal.id === dealId
-            ? { ...deal, stage: newStage }
-            : deal
-        )
-      );
-      toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} แล้ว`);
-    }
-    
+    const moving = deals.find(d => d.id === dealId);
+    if (!moving || moving.stage === newStage) { setActiveDeal(null); return; }
+
+    // optimistic update
+    const prev = deals;
+    setDeals(p => p.map(d => d.id === dealId ? { ...d, stage: newStage } : d));
+    toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} แล้ว`);
     setActiveDeal(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/pipeline/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ customerId: moving.customerId, toStatus: uiToApi(newStage) }),
+      });
+      if (!res.ok) throw new Error("Move failed");
+      await fetchBoard();
+    } catch (e: any) {
+      toast.error("ย้าย Stage ไม่สำเร็จ");
+      setDeals(prev);
+    }
   };
 
-  
-  const handleSaveChanges = () => {
+
+  const handleSaveChanges = async () => {
     if (!selectedDeal) return;
 
+    // อัปเดต local state ทันที
+    setDeals(p => p.map(d => d.id === selectedDeal.id ? selectedDeal : d));
 
-    setDeals(prevDeals =>
-      prevDeals.map(deal =>
-        deal.id === selectedDeal.id ? selectedDeal : deal
-      )
-    );
+    try {
+      // sync stage กับ backend
+      await fetch(`${API_BASE}/api/pipeline/move`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ customerId: selectedDeal.customerId, toStatus: uiToApi(currentStage) }),
+      });
+      toast.success("บันทึกข้อมูลสำเร็จ");
+    } catch {
+      toast.error("บันทึกไม่สำเร็จ");
+    }
 
-    toast.success("บันทึกข้อมูลสำเร็จ");
     setIsDialogOpen(false);
   };
+
 
   const DealCard = ({ deal }: { deal: Deal }) => {
     const [isStatusOpen, setIsStatusOpen] = useState(false);
@@ -211,7 +262,7 @@ const StageBased = () => {
 
     const handleStatusChange = (newStatus: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      setDeals(deals.map(d => 
+      setDeals(deals.map(d =>
         d.id === deal.id ? { ...d, status: newStatus } : d
       ));
       setIsStatusOpen(false);
@@ -221,10 +272,10 @@ const StageBased = () => {
     const getStatusBadge = () => {
       const currentStatus = deal.status || (
         deal.stage === "contacted" ? "กำลังติดต่อ" :
-        deal.stage === "negotiation" ? "เจรจาต่อรอง" :
-        deal.stage === "quotation" ? "รอการตอบกลับ" :
-        deal.stage === "closed" && deal.dealStatus === "won" ? "ปิดการขายสำเร็จ" :
-        "ไม่สำเร็จ"
+          deal.stage === "negotiation" ? "เจรจาต่อรอง" :
+            deal.stage === "quotation" ? "รอการตอบกลับ" :
+              deal.stage === "closed" && deal.dealStatus === "won" ? "ปิดการขายสำเร็จ" :
+                "ไม่สำเร็จ"
       );
 
       const getStatusColor = () => {
@@ -250,8 +301,8 @@ const StageBased = () => {
               {currentStatus}
             </button>
           </PopoverTrigger>
-          <PopoverContent 
-            className="w-56 p-2" 
+          <PopoverContent
+            className="w-56 p-2"
             align="end"
             onClick={(e) => e.stopPropagation()}
           >
@@ -424,280 +475,182 @@ const StageBased = () => {
       <div className="container mx-auto p-6 space-y-6 animate-fade-in">
         <h1 className="text-3xl font-bold">Pipeline</h1>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stages.map((stage) => (
-            <Card key={stage.id} className="shadow-card">
-              <CardHeader className={`${stage.color} text-white rounded-t-lg`}>
-                <CardTitle className="flex items-center justify-between">
-                  <span>{stage.title}</span>
-                  <span className="text-sm font-normal">
-                    {deals.filter((d) => d.stage === stage.id).length} ดีล
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3">
-                <DroppableStageColumn id={stage.id}>
-                  {deals
-                    .filter((d) => d.stage === stage.id)
-                    .map((deal) => (
-                      <DraggableDealCard key={deal.id} id={deal.id}>
-                        <DealCard deal={deal} />
-                      </DraggableDealCard>
-                    ))}
-                </DroppableStageColumn>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="text-muted-foreground py-12 text-center">กำลังโหลด...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {stages.map((stage) => (
+              <Card key={stage.id} className="shadow-card">
+                <CardHeader className={`${stage.color} text-white rounded-t-lg`}>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>{stage.title}</span>
+                    <span className="text-sm font-normal">
+                      {deals.filter((d) => d.stage === stage.id).length} ดีล
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-3">
+                  <DroppableStageColumn id={stage.id}>
+                    {deals
+                      .filter((d) => d.stage === stage.id)
+                      .map((deal) => (
+                        <DraggableDealCard key={deal.id} id={deal.id}>
+                          <DealCard deal={deal} />
+                        </DraggableDealCard>
+                      ))}
+                  </DroppableStageColumn>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
 
         <DragOverlay>
           {activeDeal ? <DealCard deal={activeDeal} /> : null}
         </DragOverlay>
 
-      
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>รายละเอียด {stages.find(s => s.id === currentStage)?.title}</DialogTitle>
-            <DialogDescription>
-              {selectedDeal?.customerName}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-  
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>ชื่อลูกค้า</Label>
-                <Input 
-                  value={selectedDeal?.customerName || ""}
-                  onChange={(e) => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, customerName: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <Label>เบอร์โทร</Label>
-                <Input 
-                  value={selectedDeal?.phone || ""}
-                  onChange={(e) => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, phone: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <Label>ประเภทอสังหา</Label>
-                <Input 
-                  value={selectedDeal?.propertyType || ""}
-                  onChange={(e) => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, propertyType: e.target.value });
-                  }}
-                />
-              </div>
-              <div>
-                <Label>งบประมาณ</Label>
-                <Input 
-                  type="number"
-                  value={selectedDeal?.budget || ""}
-                  onChange={(e) => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, budget: Number(e.target.value) });
-                  }}
-                />
-              </div>
-            </div>
 
-            {/* วันที่เริ่มต้น - สิ้นสุด */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>วันที่เริ่มต้น</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {selectedDeal?.startDate ? format(selectedDeal.startDate, "PPP", { locale: th }) : "เลือกวันที่"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDeal?.startDate}
-                      onSelect={(date) => {
-                        if (selectedDeal && date) {
-                          setSelectedDeal({ ...selectedDeal, startDate: date });
-                        }
-                      }}
-                      locale={th}
-                      className="pointer-events-auto"
-                    />
-                
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <Label>วันที่สิ้นสุด</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {selectedDeal?.endDate ? format(selectedDeal.endDate, "PPP", { locale: th }) : "เลือกวันที่"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={selectedDeal?.endDate}
-                      onSelect={(date) => {
-                        if (selectedDeal && date) {
-                          setSelectedDeal({ ...selectedDeal, endDate: date });
-                        }
-                      }}
-                      locale={th}
-                      className="pointer-events-auto"
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>รายละเอียด {stages.find(s => s.id === currentStage)?.title}</DialogTitle>
+              <DialogDescription>
+                {selectedDeal?.customerName}
+              </DialogDescription>
+            </DialogHeader>
 
-            {/* Negotiation Stage */}
-            {(currentStage === "negotiation" || currentStage === "quotation" || currentStage === "closed") && (
-              <div>
-                <Label>พนักงานขายที่ดูแล</Label>
-                <Select value={selectedDeal?.assignedSales} onValueChange={(value) => {
-                  if (selectedDeal) setSelectedDeal({ ...selectedDeal, assignedSales: value });
-                }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกพนักงานขาย" />
-                  
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="สมชาย ใจดี">สมชาย ใจดี</SelectItem>
-                    <SelectItem value="สมหญิง รักงาน">สมหญิง รักงาน</SelectItem>
-                    <SelectItem value="ประยุทธ์ ขยัน">ประยุทธ์ ขยัน</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* ─── Pipeline Progress Stepper ─── */}
+            <div className="py-2">
+              <div className="flex items-center w-full">
+                {[
+                  { id: "contacted", label: "Contacted", step: 1 },
+                  { id: "negotiation", label: "Negotiation", step: 2 },
+                  { id: "quotation", label: "Quotation", step: 3 },
+                  { id: "closed", label: "Closed Deal", step: 4 },
+                ].map((s, idx, arr) => {
+                  const stageOrder = ["contacted", "negotiation", "quotation", "closed"];
+                  const currentIdx = stageOrder.indexOf(currentStage);
+                  const thisIdx = stageOrder.indexOf(s.id);
+                  const isDone = thisIdx < currentIdx;
+                  const isActive = thisIdx === currentIdx;
 
-
-            {/* Quotation Stage */}
-            {(currentStage === "quotation" || currentStage === "closed") && (
-              <>
-                <div>
-                  <Label>เลขใบเสนอราคา (Quotation Numbers)</Label>
-                  <div className="space-y-2">
-                    {selectedDeal?.quotationNumbers?.map((num, idx) => (
-                      <div key={idx} className="flex gap-2">
-                        <Input
-                          value={num}
-                          onChange={(e) => {
-                            if (selectedDeal) {
-                              const newNumbers = [...(selectedDeal.quotationNumbers || [])];
-                              newNumbers[idx] = e.target.value;
-                              setSelectedDeal({ ...selectedDeal, quotationNumbers: newNumbers });
-                            }
-                          }}
-                          placeholder="เช่น KT-2025-045"
-                        />
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => {
-                            if (selectedDeal) {
-                              const newNumbers = selectedDeal.quotationNumbers?.filter((_, i) => i !== idx);
-                              setSelectedDeal({ ...selectedDeal, quotationNumbers: newNumbers });
-                            }
-                          }}
-                        >
-                          ×
-                        </Button>
+                  return (
+                    <div key={s.id} className="flex items-center flex-1 min-w-0">
+                      {/* Step circle + label */}
+                      <div className="flex flex-col items-center flex-shrink-0">
+                        <div className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all",
+                          isDone ? "bg-primary border-primary text-white" :
+                            isActive ? "bg-primary/20 border-primary text-primary" :
+                              "bg-muted border-border text-muted-foreground"
+                        )}>
+                          {isDone ? "✓" : s.step}
+                        </div>
+                        <span className={cn(
+                          "text-[10px] mt-1 font-medium text-center leading-tight",
+                          isActive ? "text-primary" : isDone ? "text-primary/70" : "text-muted-foreground"
+                        )}>
+                          {s.label}
+                        </span>
                       </div>
-                    ))}
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (selectedDeal) {
-                          setSelectedDeal({
-                            ...selectedDeal,
-                            quotationNumbers: [...(selectedDeal.quotationNumbers || []), ""]
-                          });
-                        }
-                      }}
-                      className="w-full"
-                    >
-                      + เพิ่มเลขใบเสนอราคา
-                    </Button>
-                  </div>
-                </div>
-                <div>
-                  <Label>ราคาที่เสนอ (Price Offered)</Label>
-                  <Input
-                    type="number"
-                    value={selectedDeal?.priceOffered || ""}
-                    onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, priceOffered: Number(e.target.value) });
-                    }}
-                    placeholder="0"
-                  />
-                </div>
-                <div>
-                  <Label>เงื่อนไข (Terms)</Label>
-                  <Textarea
-                    value={selectedDeal?.terms || ""}
-                    onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, terms: e.target.value });
-                    }}
-                    placeholder="ระบุเงื่อนไขการชำระเงิน..."
-                  />
-                </div>
-              </>
-            )}
+                      {/* Connector line */}
+                      {idx < arr.length - 1 && (
+                        <div className={cn(
+                          "h-0.5 flex-1 mx-1 rounded transition-all",
+                          thisIdx < currentIdx ? "bg-primary" : "bg-border"
+                        )} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-            {/* Closed Deal Stage */}
-            {currentStage === "closed" && (
-              <>
+            <div className="space-y-4 py-4">
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>มูลค่าสุดท้าย (Final Value)</Label>
+                  <Label>ชื่อลูกค้า</Label>
                   <Input
-                    type="number"
-                    value={selectedDeal?.finalValue || ""}
+                    value={selectedDeal?.customerName || ""}
                     onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, finalValue: Number(e.target.value) });
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, customerName: e.target.value });
                     }}
-                    placeholder="0"
                   />
                 </div>
                 <div>
-                  <Label>สถานะดีล (Deal Status)</Label>
-                  <Select value={selectedDeal?.dealStatus} onValueChange={(value: "won" | "lost") => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, dealStatus: value });
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="เลือกสถานะ" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="won">ปิดการขายสำเร็จ</SelectItem>
-                      <SelectItem value="lost">ไม่สำเร็จ</SelectItem>
-                    
-                    </SelectContent>
-                  </Select>
+                  <Label>เบอร์โทร</Label>
+                  <Input
+                    value={selectedDeal?.phone || ""}
+                    onChange={(e) => {
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, phone: e.target.value });
+                    }}
+                  />
                 </div>
                 <div>
-                  <Label>วันที่ปิดการขาย (Closing Date)</Label>
+                  <Label>ประเภทอสังหา</Label>
+                  <Input
+                    value={selectedDeal?.propertyType || ""}
+                    onChange={(e) => {
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, propertyType: e.target.value });
+                    }}
+                  />
+                </div>
+                <div>
+                  <Label>งบประมาณ</Label>
+                  <Input
+                    type="number"
+                    value={selectedDeal?.budget || ""}
+                    onChange={(e) => {
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, budget: Number(e.target.value) });
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* วันที่เริ่มต้น - สิ้นสุด */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>วันที่เริ่มต้น</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDeal?.closingDate ? format(selectedDeal.closingDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                        {selectedDeal?.startDate ? format(selectedDeal.startDate, "PPP", { locale: th }) : "เลือกวันที่"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar
                         mode="single"
-                        selected={selectedDeal?.closingDate}
+                        selected={selectedDeal?.startDate}
                         onSelect={(date) => {
                           if (selectedDeal && date) {
-                            setSelectedDeal({ ...selectedDeal, closingDate: date });
+                            setSelectedDeal({ ...selectedDeal, startDate: date });
+                          }
+                        }}
+                        locale={th}
+                        className="pointer-events-auto"
+                      />
+
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label>วันที่สิ้นสุด</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {selectedDeal?.endDate ? format(selectedDeal.endDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDeal?.endDate}
+                        onSelect={(date) => {
+                          if (selectedDeal && date) {
+                            setSelectedDeal({ ...selectedDeal, endDate: date });
                           }
                         }}
                         locale={th}
@@ -706,33 +659,239 @@ const StageBased = () => {
                     </PopoverContent>
                   </Popover>
                 </div>
-              </>
-            )}
+              </div>
 
-            {/* แนบไฟล์ */}
-            <div>
-              <Label>แนบไฟล์</Label>
-              <Button variant="outline" className="w-full">
-                <Upload className="w-4 h-4 mr-2" />
-                อัพโหลดไฟล์
-              </Button>
-              
+              {/* Negotiation Stage */}
+              {(currentStage === "negotiation" || currentStage === "quotation" || currentStage === "closed") && (
+                <div>
+                  <Label>พนักงานขายที่ดูแล</Label>
+                  <Select value={selectedDeal?.assignedSales} onValueChange={(value) => {
+                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, assignedSales: value });
+                  }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกพนักงานขาย" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {salesList.length > 0 ? (
+                        salesList.map(s => (
+                          <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="_none" disabled>ไม่พบข้อมูลเซลล์</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+
+              {/* Quotation Stage */}
+              {(currentStage === "quotation" || currentStage === "closed") && (
+                <>
+                  <div>
+                    <Label>แนบไฟล์ใบเสนอราคา</Label>
+                    <div className="space-y-2">
+                      {selectedDeal?.files && selectedDeal.files.length > 0 && (
+                        <div className="space-y-1">
+                          {selectedDeal.files.map((f, idx) => (
+                            <div key={idx} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
+                              <span className="truncate text-foreground">{f}</span>
+                              <button
+                                onClick={() => {
+                                  if (selectedDeal) {
+                                    setSelectedDeal({ ...selectedDeal, files: selectedDeal.files?.filter((_, i) => i !== idx) });
+                                  }
+                                }}
+                                className="ml-2 text-muted-foreground hover:text-destructive"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          const input = document.createElement("input");
+                          input.type = "file";
+                          input.multiple = true;
+                          input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.avi,.mkv,.txt,.zip,.rar";
+                          input.onchange = (e) => {
+                            const picked = Array.from((e.target as HTMLInputElement).files || []);
+                            if (selectedDeal) {
+                              setSelectedDeal({
+                                ...selectedDeal,
+                                files: [...(selectedDeal.files || []), ...picked.map(f => f.name)],
+                              });
+                            }
+                          };
+                          input.click();
+                        }}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        เลือกไฟล์
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>ราคาที่เสนอ (Price Offered)</Label>
+                    <Input
+                      type="number"
+                      value={selectedDeal?.priceOffered || ""}
+                      onChange={(e) => {
+                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, priceOffered: Number(e.target.value) });
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label>เงื่อนไข (Terms)</Label>
+                    <Textarea
+                      value={selectedDeal?.terms || ""}
+                      onChange={(e) => {
+                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, terms: e.target.value });
+                      }}
+                      placeholder="ระบุเงื่อนไขการชำระเงิน..."
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Closed Deal Stage */}
+              {currentStage === "closed" && (
+                <>
+                  <div>
+                    <Label>มูลค่าสุดท้าย (Final Value)</Label>
+                    <Input
+                      type="number"
+                      value={selectedDeal?.finalValue || ""}
+                      onChange={(e) => {
+                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, finalValue: Number(e.target.value) });
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label>สถานะดีล (Deal Status)</Label>
+                    <Select value={selectedDeal?.dealStatus} onValueChange={(value: "won" | "lost") => {
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, dealStatus: value });
+                    }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกสถานะ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="won">ปิดการขายสำเร็จ</SelectItem>
+                        <SelectItem value="lost">ไม่สำเร็จ</SelectItem>
+
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>วันที่ปิดการขาย (Closing Date)</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {selectedDeal?.closingDate ? format(selectedDeal.closingDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={selectedDeal?.closingDate}
+                          onSelect={(date) => {
+                            if (selectedDeal && date) {
+                              setSelectedDeal({ ...selectedDeal, closingDate: date });
+                            }
+                          }}
+                          locale={th}
+                          className="pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </>
+              )}
+
+              {/* แนบไฟล์ทั่วไป */}
+              <div>
+                <Label>แนบไฟล์</Label>
+                <div className="space-y-2">
+                  {selectedDeal?.files && selectedDeal.files.length > 0 && (
+                    <div className="space-y-1">
+                      {selectedDeal.files.map((f, idx) => {
+                        const ext = f.split(".").pop()?.toLowerCase() || "";
+                        const icon =
+                          ["mp3", "wav", "m4a", "aac", "ogg"].includes(ext) ? "🎧" :
+                            ["mp4", "mov", "avi", "mkv"].includes(ext) ? "🎥" :
+                              ["jpg", "jpeg", "png", "gif"].includes(ext) ? "🖼️" :
+                                ["pdf"].includes(ext) ? "📄" :
+                                  ["doc", "docx"].includes(ext) ? "📝" :
+                                    ["xls", "xlsx"].includes(ext) ? "📊" :
+                                      ["zip", "rar"].includes(ext) ? "🗂️" : "📁";
+                        return (
+                          <div key={idx} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
+                            <span className="flex items-center gap-2 truncate">
+                              <span>{icon}</span>
+                              <span className="truncate text-foreground">{f}</span>
+                            </span>
+                            <button
+                              onClick={() => {
+                                if (selectedDeal) {
+                                  setSelectedDeal({ ...selectedDeal, files: selectedDeal.files?.filter((_, i) => i !== idx) });
+                                }
+                              }}
+                              className="ml-2 text-muted-foreground hover:text-destructive flex-shrink-0"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      const input = document.createElement("input");
+                      input.type = "file";
+                      input.multiple = true;
+                      input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.avi,.mkv,.txt,.zip,.rar";
+                      input.onchange = (e) => {
+                        const picked = Array.from((e.target as HTMLInputElement).files || []);
+                        if (selectedDeal) {
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            files: [...(selectedDeal.files || []), ...picked.map(f => f.name)],
+                          });
+                        }
+                      };
+                      input.click();
+                    }}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    เลือกไฟล์
+                  </Button>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              ยกเลิก
-            </Button>
-            <Button 
-              className="gradient-primary text-white hover:opacity-90"
-              onClick={handleSaveChanges} 
-            >
-              บันทึก
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                ยกเลิก
+              </Button>
+              <Button
+                className="gradient-primary text-white hover:opacity-90"
+                onClick={handleSaveChanges}
+              >
+                บันทึก
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </DndContext>
   );

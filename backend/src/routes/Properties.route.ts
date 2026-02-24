@@ -4,6 +4,7 @@ import { authMiddleware } from "../middlewares/authMiddleware";
 import { verifyAdmin } from "../middlewares/verifyAdmin";
 import {
   listProperties,
+  listPropertiesSimple,
   getPropertyById,
   createProperty,
   updateProperty,
@@ -25,6 +26,9 @@ router.get("/", listProperties);
 
 // ✅ stream รูปจาก MinIO (รับ key ได้ยาวๆ เช่น properties/14/xxx.jpg)
 router.get("/img", getPropertyImage);
+
+// ✅ simple list สำหรับ dropdown (ต้องมาก่อน /:id)
+router.get("/simple", listPropertiesSimple);
 
 
 
