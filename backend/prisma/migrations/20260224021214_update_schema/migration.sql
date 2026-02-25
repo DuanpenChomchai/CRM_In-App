@@ -8,10 +8,25 @@ CREATE TYPE "CallDirection" AS ENUM ('CUSTOMER_TO_SALE', 'SALE_TO_CUSTOMER');
 CREATE TYPE "CallStatus" AS ENUM ('RINGING', 'ONGOING', 'COMPLETED', 'MISSED', 'REJECTED', 'CANCELED');
 
 -- CreateEnum
-CREATE TYPE "CustomerStatus" AS ENUM ('NEW', 'CONTACTED', 'NEGOTIATING', 'CLOSED');
+CREATE TYPE "CustomerStatus" AS ENUM ('NEW', 'CONTACTED', 'NEGOTIATING', 'QUOTATION', 'CLOSED');
 
 -- CreateEnum
 CREATE TYPE "ChatMessageType" AS ENUM ('TEXT', 'IMAGE', 'FILE');
+
+-- CreateEnum
+CREATE TYPE "QuotationStatus" AS ENUM ('DRAFT', 'WAIT_APPROVAL', 'SENT', 'APPROVED', 'REJECTED');
+
+-- CreateEnum
+CREATE TYPE "ContactedStatus" AS ENUM ('FOLLOWING_UP', 'WAITING_REPLY', 'APPOINTED', 'NOT_INTERESTED');
+
+-- CreateEnum
+CREATE TYPE "NegotiationStatus" AS ENUM ('NEGOTIATING', 'WAITING_CONFIRM', 'COUNTER_OFFER', 'PAUSED');
+
+-- CreateEnum
+CREATE TYPE "ClosedDealStatus" AS ENUM ('CLOSED');
+
+-- CreateEnum
+CREATE TYPE "DealResult" AS ENUM ('WON', 'LOST');
 
 -- CreateEnum
 CREATE TYPE "PropertyType" AS ENUM ('HOUSE', 'CONDO', 'TOWNHOME');
@@ -28,10 +43,22 @@ CREATE TABLE "User" (
     "tol" TEXT NOT NULL,
     "img" TEXT,
     "role" "Role" NOT NULL DEFAULT 'CUSTOMER',
+    "managerId" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "RefreshToken" (
+    "id" SERIAL NOT NULL,
+    "token" TEXT NOT NULL,
+    "userId" INTEGER NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -78,9 +105,10 @@ CREATE TABLE "Customer" (
     "password" TEXT,
     "productType" TEXT,
     "priceBudget" DECIMAL(12,2),
+    "interestedPropertyId" INTEGER,
     "userId" INTEGER,
     "saleId" INTEGER,
-    "mainStatus" "CustomerStatus" DEFAULT 'NEW',
+    "mainStatus" "CustomerStatus" NOT NULL DEFAULT 'NEW',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -105,7 +133,7 @@ CREATE TABLE "Communications" (
 -- CreateTable
 CREATE TABLE "Contacted" (
     "id" SERIAL NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "ContactedStatus" NOT NULL,
     "topic" TEXT,
     "note" TEXT,
     "stateDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,14 +148,18 @@ CREATE TABLE "Contacted" (
 -- CreateTable
 CREATE TABLE "Quotation" (
     "id" SERIAL NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "QuotationStatus" NOT NULL DEFAULT 'DRAFT',
     "stateDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "terms" TEXT,
     "quotationNumber" TEXT NOT NULL,
     "totalAmount" DECIMAL(12,2) NOT NULL,
     "note" TEXT,
     "endDate" TIMESTAMP(3),
+    "propertyId" INTEGER NOT NULL,
     "customerId" INTEGER NOT NULL,
+    "createdById" INTEGER NOT NULL,
+    "approvedById" INTEGER,
+    "approvedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -135,23 +167,25 @@ CREATE TABLE "Quotation" (
 );
 
 -- CreateTable
-CREATE TABLE "Proposal" (
+CREATE TABLE "QuotationItem" (
     "id" SERIAL NOT NULL,
-    "quotation" TEXT NOT NULL,
-    "terms" TEXT,
-    "priceOffered" DECIMAL(12,2) NOT NULL,
-    "productId" INTEGER,
     "quotationId" INTEGER NOT NULL,
+    "propertyId" INTEGER,
+    "name" TEXT NOT NULL,
+    "quantity" INTEGER NOT NULL,
+    "unitPrice" DECIMAL(12,2) NOT NULL,
+    "discount" DECIMAL(5,2) NOT NULL DEFAULT 0,
+    "lineTotal" DECIMAL(12,2) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Proposal_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "QuotationItem_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Negotiation" (
     "id" SERIAL NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "NegotiationStatus" NOT NULL,
     "stateDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "note" TEXT,
     "endDate" TIMESTAMP(3),
@@ -165,11 +199,11 @@ CREATE TABLE "Negotiation" (
 -- CreateTable
 CREATE TABLE "ClosedDeal" (
     "id" SERIAL NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "ClosedDealStatus" NOT NULL DEFAULT 'CLOSED',
+    "result" "DealResult" NOT NULL,
     "stateDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "finalValue" DECIMAL(12,2),
     "discount" DECIMAL(12,2),
-    "dealStatus" TEXT,
     "closingDate" TIMESTAMP(3),
     "note" TEXT,
     "endDate" TIMESTAMP(3),
@@ -231,6 +265,15 @@ CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 CREATE UNIQUE INDEX "User_tol_key" ON "User"("tol");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
+
+-- CreateIndex
+CREATE INDEX "RefreshToken_token_idx" ON "RefreshToken"("token");
+
+-- CreateIndex
 CREATE INDEX "Property_type_idx" ON "Property"("type");
 
 -- CreateIndex
@@ -252,6 +295,15 @@ CREATE INDEX "Customer_userId_idx" ON "Customer"("userId");
 CREATE INDEX "Customer_saleId_idx" ON "Customer"("saleId");
 
 -- CreateIndex
+CREATE INDEX "Customer_mainStatus_idx" ON "Customer"("mainStatus");
+
+-- CreateIndex
+CREATE INDEX "Customer_createdAt_idx" ON "Customer"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "Customer_interestedPropertyId_idx" ON "Customer"("interestedPropertyId");
+
+-- CreateIndex
 CREATE INDEX "Communications_customerId_idx" ON "Communications"("customerId");
 
 -- CreateIndex
@@ -261,7 +313,13 @@ CREATE INDEX "Communications_userId_idx" ON "Communications"("userId");
 CREATE INDEX "Communications_callId_idx" ON "Communications"("callId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Contacted_customerId_key" ON "Contacted"("customerId");
+CREATE INDEX "Contacted_customerId_idx" ON "Contacted"("customerId");
+
+-- CreateIndex
+CREATE INDEX "Contacted_stateDate_idx" ON "Contacted"("stateDate");
+
+-- CreateIndex
+CREATE INDEX "Contacted_status_idx" ON "Contacted"("status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Quotation_quotationNumber_key" ON "Quotation"("quotationNumber");
@@ -270,19 +328,31 @@ CREATE UNIQUE INDEX "Quotation_quotationNumber_key" ON "Quotation"("quotationNum
 CREATE INDEX "Quotation_customerId_idx" ON "Quotation"("customerId");
 
 -- CreateIndex
+CREATE INDEX "Quotation_propertyId_idx" ON "Quotation"("propertyId");
+
+-- CreateIndex
 CREATE INDEX "Quotation_stateDate_idx" ON "Quotation"("stateDate");
 
 -- CreateIndex
-CREATE INDEX "Proposal_productId_idx" ON "Proposal"("productId");
+CREATE INDEX "Quotation_status_idx" ON "Quotation"("status");
 
 -- CreateIndex
-CREATE INDEX "Proposal_quotationId_idx" ON "Proposal"("quotationId");
+CREATE INDEX "Quotation_createdById_idx" ON "Quotation"("createdById");
+
+-- CreateIndex
+CREATE INDEX "Quotation_approvedById_idx" ON "Quotation"("approvedById");
+
+-- CreateIndex
+CREATE INDEX "QuotationItem_quotationId_idx" ON "QuotationItem"("quotationId");
 
 -- CreateIndex
 CREATE INDEX "Negotiation_customerId_idx" ON "Negotiation"("customerId");
 
 -- CreateIndex
 CREATE INDEX "Negotiation_stateDate_idx" ON "Negotiation"("stateDate");
+
+-- CreateIndex
+CREATE INDEX "Negotiation_status_idx" ON "Negotiation"("status");
 
 -- CreateIndex
 CREATE INDEX "ClosedDeal_customerId_idx" ON "ClosedDeal"("customerId");
@@ -292,6 +362,9 @@ CREATE INDEX "ClosedDeal_userId_idx" ON "ClosedDeal"("userId");
 
 -- CreateIndex
 CREATE INDEX "ClosedDeal_closingDate_idx" ON "ClosedDeal"("closingDate");
+
+-- CreateIndex
+CREATE INDEX "ClosedDeal_result_idx" ON "ClosedDeal"("result");
 
 -- CreateIndex
 CREATE INDEX "Call_customerId_idx" ON "Call"("customerId");
@@ -315,7 +388,16 @@ CREATE INDEX "ChatMessage_customerId_createdAt_idx" ON "ChatMessage"("customerId
 CREATE UNIQUE INDEX "ChatMessage_roomId_senderName_cid_key" ON "ChatMessage"("roomId", "senderName", "cid");
 
 -- AddForeignKey
+ALTER TABLE "User" ADD CONSTRAINT "User_managerId_fkey" FOREIGN KEY ("managerId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Property" ADD CONSTRAINT "Property_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Customer" ADD CONSTRAINT "Customer_interestedPropertyId_fkey" FOREIGN KEY ("interestedPropertyId") REFERENCES "Property"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Customer" ADD CONSTRAINT "Customer_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -336,13 +418,22 @@ ALTER TABLE "Communications" ADD CONSTRAINT "Communications_callId_fkey" FOREIGN
 ALTER TABLE "Contacted" ADD CONSTRAINT "Contacted_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Quotation" ADD CONSTRAINT "Quotation_propertyId_fkey" FOREIGN KEY ("propertyId") REFERENCES "Property"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Quotation" ADD CONSTRAINT "Quotation_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Proposal" ADD CONSTRAINT "Proposal_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "Quotation" ADD CONSTRAINT "Quotation_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Proposal" ADD CONSTRAINT "Proposal_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "Quotation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Quotation" ADD CONSTRAINT "Quotation_approvedById_fkey" FOREIGN KEY ("approvedById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "QuotationItem" ADD CONSTRAINT "QuotationItem_quotationId_fkey" FOREIGN KEY ("quotationId") REFERENCES "Quotation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "QuotationItem" ADD CONSTRAINT "QuotationItem_propertyId_fkey" FOREIGN KEY ("propertyId") REFERENCES "Property"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Negotiation" ADD CONSTRAINT "Negotiation_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

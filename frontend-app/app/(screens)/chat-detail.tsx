@@ -14,7 +14,7 @@ import {
 import Toast from "react-native-toast-message";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { Link, useLocalSearchParams } from "expo-router";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSocketRoom, generateCid, getSocket } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useIsFocused } from "@react-navigation/native";
@@ -147,6 +147,7 @@ const mergeAndDedupe = (lists: Msg[][]) => {
 /** =============================== */
 
 export default function ChatDetailScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
   const idParam = Array.isArray(params.id) ? params.id[0] : (params.id as string | undefined);
   const nameParam = Array.isArray(params.name) ? params.name[0] : (params.name as string | undefined);
@@ -944,7 +945,37 @@ export default function ChatDetailScreen() {
             }}
           >
             {item.type === "text" ? (
-              <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
+              item.text.startsWith("[CALL_ENDED]:") ? (
+                <View className="flex-row items-center">
+                  <View
+                    className={`w-9 h-9 rounded-full ${
+                      isMe ? "bg-emerald-700" : "bg-gray-200"
+                    } items-center justify-center mr-3`}
+                  >
+                    <Ionicons
+                      name="call"
+                      size={18}
+                      color={isMe ? "#ffffff" : "#111827"}
+                      style={{ transform: [{ rotate: "135deg" }] }}
+                    />
+                  </View>
+                  <View>
+                    <Text className={`${textColor} text-[15px] font-medium`}>
+                      สิ้นสุดการโทรแบบเสียง
+                    </Text>
+                    <Text className={`${subColor} text-[12px] mt-0.5`}>
+                      {(() => {
+                        const durationSec = parseInt(item.text.split(":")[1] || "0", 10);
+                        const m = Math.floor(durationSec / 60);
+                        const s = durationSec % 60;
+                        return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+                      })()}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text className={`${textColor} text-[15px]`}>{item.text}</Text>
+              )
             ) : item.type === "image" ? (
               <>
                 <Pressable
@@ -1061,12 +1092,21 @@ export default function ChatDetailScreen() {
           </View>
         </View>
 
-        <Pressable className="pl-3" onPress={() => {}}>
+        <Pressable className="pl-3" onPress={() => {
+            router.push({
+              pathname: "/(screens)/call-screen",
+              params: {
+                name: partner?.name ?? nameParam ?? "Chat",
+                avatarUrl: partner?.avatarUrl ?? "",
+                customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
+              },
+            });
+          }}>
           <Ionicons name="call-outline" size={20} color="#047857" />
         </Pressable>
       </View>
     ),
-    [effectiveRoomId, nameParam, connected, partner]
+    [effectiveRoomId, nameParam, connected, partner, router]
   );
 
   return (

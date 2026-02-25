@@ -14,6 +14,7 @@ import chatRoutes from "./routes/chat.routes";
 import pipelineRoutes from "./routes/pipeline.route";
 import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
+import callRoutes from "./routes/call.route";
 
 import { initWs } from "./ws";
 import { getProfile } from "./controller/userController";
@@ -94,6 +95,9 @@ async function main() {
   // ✅ Properties
   app.use("/api/properties", propertiesRoutes);
   app.use("/api/products", propertiesRoutes); // backward compat
+
+  // ✅ Calls
+  app.use("/api/calls", callRoutes);
 
   // ✅ profile route
   app.get("/api/myprofile/:id", getProfile);

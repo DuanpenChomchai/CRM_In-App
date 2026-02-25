@@ -50,6 +50,11 @@ export default function RootLayout() {
           name="(screens)/chat-detail"
           options={{ headerShown: false, animation: "slide_from_right" }}
         />
+
+        <Stack.Screen
+          name="(screens)/call-screen"
+          options={{ headerShown: false, animation: "slide_from_bottom" }}
+        />
       </Stack>
       <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
       <Toast config={toastConfig} position="top" topOffset={50} />

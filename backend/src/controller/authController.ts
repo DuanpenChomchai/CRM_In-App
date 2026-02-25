@@ -19,13 +19,13 @@ const normalizePhoneTH = (raw: string) => {
   return raw;
 };
 
-// ========== Access Token (อายุ 15 นาที) ==========
+// ========== Access Token (อายุ 30 วัน) ==========
 const createAccessToken = (user: any) => {
   const secret = process.env.JWT_SECRET || "dev_secret";
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     secret,
-    { expiresIn: "15m" }
+    { expiresIn: "30d" }
   );
 };
 
