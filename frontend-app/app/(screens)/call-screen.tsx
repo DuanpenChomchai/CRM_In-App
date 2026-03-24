@@ -16,6 +16,7 @@ import { API_BASE_URL } from "../../config/api";
 import { getSocket } from "../../store/socket";
 import { ZegoUIKitPrebuiltCall } from "@zegocloud/zego-uikit-prebuilt-call-rn";
 import ZegoUIKit from "@zegocloud/zego-uikit-rn";
+import { Audio } from "expo-av";
 
 // ─── Call states ───
 type CallPhase = "ringing" | "active" | "ended";
@@ -150,6 +151,80 @@ export default function CallScreen() {
     loop.start();
     return () => loop.stop();
   }, [phase]);
+
+  // ─── Play Ringtone ───
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const manageRingtone = async () => {
+      if (phase === "ringing") {
+        try {
+          await Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: true,
+            shouldDuckAndroid: true,
+          });
+
+          // แยกเสียงฝั่งคนโทร (ตื๊ด...ตื๊ด...) กับคนรับ (เสียงเรียกเข้า)
+          // ✅ ปรับปรุงให้โหลดไฟล์ในเครื่องก่อน ถ้าไม่ได้ค่อยใช้ลิงก์สำรอง (ลดโอกาสหน้าแดง)
+          try {
+            const localSource = isIncoming === "true"
+              ? require("../../assets/audio/ringing.mp3")
+              : require("../../assets/audio/outgoing.mp3");
+            
+            const { sound } = await Audio.Sound.createAsync(
+              localSource,
+              { shouldPlay: true, isLooping: true }
+            );
+
+            if (!isCancelled) {
+              soundRef.current = sound;
+            } else {
+              sound.unloadAsync();
+            }
+          } catch (localErr) {
+            console.warn("Local audio failed, trying fallback URL...", localErr);
+            // Fallback to remote URL
+            const remoteUri = isIncoming === "true" 
+              ? "https://upload.wikimedia.org/wikipedia/commons/4/4b/Telephone_Ring.wav"
+              : "https://upload.wikimedia.org/wikipedia/commons/7/77/Beep_beep_beep.wav";
+
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: remoteUri },
+              { shouldPlay: true, isLooping: true }
+            );
+
+            if (!isCancelled) {
+              soundRef.current = sound;
+            } else {
+              sound.unloadAsync();
+            }
+          }
+        } catch (e) {
+          console.warn("All audio sources failed:", e);
+        }
+      } else {
+        // Stop playing
+        if (soundRef.current) {
+          await soundRef.current.stopAsync();
+          await soundRef.current.unloadAsync();
+          soundRef.current = null;
+        }
+      }
+    };
+
+    manageRingtone();
+
+    return () => {
+      isCancelled = true;
+      if (soundRef.current) {
+        soundRef.current.stopAsync().then(() => soundRef.current?.unloadAsync());
+        soundRef.current = null;
+      }
+    };
+  }, [phase, isIncoming]);
 
   // ─── socket listeners (answer / end) ───
   useEffect(() => {
