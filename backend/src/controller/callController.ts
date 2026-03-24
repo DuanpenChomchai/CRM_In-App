@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
+import { getIO } from "../ws";
 
 // ─── Auth types (same pattern as other controllers) ───
 interface AuthUser {
@@ -200,6 +201,31 @@ export const createCall = async (req: AuthRequest, res: Response) => {
       select: callSelect,
     });
 
+    try {
+      const io = getIO();
+      const targetUserId =
+        created.direction === "CUSTOMER_TO_SALE"
+          ? created.saleUserId
+          : created.customerUserId;
+
+      if (targetUserId) {
+        const caller =
+          created.direction === "CUSTOMER_TO_SALE"
+            ? created.customerUser
+            : created.saleUser;
+
+        io.to(`user:${targetUserId}`).emit("call:incoming", {
+          callId: created.id,
+          callerName: caller?.name || "User",
+          callerId: caller?.id,
+          customerId: created.customerId,
+          direction: created.direction
+        });
+      }
+    } catch (wsErr) {
+      console.error("Emit call:incoming error:", wsErr);
+    }
+
     return res.status(201).json(created);
   } catch (err: any) {
     console.error("createCall error:", err);
@@ -255,6 +281,19 @@ export const updateCall = async (req: AuthRequest, res: Response) => {
       data,
       select: callSelect,
     });
+
+    try {
+      const io = getIO();
+      if (updated.status === "ONGOING") {
+        if (updated.saleUserId) io.to(`user:${updated.saleUserId}`).emit("call:answered", { callId: updated.id });
+        if (updated.customerUserId) io.to(`user:${updated.customerUserId}`).emit("call:answered", { callId: updated.id });
+      } else if (updated.status === "COMPLETED" || updated.status === "CANCELED") {
+        if (updated.saleUserId) io.to(`user:${updated.saleUserId}`).emit("call:ended", { callId: updated.id, durationSec: updated.durationSec });
+        if (updated.customerUserId) io.to(`user:${updated.customerUserId}`).emit("call:ended", { callId: updated.id, durationSec: updated.durationSec });
+      }
+    } catch (wsErr) {
+      console.log("Emit call update socket error:", wsErr);
+    }
 
     return res.json(updated);
   } catch (err: any) {

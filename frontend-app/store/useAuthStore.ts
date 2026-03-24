@@ -140,6 +140,16 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         const rt = get().refreshToken;
 
+        // ปิด ZegoCloud engine ก่อน logout
+        try {
+          const ZegoUIKitPrebuiltCallService =
+            require("@zegocloud/zego-uikit-prebuilt-call-rn").default;
+          ZegoUIKitPrebuiltCallService.uninit();
+          console.log("[ZegoCloud] uninit on logout");
+        } catch {
+          // silent — SDK อาจยังไม่ได้ init
+        }
+
         // เรียก backend revoke refresh token
         if (rt) {
           try {

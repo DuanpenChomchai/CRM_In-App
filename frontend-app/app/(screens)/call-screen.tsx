@@ -13,16 +13,22 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import Toast from "react-native-toast-message";
 import { useAuthStore } from "../../store/useAuthStore";
 import { API_BASE_URL } from "../../config/api";
+import { getSocket } from "../../store/socket";
+import { ZegoUIKitPrebuiltCall } from "@zegocloud/zego-uikit-prebuilt-call-rn";
+import ZegoUIKit from "@zegocloud/zego-uikit-rn";
 
 // ─── Call states ───
 type CallPhase = "ringing" | "active" | "ended";
 
 export default function CallScreen() {
   const router = useRouter();
-  const { name, avatarUrl, customerId } = useLocalSearchParams<{
+  const { name, avatarUrl, customerId, targetUserId, callId: paramCallId, isIncoming } = useLocalSearchParams<{
     name?: string;
     avatarUrl?: string;
     customerId?: string;
+    targetUserId?: string;
+    callId?: string;
+    isIncoming?: string;
   }>();
 
   const { user, token } = useAuthStore();
@@ -33,8 +39,10 @@ export default function CallScreen() {
   const [speaker, setSpeaker] = useState(false);
 
   // ─── backend call record id ───
-  const [callId, setCallId] = useState<number | null>(null);
+  const [callId, setCallId] = useState<number | null>(paramCallId ? Number(paramCallId) : null);
   const startTimeRef = useRef<Date>(new Date());
+  const messageSentRef = useRef(false);
+  const [avatarError, setAvatarError] = useState(false);
 
   // =========================================================
   // CREATE call record when screen opens
@@ -43,6 +51,8 @@ export default function CallScreen() {
     const createCallRecord = async () => {
       try {
         if (!token) return;
+        if (isIncoming === "true") return; // Incoming calls do not create records natively on screen launch.
+
 
         const direction =
           user?.role === "CUSTOMER"
@@ -56,8 +66,14 @@ export default function CallScreen() {
         };
 
         if (customerId) body.customerId = Number(customerId);
-        if (user?.role === "SALE") body.saleUserId = user.id;
-        if (user?.role === "CUSTOMER") body.customerUserId = user.id;
+        if (user?.role === "SALE") {
+          body.saleUserId = user.id;
+          if (targetUserId) body.customerUserId = Number(targetUserId);
+        }
+        if (user?.role === "CUSTOMER") {
+          body.customerUserId = user.id;
+          if (targetUserId) body.saleUserId = Number(targetUserId);
+        }
 
         const res = await fetch(`${API_BASE_URL}/calls`, {
           method: "POST",
@@ -135,12 +151,60 @@ export default function CallScreen() {
     return () => loop.stop();
   }, [phase]);
 
-  // ─── auto-answer after 3 s (demo) ───
+  // ─── socket listeners (answer / end) ───
   useEffect(() => {
-    if (phase !== "ringing") return;
-    const t = setTimeout(() => setPhase("active"), 3000);
-    return () => clearTimeout(t);
-  }, [phase]);
+    if (!callId) return;
+    
+    const socket = getSocket();
+
+    const onCallAnswered = (payload: any) => {
+      if (Number(payload.callId) === callId) {
+        setPhase("active");
+        Toast.show({ type: "success", text1: "เชื่อมต่อแล้ว", text2: "สายเข้ารหัสส่วนตัว" });
+      }
+    };
+    const onCallEnded = async (payload: any) => {
+      if (Number(payload.callId) === callId) {
+        setPhase("ended");
+        Toast.show({ type: "info", text1: "สายถูกวางหรือถูกปฏิเสธ" });
+        
+        // If we are the Caller, and the Receiver hung up, WE send the final message.
+        if (isIncoming !== "true" && !messageSentRef.current) {
+          messageSentRef.current = true;
+          try {
+            const finalDuration = payload.durationSec ?? seconds;
+            const effectiveRoomId = customerId ? `cust:${customerId}` : "general";
+            await fetch(`${API_BASE_URL}/chat/send`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                roomId: effectiveRoomId,
+                customerId: customerId ? Number(customerId) : null,
+                type: "TEXT",
+                text: `[CALL_ENDED]:${finalDuration}`,
+              }),
+            });
+          } catch(e) { console.error("Error sending proxy call ended message", e) }
+        }
+
+        setTimeout(() => {
+          if (router.canGoBack()) router.back();
+          else router.replace("/(screens)/all-chat");
+        }, 800);
+      }
+    };
+
+    socket.on("call:answered", onCallAnswered);
+    socket.on("call:ended", onCallEnded);
+
+    return () => {
+      socket.off("call:answered", onCallAnswered);
+      socket.off("call:ended", onCallEnded);
+    };
+  }, [callId, router]);
 
   // ─── call timer ───
   useEffect(() => {
@@ -149,10 +213,17 @@ export default function CallScreen() {
     return () => clearInterval(iv);
   }, [phase]);
 
+  const answerCall = () => {
+    setPhase("active");
+  };
+
   // =========================================================
   // END CALL → update record with endedAt + durationSec + status
   // =========================================================
   const hangUp = async () => {
+    try {
+      ZegoUIKit.leaveRoom();
+    } catch(e) { console.log(e) }
     setPhase("ended");
 
     // update backend
@@ -175,25 +246,28 @@ export default function CallScreen() {
         });
         console.log(`✅ Call ${callId} ended (${durationSec}s)`);
 
-        // Send chat message
-        const effectiveRoomId = customerId 
-          ? `cust:${customerId}` 
-          : "general"; // Default to general or handle other room logic if needed
-        
-        await fetch(`${API_BASE_URL}/chat/send`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              roomId: effectiveRoomId,
-              customerId: customerId ? Number(customerId) : null,
-              type: "TEXT",
-              text: `[CALL_ENDED]:${durationSec}`,
-            }),
-        });
-        console.log(`✅ Sent call ended message to chat`);
+        // Send chat message ONLY if Caller manually hung up first
+        if (isIncoming !== "true" && !messageSentRef.current) {
+          messageSentRef.current = true;
+          const effectiveRoomId = customerId 
+            ? `cust:${customerId}` 
+            : "general"; // Default to general or handle other room logic if needed
+          
+          await fetch(`${API_BASE_URL}/chat/send`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                roomId: effectiveRoomId,
+                customerId: customerId ? Number(customerId) : null,
+                type: "TEXT",
+                text: `[CALL_ENDED]:${durationSec}`,
+              }),
+          });
+          console.log(`✅ Sent call ended message to chat`);
+        }
 
       } catch (err) {
         console.error("❌ End call error:", err);
@@ -217,6 +291,26 @@ export default function CallScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-emerald-900">
+      {/* ─── Hidden Zego Engine ─── */}
+      {phase === "active" && user?.id && callId && (
+        <View style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}>
+          <ZegoUIKitPrebuiltCall
+            appID={228592494}
+            appSign={"8cb8d11c60842ce6431d5f340852a6aa7d9c8fff11c68f7d83704886f9d81b03"}
+            userID={String(user.id)}
+            userName={user.name || "User"}
+            callID={`ROOM_${callId}`}
+            config={{
+                turnOnCameraWhenJoining: false,
+                turnOnMicrophoneWhenJoining: !muted,
+                useSpeakerWhenJoining: speaker,
+                bottomMenuBarConfig: { hideAutomatically: false, hideByClick: false, maxCount: 0, buttons: [] },
+                topMenuBarConfig: { isVisible: false },
+            }}
+          />
+        </View>
+      )}
+
       {/* ─── Top area ─── */}
       <View className="flex-1 items-center justify-center">
         {/* Avatar with pulse ring */}
@@ -243,11 +337,12 @@ export default function CallScreen() {
               borderColor: "rgba(16,185,129,0.5)",
             }}
           >
-            {avatarUrl ? (
+            {avatarUrl && !avatarError ? (
               <Image
                 source={{ uri: avatarUrl }}
                 className="w-[120px] h-[120px]"
                 resizeMode="cover"
+                onError={() => setAvatarError(true)}
               />
             ) : (
               <Ionicons name="person" size={56} color="#6ee7b7" />
@@ -288,69 +383,111 @@ export default function CallScreen() {
       {/* ─── Action buttons ─── */}
       {phase !== "ended" && (
         <View className="pb-12 px-8">
-          {/* Top row — mute + speaker */}
-          <View className="flex-row justify-center mb-8" style={{ gap: 40 }}>
-            {/* Mute */}
-            <Pressable
-              onPress={() => setMuted((v) => !v)}
-              className="items-center"
-            >
-              <View
-                className="w-16 h-16 rounded-full items-center justify-center"
-                style={{
-                  backgroundColor: muted
-                    ? "rgba(255,255,255,0.95)"
-                    : "rgba(255,255,255,0.15)",
+          {/* Top row — mute + speaker - shown only when active */}
+          {phase === "active" && (
+            <View className="flex-row justify-center mb-8" style={{ gap: 40 }}>
+              {/* Mute */}
+              <Pressable
+                onPress={() => {
+                  setMuted((v) => {
+                    const newMuted = !v;
+                    try {
+                      ZegoUIKit.turnMicrophoneOn(String(user?.id), !newMuted);
+                    } catch (e) { console.log(e); }
+                    return newMuted;
+                  });
                 }}
+                className="items-center"
               >
-                <Ionicons
-                  name={muted ? "mic-off" : "mic"}
-                  size={26}
-                  color={muted ? "#064e3b" : "#ffffff"}
-                />
-              </View>
-              <Text className="text-white text-xs mt-2">
-                {muted ? "Unmute" : "Mute"}
-              </Text>
-            </Pressable>
+                <View
+                  className="w-16 h-16 rounded-full items-center justify-center"
+                  style={{
+                    backgroundColor: muted
+                      ? "rgba(255,255,255,0.95)"
+                      : "rgba(255,255,255,0.15)",
+                  }}
+                >
+                  <Ionicons
+                    name={muted ? "mic-off" : "mic"}
+                    size={26}
+                    color={muted ? "#064e3b" : "#ffffff"}
+                  />
+                </View>
+                <Text className="text-white text-xs mt-2">
+                  {muted ? "Unmute" : "Mute"}
+                </Text>
+              </Pressable>
 
-            {/* Speaker */}
-            <Pressable
-              onPress={() => setSpeaker((v) => !v)}
-              className="items-center"
-            >
-              <View
-                className="w-16 h-16 rounded-full items-center justify-center"
-                style={{
-                  backgroundColor: speaker
-                    ? "rgba(255,255,255,0.95)"
-                    : "rgba(255,255,255,0.15)",
+              {/* Speaker */}
+              <Pressable
+                onPress={() => {
+                  setSpeaker((v) => {
+                    const newSpeaker = !v;
+                    try {
+                      ZegoUIKit.setAudioOutputToSpeaker(newSpeaker);
+                    } catch (e) { console.log(e); }
+                    return newSpeaker;
+                  });
                 }}
+                className="items-center"
               >
-                <Ionicons
-                  name={speaker ? "volume-high" : "volume-medium-outline"}
-                  size={26}
-                  color={speaker ? "#064e3b" : "#ffffff"}
-                />
-              </View>
-              <Text className="text-white text-xs mt-2">
-                {speaker ? "Speaker" : "Speaker"}
-              </Text>
-            </Pressable>
-          </View>
+                <View
+                  className="w-16 h-16 rounded-full items-center justify-center"
+                  style={{
+                    backgroundColor: speaker
+                      ? "rgba(255,255,255,0.95)"
+                      : "rgba(255,255,255,0.15)",
+                  }}
+                >
+                  <Ionicons
+                    name={speaker ? "volume-high" : "volume-medium-outline"}
+                    size={26}
+                    color={speaker ? "#064e3b" : "#ffffff"}
+                  />
+                </View>
+                <Text className="text-white text-xs mt-2">
+                  {speaker ? "Speaker" : "Speaker"}
+                </Text>
+              </Pressable>
+            </View>
+          )}
 
-          {/* End call */}
-          <View className="items-center">
-            <Pressable
-              onPress={hangUp}
-              style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
-            >
-              <View className="w-[72px] h-[72px] rounded-full bg-red-500 items-center justify-center shadow-lg">
-                <Ionicons name="call" size={32} color="#ffffff" style={{ transform: [{ rotate: "135deg" }] }} />
-              </View>
-            </Pressable>
-            <Text className="text-red-300 text-xs mt-2">End</Text>
-          </View>
+          {/* Incoming Call Answer/Reject */}
+          {phase === "ringing" && isIncoming === "true" ? (
+             <View className="flex-row justify-center items-center" style={{ gap: 40 }}>
+                {/* End/Reject */}
+                <View className="items-center">
+                  <Pressable onPress={hangUp} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
+                    <View className="w-[72px] h-[72px] rounded-full bg-red-500 items-center justify-center shadow-lg">
+                      <Ionicons name="call" size={32} color="#ffffff" style={{ transform: [{ rotate: "135deg" }] }} />
+                    </View>
+                  </Pressable>
+                  <Text className="text-red-300 text-xs mt-2">ปฏิเสธ (Decline)</Text>
+                </View>
+
+                {/* Answer */}
+                <View className="items-center">
+                  <Pressable onPress={answerCall} style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}>
+                    <View className="w-[72px] h-[72px] rounded-full bg-emerald-500 items-center justify-center shadow-lg">
+                      <Ionicons name="call" size={32} color="#ffffff" />
+                    </View>
+                  </Pressable>
+                  <Text className="text-emerald-100 text-xs mt-2">รับสาย (Answer)</Text>
+                </View>
+             </View>
+          ) : (
+            <View className="items-center">
+              <Pressable
+                onPress={hangUp}
+                style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+              >
+                <View className="w-[72px] h-[72px] rounded-full bg-red-500 items-center justify-center shadow-lg">
+                  <Ionicons name="call" size={32} color="#ffffff" style={{ transform: [{ rotate: "135deg" }] }} />
+                </View>
+              </Pressable>
+              <Text className="text-red-300 text-xs mt-2">วางสาย (End)</Text>
+            </View>
+          )}
         </View>
       )}
     </SafeAreaView>

@@ -31,7 +31,7 @@ router.get(
 router.get(
   "/:id",
   verifyToken,
-  requireRoles("SALE", "MANAGER", "ADMIN"),
+  requireRoles("SALE", "MANAGER", "ADMIN", "CUSTOMER"),
   getCallById
 );
 
@@ -46,7 +46,7 @@ router.post(
 router.put(
   "/:id",
   verifyToken,
-  requireRoles("SALE", "MANAGER", "ADMIN"),
+  requireRoles("SALE", "MANAGER", "ADMIN", "CUSTOMER"),
   updateCall
 );
 

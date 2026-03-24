@@ -61,6 +61,7 @@ function formatDateLabel(ts: number): string {
 type ChatPartner = {
   name: string;
   avatarUrl?: string | null;
+  userId?: number | null;
 };
 
 type BaseMsg = {
@@ -285,7 +286,16 @@ export default function ChatDetailScreen() {
     fileName?: string | null;
     fileMime?: string | null;
     fileSize?: number | null;
-  }) => {
+  }): Promise<{
+    id: number;
+    roomId: string;
+    customerId: number | null;
+    cid: string;
+    type: string;
+    text: string | null;
+    createdAt: string;
+    [key: string]: any;
+  }> => {
     if (!token) throw new Error("no token");
 
     const res = await fetch(`${API_BASE_URL}/chat/send`, {
@@ -305,7 +315,6 @@ export default function ChatDetailScreen() {
 
     return await res.json();
   };
-
   // =========================================================
   // partner
   // =========================================================
@@ -326,7 +335,7 @@ export default function ChatDetailScreen() {
             const avatarUrl = data.sale.id
               ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
               : null;
-            setPartner({ name: data.sale.name || "Sale", avatarUrl });
+            setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
           }
         } else if (user?.role === "SALE" && effectiveCustomerId) {
           const res = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
@@ -338,7 +347,7 @@ export default function ChatDetailScreen() {
           const avatarUrl = userId
             ? `${API_BASE_URL}/users/profile-image/${userId}?t=${encodeURIComponent(token)}&b=${Date.now()}`
             : null;
-          setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl });
+          setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl, userId });
         } else {
           setPartner(null);
         }
@@ -1092,18 +1101,29 @@ export default function ChatDetailScreen() {
           </View>
         </View>
 
-        <Pressable className="pl-3" onPress={() => {
-            router.push({
-              pathname: "/(screens)/call-screen",
-              params: {
-                name: partner?.name ?? nameParam ?? "Chat",
-                avatarUrl: partner?.avatarUrl ?? "",
-                customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
-              },
-            });
-          }}>
-          <Ionicons name="call-outline" size={20} color="#047857" />
-        </Pressable>
+        <View className="pl-3">
+          <Pressable
+            onPress={() => {
+              const targetUserId = partner?.userId ? String(partner.userId) : "";
+              if (!targetUserId) {
+                Toast.show({ type: "info", text1: "Not Ready", text2: "Target User ID not loaded yet" });
+                return;
+              }
+              router.push({
+                pathname: "/(screens)/call-screen",
+                params: {
+                  name: partner?.name ?? nameParam ?? "User",
+                  avatarUrl: partner?.avatarUrl ?? "",
+                  customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
+                  targetUserId: targetUserId,
+                },
+              });
+            }}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 8 }]}
+          >
+            <Ionicons name="call-outline" size={24} color="#047857" />
+          </Pressable>
+        </View>
       </View>
     ),
     [effectiveRoomId, nameParam, connected, partner, router]
