@@ -10,9 +10,10 @@ import {
   Image,
   Modal,
   Linking,
+  Keyboard,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSocketRoom, generateCid, getSocket } from "../../store/socket";
@@ -150,6 +151,17 @@ const mergeAndDedupe = (lists: Msg[][]) => {
 export default function ChatDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const idParam = Array.isArray(params.id) ? params.id[0] : (params.id as string | undefined);
   const nameParam = Array.isArray(params.name) ? params.name[0] : (params.name as string | undefined);
 
@@ -587,9 +599,14 @@ export default function ChatDetailScreen() {
   const [input, setInput] = useState("");
 
   const listRef = useRef<FlatList<Msg>>(null);
+  const reversedMessages = useMemo(() => [...mergedMessages].reverse(), [mergedMessages]);
+
+  // scroll to bottom เมื่อมีข้อความใหม่เข้ามา (ใน inverted list คือ offset 0)
   useEffect(() => {
-    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-    return () => clearTimeout(t);
+    if (mergedMessages.length > 0) {
+      const t = setTimeout(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), 50);
+      return () => clearTimeout(t);
+    }
   }, [mergedMessages.length]);
 
   // =========================================================
@@ -909,11 +926,11 @@ export default function ChatDetailScreen() {
     // ── Date Divider ──
     let showDateDivider = false;
     const msgDateKey = new Date(item.ts).toDateString();
-    if (index === 0) {
+    if (index === reversedMessages.length - 1) {
       showDateDivider = true;
     } else {
-      const prevDateKey = new Date(mergedMessages[index - 1].ts).toDateString();
-      showDateDivider = msgDateKey !== prevDateKey;
+      const olderDateKey = new Date(reversedMessages[index + 1].ts).toDateString();
+      showDateDivider = msgDateKey !== olderDateKey;
     }
 
     return (
@@ -1061,7 +1078,7 @@ export default function ChatDetailScreen() {
             )}
           </View>
 
-          {/* ✅ เวลา + Read อยู่นอก bubble */}
+          {/* ✅ เวลา + Read — วางหลัง Bubble เพื่อให้แสดงผลด้านล่าง */}
           <View className="flex-row items-center mt-1" style={{ gap: 4 }}>
             <Text className="text-[10px] text-gray-400">{item.time}</Text>
             {isMe && item.readByOther && (
@@ -1130,21 +1147,23 @@ export default function ChatDetailScreen() {
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      {ListHeader}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "padding"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
+      <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
+        {ListHeader}
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
-      >
         <FlatList
           ref={listRef}
-          data={mergedMessages}
+          data={reversedMessages}
           keyExtractor={(m) => m.id}
           contentContainerStyle={{ padding: 12 }}
           renderItem={renderMessage}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          inverted
           ListEmptyComponent={
             loadingHistory ? (
               <View className="py-8 items-center">
@@ -1164,7 +1183,10 @@ export default function ChatDetailScreen() {
           </View>
         )}
 
-        <View className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white">
+        <View
+          className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
+          style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}
+        >
           <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
             <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
           </Pressable>
@@ -1198,7 +1220,7 @@ export default function ChatDetailScreen() {
             </View>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </SafeAreaView>
 
       <Modal transparent visible={attachOpen} animationType="fade" onRequestClose={() => setAttachOpen(false)}>
         <Pressable className="flex-1 bg-black/30" onPress={() => setAttachOpen(false)}>
@@ -1239,6 +1261,6 @@ export default function ChatDetailScreen() {
           </View>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
