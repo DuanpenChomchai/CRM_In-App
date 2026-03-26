@@ -219,8 +219,8 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       const io = getIO();
 
       // 1) ส่ง message realtime ให้ทุกคนในห้อง (ทั้ง sale + customer ที่อยู่ห้องเดียวกัน)
-      console.log(`[CHAT:SEND][${rid}] emit chat:message to room=`, roomId);
-      io.to(roomId).emit("chat:message", created);
+      console.log(`[CHAT:SEND][${rid}] emit message to room=`, roomId);
+      io.to(roomId).emit("message", created);
 
       // 2) unread-count คำนวณจาก DB หลัง set readBy.. ของผู้ส่งแล้ว
       if (created.customerId) {

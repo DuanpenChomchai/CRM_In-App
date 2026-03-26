@@ -213,6 +213,7 @@ export default function ChatDetailScreen() {
     connected,
     messages: socketMessages,
     sendText: sendSocketText,
+    sendMessage,
     startTyping,
     othersTyping,
   } = useSocketRoom(effectiveRoomId, myEmail || "user");
@@ -222,66 +223,54 @@ export default function ChatDetailScreen() {
   // =========================================================
   const getSignedUrlForKey = async (key?: string | null) => {
     if (!key || !token) return null;
-    try {
-      const res = await fetch(`${API_BASE_URL}/files/signed?key=${encodeURIComponent(key)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) return null;
-      const json = await res.json();
-      return (json?.url as string) || null;
-    } catch (e) {
-      console.log("[getSignedUrlForKey] error:", e);
-      return null;
-    }
+    // ✅ ใช้ proxy ผ่านพอร์ต 3000 (เหมือนรูปโปรไฟล์) เพื่อแก้ปัญหาพอร์ต 9000 โดนบล็อก
+    return `${API_BASE_URL}/files/object?key=${encodeURIComponent(key)}&t=${encodeURIComponent(token)}`;
   };
 
-  /**
-   * Backend ต้องทำ endpoint นี้ให้คืน:
-   * { key: string, uploadUrl: string }
-   * โดย uploadUrl เป็น pre-signed PUT URL ไปที่ MinIO/S3
-   */
-  const getSignedPutForFile = async (fileName: string, mimeType: string) => {
-    if (!token) throw new Error("no token");
-    const res = await fetch(
-      `${API_BASE_URL}/files/signed-put?name=${encodeURIComponent(fileName)}&mime=${encodeURIComponent(mimeType)}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(`signed-put failed: ${res.status} ${t}`);
-    }
-    return (await res.json()) as { key: string; uploadUrl: string };
-  };
-
-  // ✅ PUT file directly to MinIO using signed PUT URL (no UploadType, no EncodingType)
-  const putToMinio = async (uploadUrl: string, localUri: string, mimeType: string) => {
-    const r = await FileSystem.uploadAsync(uploadUrl, localUri, {
-      httpMethod: "PUT",
-      headers: {
-        "Content-Type": mimeType,
-      },
-    });
-
-    if (r.status < 200 || r.status >= 300) {
-      throw new Error(`PUT upload failed: ${r.status} ${r.body ?? ""}`);
-    }
-  };
-
-  // Helper: signed PUT + PUT + return metadata
+  // ✅ UPLOAD TO BACKEND PROXY (Port 3000) - Fix Connection Timeout on Port 9000
   const uploadDirectToMinio = async (
     localUri: string,
     fileName: string,
     mimeType: string,
     size?: number | null
   ) => {
-    const { key, uploadUrl } = await getSignedPutForFile(fileName, mimeType);
-    await putToMinio(uploadUrl, localUri, mimeType);
+    if (!token) throw new Error("no token");
 
+    // iOS file:// handling
+    const safeUri = Platform.OS === "ios" && localUri.startsWith("file://")
+      ? localUri.replace("file://", "")
+      : localUri;
+
+    const formData = new FormData();
+    formData.append("file", {
+      uri: safeUri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+
+    console.log(`[uploadDirectToMinio] POST to ${API_BASE_URL}/chat/upload`);
+
+    const res = await fetch(`${API_BASE_URL}/chat/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error("[uploadDirectToMinio] error:", res.status, t);
+      throw new Error(`Upload failed: ${res.status} ${t}`);
+    }
+
+    const data = await res.json();
     return {
-      fileKey: key,
-      fileName,
-      mimeType,
-      size: size ?? null,
+      fileKey: data.fileKey,
+      fileName: data.fileName,
+      mimeType: data.mimeType,
+      size: data.size || size || null,
     };
   };
 
@@ -553,17 +542,44 @@ export default function ChatDetailScreen() {
       socketMessages.map((m: any) => {
         const ts = Number(m.ts ?? Date.now());
         const isFromMe = normalizeEmail(m.user) === myEmail;
-        return {
+        const type = (m.type || "TEXT").toUpperCase();
+
+        const base = {
           id: String(m.id),
           fromMe: isFromMe,
-          type: "text",
-          text: String(m.text ?? ""),
           time: formatClock(new Date(ts)),
           ts,
           cid: m.cid,
         };
+
+        const fKey = m.fileKey || m.filekey || m.imgMessage || m.fileMessage;
+
+        if (type === "IMAGE" && fKey && token) {
+          return {
+            ...base,
+            type: "image",
+            uri: `${API_BASE_URL}/files/object?key=${encodeURIComponent(fKey)}&t=${encodeURIComponent(token)}`,
+            fileKey: fKey,
+          } as Msg;
+        }
+        if (type === "FILE" && fKey && token) {
+          return {
+            ...base,
+            type: "file",
+            uri: `${API_BASE_URL}/files/object?key=${encodeURIComponent(fKey)}&t=${encodeURIComponent(token)}`,
+            fileKey: fKey,
+            name: m.fileName || m.filename || "File",
+            mimeType: m.fileMime || m.filemime || m.mimeType,
+          } as Msg;
+        }
+
+        return {
+          ...base,
+          type: "text",
+          text: String(m.text ?? ""),
+        } as Msg;
       }),
-    [socketMessages, myEmail]
+    [socketMessages, myEmail, token]
   );
 
   useEffect(() => {
@@ -750,6 +766,16 @@ export default function ChatDetailScreen() {
         text: null,
       });
 
+      // ✅ EMIT SOCKET
+      sendMessage({
+        cid,
+        type: "IMAGE",
+        fileKey: up.fileKey,
+        fileName: up.fileName,
+        fileMime: up.mimeType,
+        fileSize: up.size ?? undefined,
+      });
+
       // Signed GET for preview
       const signed = await getSignedUrlForKey(up.fileKey);
 
@@ -847,6 +873,16 @@ export default function ChatDetailScreen() {
         fileMime: up.mimeType,
         fileSize: up.size ?? null,
         text: null,
+      });
+
+      // ✅ EMIT SOCKET
+      sendMessage({
+        cid,
+        type: "FILE",
+        fileKey: up.fileKey,
+        fileName: up.fileName,
+        fileMime: up.mimeType,
+        fileSize: up.size ?? undefined,
       });
 
       const signed = await getSignedUrlForKey(up.fileKey);

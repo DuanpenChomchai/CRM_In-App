@@ -8,6 +8,12 @@ export type ChatMsg = {
   user: string;
   ts: number;
   cid?: string;
+  // attachment fields
+  type?: string;
+  fileKey?: string;
+  fileName?: string;
+  fileMime?: string;
+  fileSize?: number;
 };
 
 type SocketAuth = {
@@ -121,7 +127,12 @@ export const useSocketRoom = (roomId: string, username: string) => {
   const sendText = (text: string, cid?: string) => {
     const t = text.trim();
     if (!t) return;
-    socket.emit("message", { roomId, text: t, user: username, cid });
+    socket.emit("message", { roomId, text: t, user: username, cid, type: "TEXT" });
+    stopTyping();
+  };
+
+  const sendMessage = (payload: Partial<ChatMsg>) => {
+    socket.emit("message", { roomId, user: username, ...payload });
     stopTyping();
   };
 
@@ -129,5 +140,5 @@ export const useSocketRoom = (roomId: string, username: string) => {
     .filter(([u, t]) => t && u !== username)
     .map(([u]) => u);
 
-  return { connected, messages, sendText, startTyping, stopTyping, othersTyping };
+  return { connected, messages, sendText, sendMessage, startTyping, stopTyping, othersTyping };
 };

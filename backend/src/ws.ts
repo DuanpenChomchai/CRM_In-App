@@ -4,18 +4,28 @@ import prisma from "./config/prismaclient";
 
 type ChatMessage = {
   id: string;
-  text: string;
+  text?: string | null;
   user: string;
   ts: number;
   cid?: string | number;
+  type?: string;
+  fileKey?: string | null;
+  fileName?: string | null;
+  fileMime?: string | null;
+  fileSize?: number | null;
 };
 
 type JoinPayload = { roomId: string; user: string };
 type MessagePayload = {
   roomId: string;
-  text: string;
+  text?: string | null;
   user: string;
   cid?: string | number;
+  type?: string;
+  fileKey?: string | null;
+  fileName?: string | null;
+  fileMime?: string | null;
+  fileSize?: number | null;
 };
 type TypingPayload = { roomId: string; user: string; typing: boolean };
 
@@ -120,16 +130,25 @@ export const initWs = (server: HttpServer) => {
     // ================== MESSAGE ==================
     socket.on("message", async (payload: MessagePayload) => {
       try {
-        const { roomId, text, user, cid } = payload || ({} as MessagePayload);
+        const { roomId, text, user, cid, type, fileKey, fileName, fileMime, fileSize } = payload || ({} as MessagePayload);
+        
         const t = (text || "").trim();
-        if (!roomId || !user || !t) return;
+        const hasText = t.length > 0;
+        const hasFile = !!fileKey;
+
+        if (!roomId || !user || (!hasText && !hasFile)) return;
 
         const msg: ChatMessage = {
           id: `${Date.now()}-${Math.random()}`,
-          text: t.slice(0, 2000),
+          text: hasText ? t.slice(0, 2000) : null,
           user,
           ts: Date.now(),
           cid,
+          type: type || "TEXT",
+          fileKey,
+          fileName,
+          fileMime,
+          fileSize,
         };
 
         // 1) เก็บ history ใน memory
@@ -164,6 +183,11 @@ export const initWs = (server: HttpServer) => {
                 senderName: user,
                 cid: cid != null ? String(cid) : null,
                 customerId,
+                type: (msg.type as any) || "TEXT",
+                fileKey: msg.fileKey,
+                fileName: msg.fileName,
+                fileMime: msg.fileMime,
+                fileSize: msg.fileSize ? Number(msg.fileSize) : null,
                 ...(role === "CUSTOMER"
                   ? { readByCustomerAt: now }
                   : role === "SALE"

@@ -44,6 +44,39 @@ export default function CallScreen() {
   const startTimeRef = useRef<Date>(new Date());
   const messageSentRef = useRef(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [zegoReady, setZegoReady] = useState(false);
+
+  // ─── Permission Check ───
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        if (status !== "granted") {
+          Toast.show({
+            type: "error",
+            text1: "จำเป็นต้องใช้ไมโครโฟน",
+            text2: "กรุณาอนุญาตให้แอปเข้าถึงไมโครโฟนเพื่อคุยโทรศัพท์",
+          });
+        }
+      } catch (e) {
+        console.error("Permission error:", e);
+      }
+    };
+    requestPermissions();
+  }, []);
+
+  // ─── Zego Ready Delay ───
+  useEffect(() => {
+    if (phase === "active") {
+      // Small delay to ensure ringtone is stopped and audio session is stable
+      const timer = setTimeout(() => {
+        setZegoReady(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else {
+      setZegoReady(false);
+    }
+  }, [phase]);
 
   // =========================================================
   // CREATE call record when screen opens
@@ -367,7 +400,7 @@ export default function CallScreen() {
   return (
     <SafeAreaView className="flex-1 bg-emerald-900">
       {/* ─── Hidden Zego Engine ─── */}
-      {phase === "active" && user?.id && callId && (
+      {phase === "active" && zegoReady && user?.id && callId && (
         <View style={{ position: "absolute", width: 1, height: 1, opacity: 0, overflow: "hidden" }}>
           <ZegoUIKitPrebuiltCall
             appID={228592494}
