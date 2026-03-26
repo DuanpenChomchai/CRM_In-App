@@ -504,26 +504,7 @@ export default function ChatDetailScreen() {
     };
   }, [effectiveRoomId, token, myEmail, myUserId, isFocused]);
 
-  // =========================================================
-  // mark read
-  // =========================================================
-  useEffect(() => {
-    if (!token || !effectiveCustomerId || !isFocused) return;
 
-    const markRead = async () => {
-      try {
-        await fetch(`${API_BASE_URL}/chat/mark-read`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ customerId: effectiveCustomerId }),
-        });
-      } catch (err) {
-        console.error("[markRoomAsRead] error:", err);
-      }
-    };
-
-    markRead();
-  }, [token, effectiveCustomerId, isFocused]);
 
   // =========================================================
   // listen for messages-read (read receipt realtime)
@@ -569,11 +550,12 @@ export default function ChatDetailScreen() {
   // =========================================================
   const textMsgs: Msg[] = useMemo(
     () =>
-      socketMessages.map((m) => {
+      socketMessages.map((m: any) => {
         const ts = Number(m.ts ?? Date.now());
+        const isFromMe = normalizeEmail(m.user) === myEmail;
         return {
           id: String(m.id),
-          fromMe: normalizeEmail(m.user) === myEmail,
+          fromMe: isFromMe,
           type: "text",
           text: String(m.text ?? ""),
           time: formatClock(new Date(ts)),
@@ -595,6 +577,27 @@ export default function ChatDetailScreen() {
   const mergedMessages: Msg[] = useMemo(() => {
     return mergeAndDedupe([historyMessages, textMsgs, localAttachBuf, localTextBuf]);
   }, [historyMessages, textMsgs, localAttachBuf, localTextBuf]);
+
+  // =========================================================
+  // mark read (trigger on mount OR when new messages arrive)
+  // =========================================================
+  useEffect(() => {
+    if (!token || !effectiveCustomerId || !isFocused) return;
+
+    const markRead = async () => {
+      try {
+        await fetch(`${API_BASE_URL}/chat/mark-read`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ customerId: effectiveCustomerId }),
+        });
+      } catch (err) {
+        console.error("[markRoomAsRead] error:", err);
+      }
+    };
+
+    markRead();
+  }, [token, effectiveCustomerId, isFocused, mergedMessages.length]);
 
   const [input, setInput] = useState("");
 

@@ -65,7 +65,12 @@ export const useSocketRoom = (roomId: string, username: string) => {
   const typingTimer = useRef<any>(null);
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
+    if (!socket.connected) {
+      socket.connect();
+    } else {
+      // ✅ ถ้าเชื่อมต่ออยู่แล้ว ให้ส่ง join ทันที (สำคัญมากสำหรับ real-time)
+      socket.emit("join", { roomId, user: username });
+    }
 
     const onConnect = () => {
       setConnected(true);
@@ -80,17 +85,6 @@ export const useSocketRoom = (roomId: string, username: string) => {
     const onMessage = (msg: ChatMsg) =>
       setMessages((prev) => [...prev, msg]);
 
-    const onSystem = (sys: { text: string; ts: number }) =>
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `sys-${sys.ts}`,
-          text: `🔔 ${sys.text}`,
-          user: "system",
-          ts: sys.ts,
-        },
-      ]);
-
     const onTyping = ({ user, typing }: { user: string; typing: boolean }) =>
       setTypingUsers((prev) => ({ ...prev, [user]: typing }));
 
@@ -98,7 +92,6 @@ export const useSocketRoom = (roomId: string, username: string) => {
     socket.on("disconnect", onDisconnect);
     socket.on("history", onHistory);
     socket.on("message", onMessage);
-    socket.on("system", onSystem);
     socket.on("typing", onTyping);
 
     return () => {
@@ -106,7 +99,6 @@ export const useSocketRoom = (roomId: string, username: string) => {
       socket.off("disconnect", onDisconnect);
       socket.off("history", onHistory);
       socket.off("message", onMessage);
-      socket.off("system", onSystem);
       socket.off("typing", onTyping);
 
       if (typingTimer.current) {
