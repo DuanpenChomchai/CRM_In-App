@@ -23,9 +23,10 @@ type CallPhase = "ringing" | "active" | "ended";
 
 export default function CallScreen() {
   const router = useRouter();
-  const { name, avatarUrl, customerId, targetUserId, callId: paramCallId, isIncoming } = useLocalSearchParams<{
+  const { name, avatarUrl, callerUserId, customerId, targetUserId, callId: paramCallId, isIncoming } = useLocalSearchParams<{
     name?: string;
     avatarUrl?: string;
+    callerUserId?: string;
     customerId?: string;
     targetUserId?: string;
     callId?: string;
@@ -33,6 +34,17 @@ export default function CallScreen() {
   }>();
 
   const { user, token } = useAuthStore();
+
+  // สร้าง avatar URL:
+  // - เป็นสายเข้า → ใช้ callerUserId + token
+  // - เป็นสายออก → ใช้ targetUserId + token
+  const resolvedAvatarUrl: string | null = (() => {
+    const uid = callerUserId || targetUserId;
+    if (uid && token) {
+      return `${API_BASE_URL}/users/profile-image/${uid}?t=${encodeURIComponent(token)}&b=${uid}`;
+    }
+    return avatarUrl || null;
+  })();
 
   const [phase, setPhase] = useState<CallPhase>("ringing");
   const [seconds, setSeconds] = useState(0);
@@ -282,6 +294,10 @@ export default function CallScreen() {
           try {
             const finalDuration = payload.durationSec ?? seconds;
             const effectiveRoomId = customerId ? `cust:${customerId}` : "general";
+            // ถ้าไม่มีระยะเวลาสนทนา = ไม่ได้รับสาย
+            const chatText = finalDuration > 0
+              ? `[CALL_ENDED]:${finalDuration}`
+              : `[CALL_CANCELED]`;
             await fetch(`${API_BASE_URL}/chat/send`, {
               method: "POST",
               headers: {
@@ -292,7 +308,7 @@ export default function CallScreen() {
                 roomId: effectiveRoomId,
                 customerId: customerId ? Number(customerId) : null,
                 type: "TEXT",
-                text: `[CALL_ENDED]:${finalDuration}`,
+                text: chatText,
               }),
             });
           } catch(e) { console.error("Error sending proxy call ended message", e) }
@@ -321,7 +337,23 @@ export default function CallScreen() {
     return () => clearInterval(iv);
   }, [phase]);
 
-  const answerCall = () => {
+  const answerCall = async () => {
+    // แจ้ง backend ว่ารับสาย → backend จะ emit call:answered ไปหาคนโทรออก
+    if (callId && token) {
+      try {
+        await fetch(`${API_BASE_URL}/calls/${callId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: "ONGOING" }),
+        });
+        console.log(`✅ Call ${callId} answered → ONGOING`);
+      } catch (err) {
+        console.error("❌ answerCall PUT error:", err);
+      }
+    }
     setPhase("active");
   };
 
@@ -359,8 +391,11 @@ export default function CallScreen() {
           messageSentRef.current = true;
           const effectiveRoomId = customerId 
             ? `cust:${customerId}` 
-            : "general"; // Default to general or handle other room logic if needed
-          
+            : "general";
+          // ถ้าไม่มีระยะเวลาสนทนา = ไม่ได้รับสาย
+          const chatText = durationSec > 0
+            ? `[CALL_ENDED]:${durationSec}`
+            : `[CALL_CANCELED]`;
           await fetch(`${API_BASE_URL}/chat/send`, {
               method: "POST",
               headers: {
@@ -371,10 +406,10 @@ export default function CallScreen() {
                 roomId: effectiveRoomId,
                 customerId: customerId ? Number(customerId) : null,
                 type: "TEXT",
-                text: `[CALL_ENDED]:${durationSec}`,
+                text: chatText,
               }),
           });
-          console.log(`✅ Sent call ended message to chat`);
+          console.log(`✅ Sent call message to chat (${chatText})`);
         }
 
       } catch (err) {
@@ -445,9 +480,9 @@ export default function CallScreen() {
               borderColor: "rgba(16,185,129,0.5)",
             }}
           >
-            {avatarUrl && !avatarError ? (
+            {resolvedAvatarUrl && !avatarError ? (
               <Image
-                source={{ uri: avatarUrl }}
+                source={{ uri: resolvedAvatarUrl }}
                 className="w-[120px] h-[120px]"
                 resizeMode="cover"
                 onError={() => setAvatarError(true)}

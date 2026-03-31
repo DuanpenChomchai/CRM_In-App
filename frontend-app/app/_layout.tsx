@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   DarkTheme,
   DefaultTheme,
@@ -11,7 +11,8 @@ import { Ionicons } from "@expo/vector-icons";
 import "react-native-reanimated";
 import Toast from "react-native-toast-message";
 import { toastConfig } from "../components/toastConfig";
-import { getSocket } from "../store/socket";
+import { getSocket, setSocketAuth } from "../store/socket";
+import { useAuthStore } from "../store/useAuthStore";
 import ZegoUIKitPrebuiltCallService, {
   ZegoCallInvitationDialog,
 } from "@zegocloud/zego-uikit-prebuilt-call-rn";
@@ -53,14 +54,16 @@ function ZegoNavigationBridge() {
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
+  // ใช้ ref เพื่อกัน router เปลี่ยน reference แล้ว trigger useEffect ซ้ำ
+  const routerRef = useRef(router);
+  routerRef.current = router;
 
-  const { user, token } = require("../store/useAuthStore").useAuthStore();
+  const { user, token } = useAuthStore();
 
-  // Global Incoming Call Listener
+  // Global Incoming Call Listener — run เฉพาะตอน user.id เปลี่ยน
   useEffect(() => {
     if (!user?.id) return;
 
-    const { setSocketAuth } = require("../store/socket");
     setSocketAuth({
       token: token ?? null,
       role: user.role ?? null,
@@ -74,16 +77,11 @@ export default function RootLayout() {
 
     const onIncomingCall = (payload: any) => {
       console.log("🔔 Global Incoming Call:", payload);
-      // Construct an avatar url if possible, or leave blank to fallback
-      const avatarUrl = payload.callerId && token
-          ? `${require("../config/api").API_BASE_URL}/users/profile-image/${payload.callerId}?t=${encodeURIComponent(token)}&b=${payload.callerId}`
-          : "";
-      
-      router.push({
+      routerRef.current.push({
         pathname: "/(screens)/call-screen",
         params: {
           name: payload.callerName || "User",
-          avatarUrl,
+          callerUserId: payload.callerId ? String(payload.callerId) : "",
           customerId: payload.customerId ? String(payload.customerId) : "",
           callId: String(payload.callId),
           isIncoming: "true",
@@ -96,7 +94,7 @@ export default function RootLayout() {
     return () => {
       socket.off("call:incoming", onIncomingCall);
     };
-  }, [user?.id, router]);
+  }, [user?.id]);
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>

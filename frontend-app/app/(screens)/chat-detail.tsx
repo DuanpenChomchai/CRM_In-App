@@ -132,6 +132,11 @@ const pickBetter = (a: Msg, b: Msg): Msg => {
     if (au !== bu) return au ? a : b;
   }
 
+  // ✅ ให้ความสำคัญกับอันที่มีการระบุว่า "อ่านแล้ว" (readByOther)
+  if (a.readByOther !== b.readByOther) {
+    return (a as any).readByOther ? a : b;
+  }
+
   return a.ts >= b.ts ? a : b;
 };
 
@@ -375,16 +380,19 @@ export default function ChatDetailScreen() {
     setLocalAttachBuf([]);
   }, [effectiveRoomId]);
 
+  // ✅ ย้ายออกมาข้างนอกเพื่อให้ textMsgs เข้าถึงได้
+  const computeFromMe = (m: any) => {
+    // 1) เช็คจาก ID (ถ้ามี)
+    const senderId = m.senderId ?? m.userId ?? null;
+    if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
+
+    // 2) เช็คจาก Email/Name (รองรับทั้ง Socket Payload และ DB Object)
+    const senderEmail = normalizeEmail(m.user ?? m.senderName ?? m.senderEmail ?? m.sender ?? "");
+    return senderEmail && myEmail ? senderEmail === myEmail : false;
+  };
+
   useEffect(() => {
     let cancelled = false;
-
-    const computeFromMe = (m: any) => {
-      const senderId = m.senderId ?? m.userId ?? null;
-      if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
-
-      const senderEmail = normalizeEmail(m.senderEmail ?? m.senderName ?? m.sender ?? "");
-      return senderEmail && myEmail ? senderEmail === myEmail : false;
-    };
 
     const fetchHistory = async () => {
       try {
@@ -541,8 +549,15 @@ export default function ChatDetailScreen() {
     () =>
       socketMessages.map((m: any) => {
         const ts = Number(m.ts ?? Date.now());
-        const isFromMe = normalizeEmail(m.user) === myEmail;
+        const isFromMe = computeFromMe(m);
         const type = (m.type || "TEXT").toUpperCase();
+
+        // ✅ คำนวณ Read Status เบื้องต้นจาก socket payload (ถ้า backend ส่งมา)
+        const readByOther = isFromMe
+          ? user?.role === "SALE"
+            ? !!m.readByCustomerAt
+            : !!m.readBySaleAt
+          : false;
 
         const base = {
           id: String(m.id),
@@ -550,6 +565,7 @@ export default function ChatDetailScreen() {
           time: formatClock(new Date(ts)),
           ts,
           cid: m.cid,
+          readByOther,
         };
 
         const fKey = m.fileKey || m.filekey || m.imgMessage || m.fileMessage;
@@ -579,14 +595,15 @@ export default function ChatDetailScreen() {
           text: String(m.text ?? ""),
         } as Msg;
       }),
-    [socketMessages, myEmail, token]
+    [socketMessages, myEmail, token, user?.role]
   );
 
   useEffect(() => {
     if (socketMessages.length === 0) return;
     const last = socketMessages[socketMessages.length - 1];
-    if (normalizeEmail(last.user) === myEmail && last.cid != null) {
+    if (computeFromMe(last) && last.cid != null) {
       setLocalTextBuf((prev) => prev.filter((t: any) => t.cid !== last.cid));
+      setLocalAttachBuf((prev) => prev.filter((t: any) => t.cid !== last.cid));
     }
   }, [socketMessages, myEmail]);
 
@@ -1010,7 +1027,36 @@ export default function ChatDetailScreen() {
             }}
           >
             {item.type === "text" ? (
-              item.text.startsWith("[CALL_ENDED]:") ? (
+              item.text === "[CALL_CANCELED]" ? (
+                <View className="flex-row items-center">
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: isMe ? "rgba(239,68,68,0.25)" : "#FEE2E2",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginRight: 12,
+                    }}
+                  >
+                    <Ionicons
+                      name="call"
+                      size={18}
+                      color="#EF4444"
+                      style={{ transform: [{ rotate: "135deg" }] }}
+                    />
+                  </View>
+                  <View>
+                    <Text className={`${textColor} text-[15px] font-medium`}>
+                      ไม่ได้รับสาย
+                    </Text>
+                    <Text className={`${subColor} text-[12px] mt-0.5`}>
+                      การโทรแบบเสียง
+                    </Text>
+                  </View>
+                </View>
+              ) : item.text.startsWith("[CALL_ENDED]:") ? (
                 <View className="flex-row items-center">
                   <View
                     className={`w-9 h-9 rounded-full ${
