@@ -230,29 +230,23 @@ const enriched = await Promise.all(
       },
     });
 
+    // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา
     const lastMsg = await prisma.chatMessage.findFirst({
       where: { customerId: c.id },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
 
-        // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา
-        const lastMsg = await prisma.chatMessage.findFirst({
-          where: { customerId: c.id },
-          orderBy: { createdAt: "desc" },
-          select: { createdAt: true },
-        });
-
-        return {
-          id: c.id,
-          name: c.name,
-          email: c.email,
-          userId: c.userId,
-          tol: c.tol,
-          unreadCount,
-          lastMessageAt: lastMsg?.createdAt ?? null,
-        };
-      })
+    return {
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      userId: c.userId,
+      tol: c.tol,
+      unreadCount,
+      lastMessageAt: lastMsg?.createdAt ?? null,
+    };
+  })
     );
     return res.json(enriched);
   } catch (err) {
