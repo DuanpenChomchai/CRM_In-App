@@ -16,7 +16,8 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
     const checkAuth = async () => {
       try {
-        const res = await fetch("http://localhost:3000/api/me", {
+        const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+        const res = await fetch(`${API_BASE}/api/me`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },

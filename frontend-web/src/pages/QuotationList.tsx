@@ -27,7 +27,7 @@ import { toast } from "sonner";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
-type QuotationStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED";
+type QuotationStatus = "DRAFT" | "WAIT_APPROVAL" | "SENT" | "APPROVED" | "REJECTED";
 
 type QuotationRow = {
   id: number;
@@ -77,6 +77,7 @@ const formatDate = (iso: string) =>
 const getStatusBadge = (status: QuotationStatus) => {
   const config: Record<QuotationStatus, { label: string; className: string }> = {
     DRAFT: { label: "แบบร่าง", className: "bg-gray-500 text-white" },
+    WAIT_APPROVAL: { label: "รออนุมัติ", className: "bg-yellow-500 text-white" },
     SENT: { label: "ส่งแล้ว", className: "bg-blue-500 text-white" },
     APPROVED: { label: "อนุมัติแล้ว", className: "bg-green-500 text-white" },
     REJECTED: { label: "ปฏิเสธ", className: "bg-red-500 text-white" },

@@ -20,7 +20,7 @@ const canManagerEditCreator = async (managerId: number, creatorId: number) => {
 };
 
 const assertCanAccessQuotation = async (req: AuthRequest, quotationId: number) => {
-  const role = req.user!.role;
+  const role = (req.user!.role || "GUEST").toUpperCase();
   const userId = req.user!.id;
 
   const q = await prisma.quotation.findUnique({
@@ -59,7 +59,7 @@ const assertCanAccessQuotation = async (req: AuthRequest, quotationId: number) =
 /** GET /api/quotations */
 export const listQuotations = async (req: AuthRequest, res: Response) => {
   try {
-    const role = req.user!.role;
+    const role = (req.user!.role || "GUEST").toUpperCase();
     const userId = req.user!.id;
 
     const where: any = {};

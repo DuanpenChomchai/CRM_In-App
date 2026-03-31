@@ -13,6 +13,8 @@ import {
 import { Mail, Lock, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+
 declare global {
   interface Window {
     google: any;
@@ -32,7 +34,7 @@ const Login = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:3000/api/login", {
+      const res = await fetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -71,7 +73,7 @@ const Login = () => {
       client_id: clientId,
       callback: async (response: any) => {
         try {
-          const res = await fetch("http://localhost:3000/api/google", {
+          const res = await fetch(`${API_BASE}/api/google`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ credential: response.credential }),

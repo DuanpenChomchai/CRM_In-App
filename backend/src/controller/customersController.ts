@@ -2,25 +2,73 @@ import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { Prisma } from "@prisma/client";
 import { getIO } from "../ws";
+import { AuthRequest } from "../middlewares/authMiddleware";
 
-// ---------- Types ----------
-interface AuthUser {
-  id: number;
-  email: string;
-  role: string;
-}
+const buildCustomerScope = (user?: { id: number; role: string }) => {
+  const role = (user?.role || "").toUpperCase();
+  const userId = user?.id;
 
-interface AuthRequest extends Request {
-  user?: AuthUser;
-}
+  if (!userId) return null;
+
+  if (role === "ADMIN") return {};
+
+  if (role === "SALE") {
+    return { saleId: userId };
+  }
+
+  if (role === "MANAGER") {
+    return {
+      OR: [{ saleId: userId }, { sale: { managerId: userId } }],
+    };
+  }
+
+  return null;
+};
+
+const canAccessSaleId = async (
+  user?: { id: number; role: string },
+  targetSaleId?: number | null
+) => {
+  const role = (user?.role || "").toUpperCase();
+  const userId = user?.id;
+
+  if (!userId || !targetSaleId) return false;
+
+  if (role === "ADMIN") return true;
+
+  if (role === "SALE") {
+    return Number(targetSaleId) === Number(userId);
+  }
+
+  if (role === "MANAGER") {
+    const sale = await prisma.user.findFirst({
+      where: {
+        id: Number(targetSaleId),
+        role: "SALE",
+        OR: [{ id: userId }, { managerId: userId }],
+      },
+      select: { id: true },
+    });
+
+    return !!sale;
+  }
+
+  return false;
+};
 
 /**
  * ดึงลูกค้าทั้งหมด
  * GET /api/customers
  */
-export const getAllCustomers = async (req: Request, res: Response) => {
+export const getAllCustomers = async (req: AuthRequest, res: Response) => {
   try {
+    const scope = buildCustomerScope(req.user);
+    if (scope === null) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
     const customers = await prisma.customer.findMany({
+      where: scope,
       include: {
         user: {
           select: {
@@ -30,7 +78,6 @@ export const getAllCustomers = async (req: Request, res: Response) => {
             tol: true,
             img: true,
             role: true,
-
           },
         },
         sale: {
@@ -58,8 +105,15 @@ export const getAllCustomers = async (req: Request, res: Response) => {
  * มอบหมายพนักงานขายให้ลูกค้า
  * PATCH /api/customers/:id/assign-sale
  */
-export const assignSales = async (req: Request, res: Response) => {
+export const assignSales = async (req: AuthRequest, res: Response) => {
   try {
+    const role = (req.user?.role || "").toUpperCase();
+
+    // ให้เฉพาะ ADMIN เปลี่ยนคนดูแลได้
+    if (role !== "ADMIN") {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์มอบหมายพนักงานขาย" });
+    }
+
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: "id ไม่ถูกต้อง" });
@@ -76,6 +130,15 @@ export const assignSales = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
     }
 
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!customer) {
+      return res.status(404).json({ message: "ไม่พบลูกค้า" });
+    }
+
     const saleUser = await prisma.user.findFirst({
       where: { id: saleUserId, role: "SALE" },
     });
@@ -84,12 +147,11 @@ export const assignSales = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "ไม่พบพนักงานขายที่เลือก" });
     }
 
-    // อัปเดตลง DB
     const updated = await prisma.customer.update({
       where: { id },
       data: {
         saleId: saleUserId,
-        mainStatus: "CONTACTED", // เปลี่ยนสถานะเป็น CONTACTED
+        mainStatus: "CONTACTED",
       },
       include: {
         user: {
@@ -115,16 +177,10 @@ export const assignSales = async (req: Request, res: Response) => {
       },
     });
 
-    // 🔥 ส่ง WS เฉพาะถ้า initWs ถูกเรียกแล้ว
     try {
       const io = getIO();
-
-      // 🔥 ส่งให้เซลล์ทุกคน
       io.to("role:SALE").emit("customer:assigned", updated);
-
-      // 🔥 ส่งให้เซลล์เฉพาะคนที่ถูก assign
       io.to(`user:${saleUserId}`).emit("customer:assigned", updated);
-
       console.log("📢 Emit → customer:assigned:", updated.id);
     } catch (wsErr) {
       console.warn("Socket.IO not initialized, skip emit:", wsErr);
@@ -148,6 +204,11 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
     }
 
+    const allowed = await canAccessSaleId(req.user, saleId);
+    if (!allowed) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์เข้าถึงข้อมูลเซลล์นี้" });
+    }
+
     const customers = await prisma.customer.findMany({
       where: { saleId },
       select: {
@@ -155,19 +216,25 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
         name: true,
         email: true,
         userId: true,
+        tol: true,
       },
-      orderBy: { createdAt: "desc" },
+  orderBy: { createdAt: "desc" },
+});
+
+const enriched = await Promise.all(
+  customers.map(async (c) => {
+    const unreadCount = await prisma.chatMessage.count({
+      where: {
+        customerId: c.id,
+        readBySaleAt: null,
+      },
     });
 
-    const enriched = await Promise.all(
-      customers.map(async (c) => {
-        // ✅ นับเฉพาะข้อความที่ "เซลล์ยังไม่ได้อ่าน"
-        const unreadCount = await prisma.chatMessage.count({
-          where: {
-            customerId: c.id,
-            readBySaleAt: null,
-          },
-        });
+    const lastMsg = await prisma.chatMessage.findFirst({
+      where: { customerId: c.id },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
 
         // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา
         const lastMsg = await prisma.chatMessage.findFirst({
@@ -181,12 +248,12 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
           name: c.name,
           email: c.email,
           userId: c.userId,
+          tol: c.tol,
           unreadCount,
           lastMessageAt: lastMsg?.createdAt ?? null,
         };
       })
     );
-
     return res.json(enriched);
   } catch (err) {
     console.error("getCustomersBySale error:", err);
@@ -200,15 +267,23 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
  * ดึงข้อมูลลูกค้ารายคน
  * GET /api/customers/:id
  */
-export const getCustomerById = async (req: Request, res: Response) => {
+export const getCustomerById = async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: "id ไม่ถูกต้อง" });
     }
 
-    const customer = await prisma.customer.findUnique({
-      where: { id },
+    const scope = buildCustomerScope(req.user);
+    if (scope === null) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id,
+        ...scope,
+      },
       include: {
         user: {
           select: {
@@ -234,7 +309,9 @@ export const getCustomerById = async (req: Request, res: Response) => {
     });
 
     if (!customer) {
-      return res.status(404).json({ message: "ไม่พบลูกค้า" });
+      return res
+        .status(404)
+        .json({ message: "ไม่พบลูกค้าหรือไม่มีสิทธิ์เข้าถึง" });
     }
 
     return res.json(customer);
@@ -248,14 +325,41 @@ export const getCustomerById = async (req: Request, res: Response) => {
  * เพิ่มลูกค้าใหม่
  * POST /api/customers
  */
-export const createCustomer = async (req: Request, res: Response) => {
+export const createCustomer = async (req: AuthRequest, res: Response) => {
   try {
+    const role = (req.user?.role || "").toUpperCase();
+
+    if (!["ADMIN", "MANAGER", "SALE"].includes(role)) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์สร้างลูกค้า" });
+    }
+
     const { name, phone, email, img, productType, budget, saleId } = req.body;
 
     if (!name || !phone || !email) {
       return res
         .status(400)
         .json({ message: "กรุณากรอกชื่อ เบอร์โทร และอีเมล" });
+    }
+
+    let finalSaleId: number | null = null;
+
+    if (role === "SALE") {
+      finalSaleId = Number(req.user!.id);
+    } else if (role === "ADMIN") {
+      finalSaleId = saleId ? Number(saleId) : null;
+    } else if (role === "MANAGER") {
+      // ถ้า manager ส่ง saleId มา ต้องเป็นลูกทีมตัวเอง
+      if (saleId !== undefined && saleId !== null && saleId !== "") {
+        const allowed = await canAccessSaleId(req.user, Number(saleId));
+        if (!allowed) {
+          return res
+            .status(403)
+            .json({ message: "ไม่สามารถมอบหมายให้เซลล์นอกทีมได้" });
+        }
+        finalSaleId = Number(saleId);
+      } else {
+        finalSaleId = Number(req.user!.id);
+      }
     }
 
     const customer = await prisma.customer.create({
@@ -269,8 +373,8 @@ export const createCustomer = async (req: Request, res: Response) => {
           budget !== undefined && budget !== null && budget !== ""
             ? new Prisma.Decimal(budget)
             : null,
-        saleId: saleId ? Number(saleId) : null,
-        mainStatus: "CONTACTED", // ลูกค้าใหม่เริ่มที่ Contacted เสมอ
+        saleId: finalSaleId,
+        mainStatus: "CONTACTED",
       },
       include: {
         sale: {
@@ -297,29 +401,63 @@ export const createCustomer = async (req: Request, res: Response) => {
  * อัปเดทข้อมูลลูกค้า
  * PUT /api/customers/:id
  */
-export const updateCustomer = async (req: Request, res: Response) => {
+export const updateCustomer = async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: "id ไม่ถูกต้อง" });
     }
 
+    const role = (req.user?.role || "").toUpperCase();
+    const userId = req.user?.id;
+
+    const current = await prisma.customer.findFirst({
+      where: {
+        id,
+        ...(role === "ADMIN"
+          ? {}
+          : role === "SALE"
+          ? { saleId: userId }
+          : role === "MANAGER"
+          ? {
+              OR: [{ saleId: userId }, { sale: { managerId: userId } }],
+            }
+          : { id: -1 }),
+      },
+      select: { id: true, saleId: true },
+    });
+
+    if (!current) {
+      return res
+        .status(404)
+        .json({ message: "ไม่พบลูกค้าหรือไม่มีสิทธิ์แก้ไข" });
+    }
+
     const { name, phone, email, img, productType, budget, saleId } = req.body;
+
+    const data: any = {
+      ...(name !== undefined ? { name } : {}),
+      ...(phone !== undefined ? { tol: phone } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(img !== undefined ? { img } : {}),
+      ...(productType !== undefined ? { productType } : {}),
+      ...(budget !== undefined
+        ? {
+            priceBudget:
+              budget !== null && budget !== ""
+                ? new Prisma.Decimal(budget)
+                : null,
+          }
+        : {}),
+    };
+
+    if (role === "ADMIN" && saleId !== undefined) {
+      data.saleId = saleId === null || saleId === "" ? null : Number(saleId);
+    }
 
     const updated = await prisma.customer.update({
       where: { id },
-      data: {
-        name,
-        tol: phone,
-        email,
-        img,
-        productType,
-        priceBudget:
-          budget !== undefined && budget !== null && budget !== ""
-            ? new Prisma.Decimal(budget)
-            : undefined,
-        saleId: saleId !== undefined ? Number(saleId) : undefined,
-      },
+      data,
       include: {
         user: {
           select: {
@@ -347,7 +485,7 @@ export const updateCustomer = async (req: Request, res: Response) => {
     return res.json(updated);
   } catch (error) {
     console.error("updateCustomer error:", error);
-    return res.status(500).json({ message: "อัปเดทข้อมูลไม่สำเร็จ" });
+    return res.status(500).json({ message: "อัปเดตข้อมูลไม่สำเร็จ" });
   }
 };
 
@@ -355,11 +493,34 @@ export const updateCustomer = async (req: Request, res: Response) => {
  * ลบลูกค้า
  * DELETE /api/customers/:id
  */
-export const deleteCustomer = async (req: Request, res: Response) => {
+export const deleteCustomer = async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
       return res.status(400).json({ message: "id ไม่ถูกต้อง" });
+    }
+
+    const role = (req.user?.role || "").toUpperCase();
+    const userId = req.user?.id;
+
+    const current = await prisma.customer.findFirst({
+      where: {
+        id,
+        ...(role === "ADMIN"
+          ? {}
+          : role === "SALE"
+          ? { saleId: userId }
+          : role === "MANAGER"
+          ? {
+              OR: [{ saleId: userId }, { sale: { managerId: userId } }],
+            }
+          : { id: -1 }),
+      },
+      select: { id: true, name: true },
+    });
+
+    if (!current) {
+      return res.status(404).json({ message: "ไม่พบลูกค้าหรือไม่มีสิทธิ์ลบ" });
     }
 
     await prisma.customer.delete({
@@ -409,7 +570,6 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
     }
 
-    // ✅ ฝั่งลูกค้า: นับเฉพาะข้อความที่ "ลูกค้ายังไม่ได้อ่าน"
     const unreadCount = await prisma.chatMessage.count({
       where: {
         customerId: customer.id,
@@ -417,7 +577,6 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // ✅ หาข้อความล่าสุดเพื่อแสดงเวลา
     const lastMsg = await prisma.chatMessage.findFirst({
       where: { customerId: customer.id },
       orderBy: { createdAt: "desc" },
@@ -437,5 +596,4 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// alias
 export const getCustomers = getAllCustomers;

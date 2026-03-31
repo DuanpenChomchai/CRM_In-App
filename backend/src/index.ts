@@ -15,6 +15,7 @@ import pipelineRoutes from "./routes/pipeline.route";
 import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
 import callRoutes from "./routes/call.route";
+import dashboardRoutes from "./routes/dashboard.route";
 
 import { initWs } from "./ws";
 import { getProfile } from "./controller/userController";
@@ -98,6 +99,8 @@ async function main() {
 
   // ✅ Calls
   app.use("/api/calls", callRoutes);
+  // ✅ Dashboard
+  app.use("/api/dashboard", dashboardRoutes);
 
   // ✅ profile route
   app.get("/api/myprofile/:id", getProfile);

@@ -51,6 +51,7 @@ interface Deal {
   endDate?: Date;
   assignedSales?: string;
   files?: string[];
+  quotationFiles?: string[];
   priceOffered?: number;
   terms?: string;
   quotationNumbers?: string[];
@@ -97,6 +98,11 @@ const StageBased = () => {
   const [deals, setDeals] = useState<Deal[]>([]);
   const [salesList, setSalesList] = useState<{ id: number; name: string }[]>([]);
 
+  const storedUser = localStorage.getItem("user");
+  const userObj = storedUser ? JSON.parse(storedUser) : null;
+  const role = (userObj?.role || "GUEST").toUpperCase();
+  const userId = userObj?.id;
+
   // ─── fetch board from backend ───────────────────────────────────────────────
   const fetchBoard = async () => {
     setIsLoading(true);
@@ -142,7 +148,12 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      setDeals(mapped);
+      // โหลด quotationFiles จาก localStorage
+      const withFiles = mapped.map(d => {
+        const saved = localStorage.getItem(`quotationFiles_${d.customerId}`);
+        return saved ? { ...d, quotationFiles: JSON.parse(saved) } : d;
+      });
+      setDeals(withFiles);
     } catch (e: any) {
       console.error(e);
       toast.error("โหลด Pipeline ไม่สำเร็จ");
@@ -165,10 +176,10 @@ const StageBased = () => {
 
 
   const stages = [
-    { id: "contacted", title: "Contacted", color: "bg-blue-500" },
-    { id: "negotiation", title: "Negotiation", color: "bg-yellow-500" },
-    { id: "quotation", title: "Quotation", color: "bg-purple-500" },
-    { id: "closed", title: "Closed Deal", color: "bg-green-500" },
+    { id: "contacted", title: "ติดต่อแล้ว", color: "bg-blue-500" },
+    { id: "negotiation", title: "เจรจาต่อรอง", color: "bg-yellow-500" },
+    { id: "quotation", title: "เสนอราคา", color: "bg-purple-500" },
+    { id: "closed", title: "ปิดการขายสำเร็จ", color: "bg-green-500" },
   ];
 
   const formatCurrency = (value: number) => {
@@ -207,10 +218,20 @@ const StageBased = () => {
     const moving = deals.find(d => d.id === dealId);
     if (!moving || moving.stage === newStage) { setActiveDeal(null); return; }
 
+    // ✅ ย้ายได้เฉพาะไปข้างหน้าเท่านั้น
+    const stageOrder = ["contacted", "negotiation", "quotation", "closed"];
+    const fromIdx = stageOrder.indexOf(moving.stage);
+    const toIdx = stageOrder.indexOf(newStage);
+    if (toIdx <= fromIdx) {
+      toast.error("ไม่สามารถย้ายย้อนกลับได้ ย้ายไปข้างหน้าเท่านั้น");
+      setActiveDeal(null);
+      return;
+    }
+
     // optimistic update
     const prev = deals;
     setDeals(p => p.map(d => d.id === dealId ? { ...d, stage: newStage } : d));
-    toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} แล้ว`);
+    toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} เรียบร้อย`);
     setActiveDeal(null);
 
     try {
@@ -231,18 +252,56 @@ const StageBased = () => {
   const handleSaveChanges = async () => {
     if (!selectedDeal) return;
 
+    // บันทึก quotationFiles ลง localStorage
+    if (selectedDeal.quotationFiles) {
+      localStorage.setItem(`quotationFiles_${selectedDeal.customerId}`, JSON.stringify(selectedDeal.quotationFiles));
+    } else {
+      localStorage.removeItem(`quotationFiles_${selectedDeal.customerId}`);
+    }
+
     // อัปเดต local state ทันที
     setDeals(p => p.map(d => d.id === selectedDeal.id ? selectedDeal : d));
 
     try {
-      // sync stage กับ backend
-      await fetch(`${API_BASE}/api/pipeline/move`, {
+      // 1. อัปเดตข้อมูลลูกค้า (ชื่อ, เบอร์, อสังหา, งบประมาณ, เซลล์)
+      const saleObj = salesList.find(s => s.name === selectedDeal.assignedSales);
+      await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({
+          name: selectedDeal.customerName,
+          phone: selectedDeal.phone,
+          productType: selectedDeal.propertyType,
+          budget: selectedDeal.budget,
+          saleId: saleObj ? saleObj.id : undefined,
+        }),
+      });
+
+      // 2. sync stage กับ backend พร้อมรายละเอียด (ปิดดีล, etc.)
+      const movePayload: any = {
+        customerId: selectedDeal.customerId,
+        toStatus: uiToApi(currentStage),
+      };
+
+      // เพิ่ม details ตาม stage
+      if (currentStage === "closed") {
+        movePayload.closedResult = selectedDeal.dealStatus === "won" ? "WON" : "LOST";
+        movePayload.finalValue = selectedDeal.finalValue;
+        // remark: Note is not saved properly in original UI, using fallback or empty
+      }
+
+      const res = await fetch(`${API_BASE}/api/pipeline/move`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ customerId: selectedDeal.customerId, toStatus: uiToApi(currentStage) }),
+        body: JSON.stringify(movePayload),
       });
+      
+      if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
+
       toast.success("บันทึกข้อมูลสำเร็จ");
-    } catch {
+      fetchBoard(); // Reload board to get exact dates and values
+    } catch (e: any) {
+      console.error(e);
       toast.error("บันทึกไม่สำเร็จ");
     }
 
@@ -253,11 +312,40 @@ const StageBased = () => {
   const DealCard = ({ deal }: { deal: Deal }) => {
     const [isStatusOpen, setIsStatusOpen] = useState(false);
 
+    // ✅ แปลง enum ภาษาอังกฤษจาก backend เป็นภาษาไทย
+    const statusToThai = (status: string | undefined, stage: string): string => {
+      const map: Record<string, string> = {
+        // Contacted
+        "FOLLOWING_UP": "กำลังติดตาม",
+        "WAITING_REPLY": "รอลูกค้าตอบกลับ",
+        "APPOINTED": "นัดพบแล้ว",
+        "NOT_INTERESTED": "ลูกค้าไม่สนใจ",
+        // Negotiation
+        "NEGOTIATING": "อยู่ระหว่างเจรจา",
+        "WAITING_CONFIRM": "รอลูกค้ายืนยัน",
+        "COUNTER_OFFER": "ลูกค้าต่อราคา",
+        "PAUSED": "ชะลอการเจรจา",
+        // Closed
+        "WON": "ปิดการขายสำเร็จ",
+        "LOST": "ปิดการขายไม่สำเร็จ",
+        "CLOSED": "ปิดการขายแล้ว",
+      };
+      if (status && map[status]) return map[status];
+      // ถ้า status เป็นภาษาไทยอยู่แล้ว (จาก dropdown)
+      if (status && !status.match(/^[A-Z_]+$/)) return status;
+      // fallback ตาม stage
+      if (stage === "contacted") return "กำลังติดตาม";
+      if (stage === "negotiation") return "อยู่ระหว่างเจรจา";
+      if (stage === "quotation") return "ส่งใบเสนอราคาแล้ว";
+      if (stage === "closed") return "ปิดการขายแล้ว";
+      return status || "-";
+    };
+
     const statusOptions = {
-      contacted: ["กำลังติดต่อ", "รอการตอบกลับ", "นัดหมายแล้ว", "ติดต่อไม่ได้"],
-      negotiation: ["เจรจาต่อรอง", "รอการตัดสินใจ", "กำลังพิจารณา", "เตรียมส่งใบเสนอราคา"],
-      quotation: ["รอการตอบกลับ", "กำลังพิจารณาใบเสนอราคา", "ต้องการปรับราคา", "รออนุมัติ"],
-      closed: ["ปิดการขายสำเร็จ", "ไม่สำเร็จ", "ยกเลิก", "รอเซ็นสัญญา"]
+      contacted: ["กำลังติดตาม", "รอลูกค้าตอบกลับ", "นัดพบแล้ว", "ลูกค้าไม่สนใจ"],
+      negotiation: ["อยู่ระหว่างเจรจา", "รอลูกค้ายืนยัน", "ลูกค้าต่อราคา", "ชะลอการเจรจา"],
+      quotation: ["ส่งใบเสนอราคาแล้ว", "ลูกค้ากำลังพิจารณา", "ลูกค้าขอปรับราคา", "รอผู้จัดการอนุมัติ"],
+      closed: ["ปิดการขายสำเร็จ", "ปิดการขายไม่สำเร็จ"]
     };
 
     const handleStatusChange = (newStatus: string, e: React.MouseEvent) => {
@@ -270,13 +358,7 @@ const StageBased = () => {
     };
 
     const getStatusBadge = () => {
-      const currentStatus = deal.status || (
-        deal.stage === "contacted" ? "กำลังติดต่อ" :
-          deal.stage === "negotiation" ? "เจรจาต่อรอง" :
-            deal.stage === "quotation" ? "รอการตอบกลับ" :
-              deal.stage === "closed" && deal.dealStatus === "won" ? "ปิดการขายสำเร็จ" :
-                "ไม่สำเร็จ"
-      );
+      const currentStatus = statusToThai(deal.status, deal.stage);
 
       const getStatusColor = () => {
         if (currentStatus.includes("สำเร็จ") || currentStatus.includes("นัดหมาย")) {
@@ -341,121 +423,105 @@ const StageBased = () => {
               <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
                 <User className="w-4 h-4 text-primary" />
               </div>
-              <div>
-                <div className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                  Name: {deal.customerName}
-                </div>
+              <div className="font-semibold text-foreground group-hover:text-primary transition-colors">
+                {deal.customerName}
               </div>
             </div>
             {getStatusBadge()}
           </div>
 
-          {/* Contact & Property Info */}
+          {/* Contact & Property Info (Inside: Common to all stages) */}
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Phone className="w-3.5 h-3.5" />
-              <span>Contact: {deal.phone}</span>
+              <span>{deal.phone}</span>
             </div>
             <div className="flex items-center gap-2">
               <Home className="w-3.5 h-3.5 text-primary" />
-              <span>Property: {deal.propertyType}</span>
+              <span className="text-muted-foreground">ประเภทอสังหา:</span>
+              <span className="font-medium">{deal.propertyType}</span>
             </div>
             <div className="flex items-center gap-2 font-semibold text-primary">
               <DollarSign className="w-3.5 h-3.5" />
-              <span>Budget: {formatCurrency(deal.budget)}</span>
+              <span className="text-muted-foreground font-normal">งบประมาณ:</span>
+              <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
             </div>
           </div>
 
-          {/* Date and Sales Info */}
+          {/* Start Date - Common to Dialog */}
           {deal.startDate && (
             <div className="text-xs text-muted-foreground pt-2 border-t border-border/50">
-              State date: {format(deal.startDate, "dd MMM yyyy", { locale: th })}
+              วันที่เริ่มต้น: {format(deal.startDate, "dd MMM yyyy", { locale: th })}
             </div>
           )}
-          {deal.assignedSales && (
+
+          {/* Assigned Sales - Only Negotiation+ (Match Dialog visibility) */}
+          {(deal.stage === "negotiation" || deal.stage === "quotation" || deal.stage === "closed") && deal.assignedSales && (
             <div className="text-xs">
-              <span className="text-muted-foreground">Sale:</span>{" "}
+              <span className="text-muted-foreground">พนักงานขายที่ดูแล:</span>{" "}
               <span className="font-medium text-foreground">{deal.assignedSales}</span>
             </div>
           )}
 
-          {/* Quotation Stage Details */}
+          {/* Quotation Stage Details (Match Dialog visibility) */}
           {deal.stage === "quotation" && (
             <div className="space-y-2 pt-2 border-t border-border/50">
-              {deal.quotationNumbers && deal.quotationNumbers.length > 0 && (
+              {deal.priceOffered ? (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">เลขใบเสนอราคา:</span>{" "}
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {deal.quotationNumbers.map((num, idx) => (
-                      <span key={idx} className="inline-block px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium">
-                        {num}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {deal.priceOffered && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Price Offered:</span>{" "}
+                  <span className="text-muted-foreground">ราคาที่เสนอ:</span>{" "}
                   <span className="font-semibold text-primary">{formatCurrency(deal.priceOffered)}</span>
                 </div>
-              )}
-              {deal.terms && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Terms:</span>{" "}
-                  <span className="font-medium text-foreground">{deal.terms}</span>
+              ) : null}
+
+              {deal.quotationFiles && deal.quotationFiles.length > 0 && (
+                <div className="space-y-1">
+                  {deal.quotationFiles.map((qf, i) => (
+                    <div key={i} className="text-[10px] text-primary bg-primary/5 px-2 py-1 rounded-md inline-flex items-center gap-1 mr-1">
+                      <Upload className="w-3 h-3" />
+                      {qf}
+                    </div>
+                  ))}
                 </div>
               )}
+
+              {deal.terms && (
+                <div className="text-xs">
+                  <span className="text-muted-foreground">เงื่อนไขเพิ่มเติม:</span>{" "}
+                  <span className="text-foreground line-clamp-1">{deal.terms}</span>
+                </div>
+              )}
+              {/* {deal.files && deal.files.length > 0 && (
+                <div className="text-[10px] text-primary bg-primary/5 px-2 py-1 rounded-md inline-flex items-center gap-1">
+                  <Upload className="w-3 h-3" />
+                  แนบไฟล์แล้ว {deal.files.length} รายการ
+                </div>
+              )} */}
             </div>
           )}
 
-          {/* Closed Deal Stage Details */}
+          {/* Closed Deal Stage Details (Match Dialog visibility) */}
           {deal.stage === "closed" && (
             <div className="space-y-2 pt-2 border-t border-border/50">
-              {deal.quotationNumbers && deal.quotationNumbers.length > 0 && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">เลขใบเสนอราคา:</span>{" "}
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {deal.quotationNumbers.map((num, idx) => (
-                      <span key={idx} className="inline-block px-2 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium">
-                        {num}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {deal.priceOffered && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Price Offered:</span>{" "}
-                  <span className="font-semibold">{formatCurrency(deal.priceOffered)}</span>
-                </div>
-              )}
-              {deal.terms && (
-                <div className="text-xs">
-                  <span className="text-muted-foreground">Terms:</span>{" "}
-                  <span className="font-medium text-foreground">{deal.terms}</span>
-                </div>
-              )}
               {deal.finalValue && (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">Final Value:</span>{" "}
+                  <span className="text-muted-foreground">มูลค่าสุดท้าย:</span>{" "}
                   <span className="font-bold text-primary">{formatCurrency(deal.finalValue)}</span>
                 </div>
               )}
               {deal.dealStatus && (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">Deal Status:</span>{" "}
+                  <span className="text-muted-foreground">สถานะดีล:</span>{" "}
                   <span className={cn(
                     "font-semibold",
                     deal.dealStatus === "won" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                   )}>
-                    {deal.dealStatus === "won" ? "Won" : "Lost"}
+                    {deal.dealStatus === "won" ? "สำเร็จ" : "ไม่สำเร็จ"}
                   </span>
                 </div>
               )}
               {deal.closingDate && (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">Closing Date:</span>{" "}
+                  <span className="text-muted-foreground">วันที่ปิดการขาย:</span>{" "}
                   <span className="font-medium text-foreground">{format(deal.closingDate, "dd MMM yyyy", { locale: th })}</span>
                 </div>
               )}
@@ -513,7 +579,7 @@ const StageBased = () => {
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>รายละเอียด {stages.find(s => s.id === currentStage)?.title}</DialogTitle>
+              <DialogTitle>รายละเอียดขั้นตอน: {stages.find(s => s.id === currentStage)?.title}</DialogTitle>
               <DialogDescription>
                 {selectedDeal?.customerName}
               </DialogDescription>
@@ -523,10 +589,10 @@ const StageBased = () => {
             <div className="py-2">
               <div className="flex items-center w-full">
                 {[
-                  { id: "contacted", label: "Contacted", step: 1 },
-                  { id: "negotiation", label: "Negotiation", step: 2 },
-                  { id: "quotation", label: "Quotation", step: 3 },
-                  { id: "closed", label: "Closed Deal", step: 4 },
+                  { id: "contacted", label: "ติดต่อแล้ว", step: 1 },
+                  { id: "negotiation", label: "เจรจาต่อรอง", step: 2 },
+                  { id: "quotation", label: "เสนอราคา", step: 3 },
+                  { id: "closed", label: "ปิดการขาย", step: 4 },
                 ].map((s, idx, arr) => {
                   const stageOrder = ["contacted", "negotiation", "quotation", "closed"];
                   const currentIdx = stageOrder.indexOf(currentStage);
@@ -665,9 +731,13 @@ const StageBased = () => {
               {(currentStage === "negotiation" || currentStage === "quotation" || currentStage === "closed") && (
                 <div>
                   <Label>พนักงานขายที่ดูแล</Label>
-                  <Select value={selectedDeal?.assignedSales} onValueChange={(value) => {
-                    if (selectedDeal) setSelectedDeal({ ...selectedDeal, assignedSales: value });
-                  }}>
+                  <Select 
+                    disabled={role === "SALE"}
+                    value={selectedDeal?.assignedSales} 
+                    onValueChange={(value) => {
+                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, assignedSales: value });
+                    }}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="เลือกพนักงานขาย" />
                     </SelectTrigger>
@@ -688,18 +758,19 @@ const StageBased = () => {
               {/* Quotation Stage */}
               {(currentStage === "quotation" || currentStage === "closed") && (
                 <>
+
                   <div>
                     <Label>แนบไฟล์ใบเสนอราคา</Label>
                     <div className="space-y-2">
-                      {selectedDeal?.files && selectedDeal.files.length > 0 && (
+                      {selectedDeal?.quotationFiles && selectedDeal.quotationFiles.length > 0 && (
                         <div className="space-y-1">
-                          {selectedDeal.files.map((f, idx) => (
+                          {selectedDeal.quotationFiles.map((f, idx) => (
                             <div key={idx} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
                               <span className="truncate text-foreground">{f}</span>
                               <button
                                 onClick={() => {
                                   if (selectedDeal) {
-                                    setSelectedDeal({ ...selectedDeal, files: selectedDeal.files?.filter((_, i) => i !== idx) });
+                                    setSelectedDeal({ ...selectedDeal, quotationFiles: selectedDeal.quotationFiles?.filter((_, i) => i !== idx) });
                                   }
                                 }}
                                 className="ml-2 text-muted-foreground hover:text-destructive"
@@ -723,7 +794,7 @@ const StageBased = () => {
                             if (selectedDeal) {
                               setSelectedDeal({
                                 ...selectedDeal,
-                                files: [...(selectedDeal.files || []), ...picked.map(f => f.name)],
+                                quotationFiles: [...(selectedDeal.quotationFiles || []), ...picked.map(f => f.name)],
                               });
                             }
                           };
@@ -736,7 +807,7 @@ const StageBased = () => {
                     </div>
                   </div>
                   <div>
-                    <Label>ราคาที่เสนอ (Price Offered)</Label>
+                    <Label>ราคาที่เสนอ (บาท)</Label>
                     <Input
                       type="number"
                       value={selectedDeal?.priceOffered || ""}
@@ -747,7 +818,7 @@ const StageBased = () => {
                     />
                   </div>
                   <div>
-                    <Label>เงื่อนไข (Terms)</Label>
+                    <Label>เงื่อนไขเพิ่มเติม (Terms)</Label>
                     <Textarea
                       value={selectedDeal?.terms || ""}
                       onChange={(e) => {
@@ -879,16 +950,9 @@ const StageBased = () => {
               </div>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                ยกเลิก
-              </Button>
-              <Button
-                className="gradient-primary text-white hover:opacity-90"
-                onClick={handleSaveChanges}
-              >
-                บันทึก
-              </Button>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>ยกเลิก</Button>
+              <Button onClick={handleSaveChanges} className="gradient-primary text-white">บันทึกการเปลี่ยนแปลง</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
