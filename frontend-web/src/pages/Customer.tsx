@@ -15,8 +15,6 @@ import {
   Search,
   Edit,
   Trash2,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -56,9 +54,6 @@ import { toast } from "sonner";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
-// ==========================
-// TYPE ตรงกับ backend 100%
-// ==========================
 interface Customer {
   id: number;
   name: string;
@@ -76,7 +71,6 @@ interface SaleUser {
   name: string;
 }
 
-// ===== helper แปลงข้อมูลจาก backend → UI =====
 const mapApiCustomerToUi = (c: any): Customer => {
   return {
     id: c.id,
@@ -86,74 +80,71 @@ const mapApiCustomerToUi = (c: any): Customer => {
     productType: c.productType ?? null,
     priceBudget: c.priceBudget ? Number(c.priceBudget) : null,
     saleId: c.saleId ?? null,
-    saleName: c.sale?.name ?? null,
+    saleName: c.sale?.name ?? c.saleName ?? null,
     mainStatus: c.mainStatus ?? "CONTACTED",
   };
 };
 
-// ==============================
-// Component หลัก
-// ==============================
 const Customer = () => {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
-  const ITEMS_PER_PAGE = 10;
-
-  const [newCustomer, setNewCustomer] = useState({
-    name: "",
-    tol: "",
-    email: "",
-  });
-
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
-
   const [salesTeam, setSalesTeam] = useState<SaleUser[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
   const token = localStorage.getItem("token");
   const storedUser = localStorage.getItem("user");
   const user = storedUser ? JSON.parse(storedUser) : null;
-  const role = (user?.role || "GUEST").toUpperCase();
-  const userId = user?.id;
 
-  // =============== โหลดลูกค้าจาก backend ===============
+  const role = String(user?.role || "GUEST").toUpperCase();
+  const isSale = role === "SALE";
+  const isAdmin = role === "ADMIN";
+  const mySaleId = Number(user?.id || 0);
+  const mySaleName = user?.name || "";
+
+  const openEditCustomerDialog = (customer: Customer) => {
+    if (isSale) {
+      setEditCustomer({
+        ...customer,
+        saleId: mySaleId || customer.saleId,
+        saleName: mySaleName || customer.saleName,
+      });
+    } else {
+      setEditCustomer(customer);
+    }
+
+    setIsEditDialogOpen(true);
+  };
+
+  const fetchCustomers = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/customers`, {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+      });
+
+      if (!res.ok) throw new Error("โหลดลูกค้าไม่ได้");
+
+      const data = await res.json();
+      const mapped: Customer[] = data.map(mapApiCustomerToUi);
+      setCustomers(mapped);
+    } catch (err) {
+      console.error(err);
+      toast.error("โหลดข้อมูลลูกค้าจากระบบไม่สำเร็จ");
+    }
+  };
+
   useEffect(() => {
-    const fetchCustomers = async () => {
-      try {
-
-        // Backend จะกรองให้เองถ้าเป็น Role: SALE
-        const endpoint = `${API_BASE}/api/customers`;
-
-        const res = await fetch(endpoint, {
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        });
-        if (!res.ok) throw new Error("โหลดลูกค้าไม่ได้");
-
-        const data = await res.json();
-        const mapped: Customer[] = data.map(mapApiCustomerToUi);
-        setCustomers(mapped);
-      } catch (err) {
-        console.error(err);
-        toast.error("โหลดข้อมูลลูกค้าจากระบบไม่สำเร็จ");
-      }
-    };
-
     fetchCustomers();
   }, []);
 
-  // =============== โหลดเซลล์ ===============
   useEffect(() => {
     const fetchSales = async () => {
       try {
-        const token = localStorage.getItem("token");
-        // ✅ เปลี่ยนไปใช้ API /sales-list ที่อนุญาตให้ทุก role ดึงข้อมูลเซลล์ได้ (ไม่ต้องเป็น admin)
         const res = await fetch(`${API_BASE}/api/users/sales-list`, {
           headers: {
             Authorization: token ? `Bearer ${token}` : "",
@@ -179,10 +170,7 @@ const Customer = () => {
     fetchSales();
   }, []);
 
-  // =============== WebSocket ===============
   useEffect(() => {
-    const token = localStorage.getItem("token");
-
     const socket: Socket = io(API_BASE, {
       transports: ["websocket"],
       extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
@@ -197,28 +185,36 @@ const Customer = () => {
       toast.success(`มีลูกค้าใหม่จากแอป: ${mapped.name}`);
     });
 
+    
+
     socket.on("customer:assigned", (payload: any) => {
       const mapped = mapApiCustomerToUi(payload);
       setCustomers((prev) =>
         prev.map((c) => (c.id === mapped.id ? mapped : c))
       );
+        
     });
 
-    return () => { socket.disconnect(); };
+    return () => {
+      socket.disconnect();
+      
+    };
   }, []);
 
-  // ================================
-  // คำนวณลูกค้าใหม่ (กรณี Admin/Manager = ยังไม่มอบหมาย, กรณี Sale = รายที่มอบหมายให้ตัวเองแล้วแต่ยังอยู่ในขั้น CONTACTED)
-  // ================================
-  const newCustomers = customers.filter((c) => {
-    if (role === "ADMIN" || role === "MANAGER") {
-      return !c.saleId;
-    }
-    if (role === "SALE") {
-      return (c.mainStatus === "CONTACTED" || !c.mainStatus);
-    }
-    return false;
-  });
+const newCustomers = customers.filter((c) => {
+  if (role === "ADMIN" || role === "MANAGER") {
+    return !c.saleId;
+  }
+
+  if (role === "SALE") {
+    return (
+      String(c.mainStatus || "").toUpperCase() === "CONTACTED" &&
+      Number(c.saleId) === Number(mySaleId)
+    );
+  }
+
+  return false;
+});
 
   const filteredCustomers = customers.filter(
     (customer) =>
@@ -233,13 +229,11 @@ const Customer = () => {
       currency: "THB",
       minimumFractionDigits: 0,
     }).format(value);
-  // ================================
-  // มอบหมายเซลล์ (Assign Sales)
-  // ================================
-  const handleAssignSales = async (customerId: number, saleId: number) => {
-    try {
-      const token = localStorage.getItem("token");
 
+  const handleAssignSales = async (customerId: number, saleId: number) => {
+    if (!isAdmin) return;
+
+    try {
       const res = await fetch(
         `${API_BASE}/api/customers/${customerId}/assign-sale`,
         {
@@ -273,78 +267,30 @@ const Customer = () => {
     }
   };
 
-  // ===================================
-  // เพิ่มลูกค้าใหม่ → ยิง POST จริง
-  // ===================================
-  const handleAddCustomer = async () => {
-    if (!newCustomer.name || !newCustomer.tol || !newCustomer.email) {
-      toast.error("กรุณากรอกข้อมูลให้ครบถ้วน");
-      return;
-    }
-
-    try {
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(`${API_BASE}/api/customers`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "",
-        },
-        body: JSON.stringify({
-          name: newCustomer.name,
-          phone: newCustomer.tol,
-          email: newCustomer.email,
-        }),
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body?.message || "เพิ่มลูกค้าใหม่ไม่สำเร็จ");
-        return;
-      }
-
-      const created = await res.json();
-      const mapped = mapApiCustomerToUi(created);
-
-      setCustomers((prev) => [mapped, ...prev]);
-      setNewCustomer({ name: "", tol: "", email: "" });
-      setIsAddDialogOpen(false);
-
-      toast.success("เพิ่มลูกค้าใหม่สำเร็จ");
-    } catch (err) {
-      console.error(err);
-      toast.error("เพิ่มลูกค้าใหม่ไม่สำเร็จ (network)");
-    }
-  };
-
-  // ============================================
-  // แก้ไขข้อมูลลูกค้า → ยิง PUT /api/customers/:id
-  // ============================================
   const handleUpdateCustomer = async () => {
     if (!editCustomer) return;
 
     try {
-      const token = localStorage.getItem("token");
+      const payload: any = {
+        name: editCustomer.name,
+        phone: editCustomer.tol,
+        email: editCustomer.email,
+        productType: editCustomer.productType,
+        budget: editCustomer.priceBudget,
+      };
 
-      const res = await fetch(
-        `${API_BASE}/api/customers/${editCustomer.id}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({
-            name: editCustomer.name,
-            phone: editCustomer.tol,
-            email: editCustomer.email,
-            productType: editCustomer.productType,
-            budget: editCustomer.priceBudget,
-            saleId: editCustomer.saleId ?? null,
-          }),
-        }
-      );
+      if (isAdmin) {
+        payload.saleId = editCustomer.saleId ?? null;
+      }
+
+      const res = await fetch(`${API_BASE}/api/customers/${editCustomer.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify(payload),
+      });
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -360,7 +306,6 @@ const Customer = () => {
       );
 
       toast.success("อัปเดทข้อมูลลูกค้าสำเร็จ");
-
       setIsEditDialogOpen(false);
       setEditCustomer(null);
     } catch (err) {
@@ -368,22 +313,24 @@ const Customer = () => {
       toast.error("อัปเดทข้อมูลลูกค้าไม่สำเร็จ (network)");
     }
   };
-  // ================================
-  // ลบลูกค้า → DELETE /api/customers/:id
-  // ================================
+
   const handleDeleteCustomer = async () => {
     if (!deleteTarget) return;
+
     try {
-      const token = localStorage.getItem("token");
       const res = await fetch(`${API_BASE}/api/customers/${deleteTarget.id}`, {
         method: "DELETE",
-        headers: { Authorization: token ? `Bearer ${token}` : "" },
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
       });
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.message || "ลบลูกค้าไม่สำเร็จ");
         return;
       }
+
       setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
       toast.success(`ลบลูกค้า ${deleteTarget.name} สำเร็จ`);
     } catch (err) {
@@ -394,124 +341,109 @@ const Customer = () => {
     }
   };
 
-  // Pagination
-  const totalPages = Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE);
-  const paginatedCustomers = filteredCustomers.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
-
-  // ======================== UI ========================
   return (
     <div className="container mx-auto p-6 space-y-6">
-
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">ลูกค้า</h1>
       </div>
 
-      {/* การแจ้งเตือนลูกค้าใหม่ */}
       <Card className="shadow-elegant border-l-4 border-l-accent">
         <CardHeader>
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-full gradient-primary animate-pulse">
-                <Bell className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <CardTitle className="text-2xl">การแจ้งเตือนลูกค้าใหม่</CardTitle>
-                <p className="text-muted-foreground mt-1">
-                  มีลูกค้าใหม่ {newCustomers.length} รายรอการติดต่อ
-                </p>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-full gradient-primary animate-pulse">
+              <Bell className="w-6 h-6 text-white" />
             </div>
-          </CardHeader>
+            <div>
+              <CardTitle className="text-2xl">การแจ้งเตือนลูกค้าใหม่</CardTitle>
+              <p className="text-muted-foreground mt-1">
+                มีลูกค้าใหม่ {newCustomers.length} รายรอการติดต่อ
+              </p>
+            </div>
+          </div>
+        </CardHeader>
 
-          <CardContent>
-            <div className="grid gap-4">
-              {newCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="p-6 rounded-xl border-2 border-accent/20 bg-gradient-to-br from-accent/5 to-transparent hover:shadow-card transition-all"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 rounded-full gradient-primary">
-                        <UserPlus className="w-5 h-5 text-white" />
-                      </div>
-
-                      <div>
-                        <h3
-                          className="font-bold text-lg cursor-pointer hover:text-primary"
-                          onClick={() => {
-                            setSelectedCustomer(customer);
-                            setIsDetailDialogOpen(true);
-                          }}
-                        >
-                          {customer.name}
-                        </h3>
-                      </div>
+        <CardContent>
+          <div className="grid gap-4">
+            {newCustomers.map((customer) => (
+              <div
+                key={customer.id}
+                className="p-6 rounded-xl border-2 border-accent/20 bg-gradient-to-br from-accent/5 to-transparent hover:shadow-card transition-all"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-full gradient-primary">
+                      <UserPlus className="w-5 h-5 text-white" />
                     </div>
 
-                    <Badge className="bg-accent text-accent-foreground">
-                      ลูกค้าใหม่
-                    </Badge>
+                    <div>
+                      <h3
+                        className="font-bold text-lg cursor-pointer hover:text-primary"
+                        onClick={() => {
+                          setSelectedCustomer(customer);
+                          setIsDetailDialogOpen(true);
+                        }}
+                      >
+                        {customer.name}
+                      </h3>
+                    </div>
                   </div>
 
-                  <div className="flex items-start justify-between gap-4 mt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+                  <Badge className="bg-accent text-accent-foreground">
+                    ลูกค้าใหม่
+                  </Badge>
+                </div>
 
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-4 h-4 text-primary" />
-                        <span className="text-sm">{customer.tol}</span>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-4 h-4 text-primary" />
-                        <span className="text-sm">{customer.email}</span>
-                      </div>
-
-                      {customer.productType && (
-                        <div className="flex items-center gap-2">
-                          <Home className="w-4 h-4 text-primary" />
-                          <span className="text-sm">{customer.productType}</span>
-                        </div>
-                      )}
-
-                      {customer.priceBudget && (
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="w-4 h-4 text-primary" />
-                          <span className="text-sm font-semibold text-primary">
-                            {formatCurrency(customer.priceBudget)}
-                          </span>
-                        </div>
-                      )}
+                <div className="flex items-start justify-between gap-4 mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-primary" />
+                      <span className="text-sm">{customer.tol}</span>
                     </div>
 
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setEditCustomer(customer);
-                        setIsEditDialogOpen(true);
-                      }}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      แก้ไขข้อมูล
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-primary" />
+                      <span className="text-sm">{customer.email}</span>
+                    </div>
+
+                    {customer.productType && (
+                      <div className="flex items-center gap-2">
+                        <Home className="w-4 h-4 text-primary" />
+                        <span className="text-sm">{customer.productType}</span>
+                      </div>
+                    )}
+
+                    {customer.priceBudget && (
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-semibold text-primary">
+                          {formatCurrency(customer.priceBudget)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
 
-              {newCustomers.length === 0 && (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Bell className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                  <p className="text-lg">ไม่มีลูกค้าใหม่ในขณะนี้</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openEditCustomerDialog(customer)}
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    แก้ไขข้อมูล
+                  </Button>
                 </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+              </div>
+            ))}
 
-      {/* รายชื่อลูกค้าทั้งหมด */}
+            {newCustomers.length === 0 && (
+              <div className="text-center py-12 text-muted-foreground">
+                <Bell className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                <p className="text-lg">ไม่มีลูกค้าใหม่ในขณะนี้</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="shadow-card">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -584,7 +516,7 @@ const Customer = () => {
                     <TableCell>
                       {customer.saleId ? (
                         customer.saleName
-                      ) : (
+                      ) : isAdmin ? (
                         <Select
                           onValueChange={(value) =>
                             handleAssignSales(customer.id, Number(value))
@@ -601,22 +533,37 @@ const Customer = () => {
                             ))}
                           </SelectContent>
                         </Select>
+                      ) : (
+                        <span>{mySaleName || "-"}</span>
                       )}
                     </TableCell>
 
-                    {/* Pipeline Status */}
                     <TableCell>
                       {(() => {
                         const s = customer.mainStatus || "CONTACTED";
                         const map: Record<string, { label: string; color: string }> = {
-                          CONTACTED: { label: "ติดต่อแล้ว", color: "bg-blue-100 text-blue-700" },
-                          NEGOTIATING: { label: "เจรจาต่อรอง", color: "bg-yellow-100 text-yellow-700" },
-                          QUOTATION: { label: "เสนอราคา", color: "bg-purple-100 text-purple-700" },
-                          CLOSED: { label: "ปิดการขาย", color: "bg-green-100 text-green-700" },
+                          CONTACTED: {
+                            label: "ติดต่อแล้ว",
+                            color: "bg-blue-100 text-blue-700",
+                          },
+                          NEGOTIATING: {
+                            label: "เจรจาต่อรอง",
+                            color: "bg-yellow-100 text-yellow-700",
+                          },
+                          QUOTATION: {
+                            label: "เสนอราคา",
+                            color: "bg-purple-100 text-purple-700",
+                          },
+                          CLOSED: {
+                            label: "ปิดการขาย",
+                            color: "bg-green-100 text-green-700",
+                          },
                         };
                         const info = map[s] || map["CONTACTED"];
                         return (
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${info.color}`}>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-semibold ${info.color}`}
+                          >
                             {info.label}
                           </span>
                         );
@@ -628,13 +575,11 @@ const Customer = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            setEditCustomer(customer);
-                            setIsEditDialogOpen(true);
-                          }}
+                          onClick={() => openEditCustomerDialog(customer)}
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
+
                         <Button
                           variant="ghost"
                           size="sm"
@@ -660,7 +605,6 @@ const Customer = () => {
         </CardContent>
       </Card>
 
-      {/* Dialog รายละเอียดลูกค้า */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -668,7 +612,6 @@ const Customer = () => {
             <DialogDescription>ข้อมูลทั้งหมดของลูกค้า</DialogDescription>
           </DialogHeader>
 
-          {/* Pipeline Progress Stepper */}
           <div className="py-2">
             <div className="flex items-center w-full">
               {[
@@ -678,33 +621,49 @@ const Customer = () => {
                 { id: "CLOSED", label: "ปิดการขาย", step: 4 },
               ].map((s, idx, arr) => {
                 const order = ["CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"];
-                const currentIdx = order.indexOf(selectedCustomer?.mainStatus || "CONTACTED");
+                const currentIdx = order.indexOf(
+                  selectedCustomer?.mainStatus || "CONTACTED"
+                );
                 const thisIdx = order.indexOf(s.id);
                 const isDone = thisIdx < currentIdx;
                 const isActive = thisIdx === currentIdx;
+
                 return (
                   <div key={s.id} className="flex items-center flex-1 min-w-0">
                     <div className="flex flex-col items-center flex-shrink-0">
-                      <div className={[
-                        "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all",
-                        isDone ? "bg-primary border-primary text-white" :
-                          isActive ? "bg-primary/20 border-primary text-primary" :
-                            "bg-muted border-border text-muted-foreground"
-                      ].join(" ")}>
+                      <div
+                        className={[
+                          "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all",
+                          isDone
+                            ? "bg-primary border-primary text-white"
+                            : isActive
+                            ? "bg-primary/20 border-primary text-primary"
+                            : "bg-muted border-border text-muted-foreground",
+                        ].join(" ")}
+                      >
                         {isDone ? "✓" : s.step}
                       </div>
-                      <span className={[
-                        "text-[10px] mt-1 font-medium text-center leading-tight",
-                        isActive ? "text-primary" : isDone ? "text-primary/70" : "text-muted-foreground"
-                      ].join(" ")}>
+                      <span
+                        className={[
+                          "text-[10px] mt-1 font-medium text-center leading-tight",
+                          isActive
+                            ? "text-primary"
+                            : isDone
+                            ? "text-primary/70"
+                            : "text-muted-foreground",
+                        ].join(" ")}
+                      >
                         {s.label}
                       </span>
                     </div>
+
                     {idx < arr.length - 1 && (
-                      <div className={[
-                        "h-0.5 flex-1 mx-1 rounded transition-all",
-                        thisIdx < currentIdx ? "bg-primary" : "bg-border"
-                      ].join(" ")} />
+                      <div
+                        className={[
+                          "h-0.5 flex-1 mx-1 rounded transition-all",
+                          thisIdx < currentIdx ? "bg-primary" : "bg-border",
+                        ].join(" ")}
+                      />
                     )}
                   </div>
                 );
@@ -714,7 +673,6 @@ const Customer = () => {
 
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
-
               <div>
                 <Label>ชื่อลูกค้า</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -776,7 +734,6 @@ const Customer = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog แก้ไขลูกค้า */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -787,16 +744,13 @@ const Customer = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-
             <div>
               <Label>ชื่อลูกค้า</Label>
               <Input
                 value={editCustomer?.name || ""}
                 onChange={(e) =>
                   setEditCustomer(
-                    editCustomer
-                      ? { ...editCustomer, name: e.target.value }
-                      : null
+                    editCustomer ? { ...editCustomer, name: e.target.value } : null
                   )
                 }
               />
@@ -808,9 +762,7 @@ const Customer = () => {
                 value={editCustomer?.tol || ""}
                 onChange={(e) =>
                   setEditCustomer(
-                    editCustomer
-                      ? { ...editCustomer, tol: e.target.value }
-                      : null
+                    editCustomer ? { ...editCustomer, tol: e.target.value } : null
                   )
                 }
               />
@@ -822,9 +774,7 @@ const Customer = () => {
                 value={editCustomer?.email || ""}
                 onChange={(e) =>
                   setEditCustomer(
-                    editCustomer
-                      ? { ...editCustomer, email: e.target.value }
-                      : null
+                    editCustomer ? { ...editCustomer, email: e.target.value } : null
                   )
                 }
               />
@@ -836,9 +786,7 @@ const Customer = () => {
                 value={editCustomer?.productType || ""}
                 onValueChange={(value) =>
                   setEditCustomer(
-                    editCustomer
-                      ? { ...editCustomer, productType: value }
-                      : null
+                    editCustomer ? { ...editCustomer, productType: value } : null
                   )
                 }
               >
@@ -859,14 +807,14 @@ const Customer = () => {
               <Label>งบประมาณ</Label>
               <Input
                 type="number"
-                value={editCustomer?.priceBudget || ""}
+                value={editCustomer?.priceBudget ?? ""}
                 onChange={(e) =>
                   setEditCustomer(
                     editCustomer
                       ? {
-                        ...editCustomer,
-                        priceBudget: Number(e.target.value),
-                      }
+                          ...editCustomer,
+                          priceBudget: e.target.value ? Number(e.target.value) : null,
+                        }
                       : null
                   )
                 }
@@ -875,34 +823,43 @@ const Customer = () => {
 
             <div>
               <Label>พนักงานที่ดูแล</Label>
-              <Select
-                value={String(editCustomer?.saleId || "")}
-                onValueChange={(value) =>
-                  setEditCustomer(
-                    editCustomer
-                      ? {
-                        ...editCustomer,
-                        saleId: Number(value),
-                        saleName:
-                          salesTeam.find((s) => s.id === Number(value))
-                            ?.name || null,
-                      }
-                      : null
-                  )
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกพนักงาน" />
-                </SelectTrigger>
 
-                <SelectContent>
-                  {salesTeam.map((sale) => (
-                    <SelectItem key={sale.id} value={String(sale.id)}>
-                      {sale.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isAdmin ? (
+                <Select
+                  value={String(editCustomer?.saleId || "")}
+                  onValueChange={(value) =>
+                    setEditCustomer(
+                      editCustomer
+                        ? {
+                            ...editCustomer,
+                            saleId: Number(value),
+                            saleName:
+                              salesTeam.find((s) => s.id === Number(value))?.name ||
+                              null,
+                          }
+                        : null
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกพนักงาน" />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {salesTeam.map((sale) => (
+                      <SelectItem key={sale.id} value={String(sale.id)}>
+                        {sale.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={mySaleName || editCustomer?.saleName || ""}
+                  disabled
+                  readOnly
+                />
+              )}
             </div>
           </div>
 
@@ -920,7 +877,28 @@ const Customer = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div >
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบลูกค้า</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบลูกค้า {deleteTarget?.name || ""} ใช่หรือไม่
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCustomer}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              ลบลูกค้า
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 };
 
