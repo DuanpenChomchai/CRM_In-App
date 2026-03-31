@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useSocketRoom, generateCid, getSocket } from "../../store/socket";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -176,6 +176,10 @@ const AudioMessagePlayer = ({ item, isMe, textColor, subColor, onRefresh }: any)
         if (isPlaying) {
           await sound.pauseAsync();
         } else {
+          // If the position is at the end, reset to 0 before playing
+          if (position >= duration && duration > 0) {
+            await sound.setPositionAsync(0);
+          }
           await sound.playAsync();
         }
         return;
@@ -188,13 +192,14 @@ const AudioMessagePlayer = ({ item, isMe, textColor, subColor, onRefresh }: any)
 
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: item.uri },
-        { shouldPlay: true },
+        { shouldPlay: true, isLooping: false },
         (status) => {
           if (status.isLoaded) {
             setDuration(status.durationMillis || 0);
             setPosition(status.positionMillis || 0);
             setIsPlaying(status.isPlaying);
             if (status.didJustFinish) {
+              newSound.pauseAsync();
               newSound.setPositionAsync(0);
               setIsPlaying(false);
             }
@@ -207,6 +212,18 @@ const AudioMessagePlayer = ({ item, isMe, textColor, subColor, onRefresh }: any)
     }
   };
 
+  const skipBackward = async () => {
+    if (!sound) return;
+    const newPos = Math.max(0, position - 10000);
+    await sound.setPositionAsync(newPos);
+  };
+
+  const skipForward = async () => {
+    if (!sound) return;
+    const newPos = Math.min(duration, position + 10000);
+    await sound.setPositionAsync(newPos);
+  };
+
   const formatAudioTime = (millis: number) => {
     const totalSeconds = Math.floor(millis / 1000);
     const m = Math.floor(totalSeconds / 60);
@@ -215,21 +232,65 @@ const AudioMessagePlayer = ({ item, isMe, textColor, subColor, onRefresh }: any)
   };
 
   return (
-    <View className="flex-row items-center" style={{ width: 200 }}>
-      <Pressable
-        onPress={loadAndPlay}
-        className={`w-10 h-10 rounded-full mr-3 items-center justify-center ${isMe ? "bg-emerald-700" : "bg-gray-200"}`}
-      >
-        <Ionicons name={isPlaying ? "pause" : "play"} size={20} color={isMe ? "#fff" : "#374151"} style={{ marginLeft: isPlaying ? 0 : 2 }} />
-      </Pressable>
-      <View className="flex-1">
-        <View className="h-1 bg-gray-300 rounded-full overflow-hidden mb-1">
-          <View className={`${isMe ? "bg-emerald-100" : "bg-emerald-500"} h-full`} style={{ width: duration > 0 ? `${(position / duration) * 100}%` : '0%' }} />
+    <View style={{ width: 240, paddingVertical: 4 }}>
+      {/* ── Header: Phone icon & Title ── */}
+      <View className="flex-row items-center mb-4">
+        <View
+          className={`w-10 h-10 rounded-full ${isMe ? "bg-emerald-700" : "bg-gray-200"} items-center justify-center mr-3`}
+        >
+          <Ionicons name="mic" size={20} color={isMe ? "#fff" : "#111827"} />
         </View>
-        <Text className={`${subColor} text-[10px]`}>
-          {formatAudioTime(position)} {duration > 0 && `/ ${formatAudioTime(duration)}`} 
-          {!item.uri && !duration && " (Tap to load)"}
-        </Text>
+        <View>
+          <Text className={`${textColor} text-[15px] font-medium`}>
+            การโทรแบบเสียง
+          </Text>
+          <Text className={`${subColor} text-[12px] mt-0.5`}>
+            บันทึกเสียงสนทนา
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Audio Player Controls ── */}
+      <View className="mt-1">
+        {/* Progress Bar & Times */}
+        <View className="mb-1">
+          <View className="h-1.5 rounded-full overflow-hidden mb-1.5" style={{ backgroundColor: isMe ? "rgba(255,255,255,0.3)" : "#E5E7EB" }}>
+            <View className={`${isMe ? "bg-white" : "bg-emerald-500"} h-full`} style={{ width: duration > 0 ? `${(position / duration) * 100}%` : '0%' }} />
+          </View>
+          <View className="flex-row justify-between">
+            <Text className={`${subColor} text-[10px] font-medium`}>
+              {formatAudioTime(position)}
+            </Text>
+            {duration > 0 ? (
+              <Text className={`${subColor} text-[10px] font-medium`}>
+                {formatAudioTime(duration)}
+              </Text>
+            ) : !item.uri ? (
+              <Text className={`${subColor} text-[10px] font-medium`}>แตะเพื่อโหลด</Text>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Playback Buttons (Centered Below) */}
+        <View className="flex-row items-center justify-center pt-1 mb-1">
+          {/* Skip Back */}
+          <Pressable onPress={skipBackward} className="mr-6" style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <MaterialIcons name="replay-10" size={26} color={isMe ? "#fff" : "#374151"} />
+          </Pressable>
+
+          <Pressable
+            onPress={loadAndPlay}
+            className={`w-11 h-11 rounded-full items-center justify-center ${isMe ? "bg-emerald-700" : "bg-gray-200"}`}
+            style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+          >
+            <Ionicons name={isPlaying ? "pause" : "play"} size={22} color={isMe ? "#fff" : "#374151"} style={{ marginLeft: isPlaying ? 0 : 3 }} />
+          </Pressable>
+
+          {/* Skip Forward */}
+          <Pressable onPress={skipForward} className="ml-6" style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}>
+            <MaterialIcons name="forward-10" size={26} color={isMe ? "#fff" : "#374151"} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
