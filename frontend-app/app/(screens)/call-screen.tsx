@@ -172,16 +172,24 @@ export default function CallScreen() {
     }
   };
 
-  const stopAndUploadRecording = async () => {
+  const safelyStopRecording = async () => {
     if (!recordingRef.current) return null;
+    const rec = recordingRef.current;
+    recordingRef.current = null;
+    setIsRecording(false);
     try {
-      await recordingRef.current.stopAndUnloadAsync();
-      const uri = recordingRef.current.getURI();
-      setIsRecording(false);
-      recordingRef.current = null;
-      console.log("✅ Stopped recording, uri:", uri);
-      
+      await rec.stopAndUnloadAsync();
+    } catch(e) {
+      console.warn("Already stopped or error stopping:", e);
+    }
+    return rec.getURI();
+  };
+
+  const stopAndUploadRecording = async () => {
+    try {
+      const uri = await safelyStopRecording();
       if (!uri || !token) return null;
+      console.log("✅ Stopped recording, uri:", uri);
       
       const safeUri = Platform.OS === "ios" && uri.startsWith("file://") ? uri.replace("file://", "") : uri;
       const fileName = `call_record_${Date.now()}.m4a`;
@@ -361,7 +369,7 @@ export default function CallScreen() {
             if (finalDuration > 0) {
               uploadedFile = await stopAndUploadRecording();
             } else {
-              if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
+              await safelyStopRecording();
             }
             
             await fetch(`${API_BASE_URL}/chat/send`, {
@@ -472,7 +480,7 @@ export default function CallScreen() {
           if (durationSec > 0) {
             uploadedFile = await stopAndUploadRecording();
           } else {
-            if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
+            await safelyStopRecording();
           }
 
           await fetch(`${API_BASE_URL}/chat/send`, {
@@ -495,7 +503,7 @@ export default function CallScreen() {
           console.log(`✅ Sent call message to chat (${chatText}), attached audio: ${!!uploadedFile}`);
         } else {
           // If we're not sending a message, stop recording and discard
-          if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
+          await safelyStopRecording();
         }
 
       } catch (err) {
