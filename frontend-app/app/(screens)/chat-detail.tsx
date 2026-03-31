@@ -991,33 +991,6 @@ export default function ChatDetailScreen() {
 
     return (
       <>
-        {showDateDivider && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginVertical: 12,
-              paddingHorizontal: 8,
-            }}
-          >
-            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
-            <View
-              style={{
-                backgroundColor: "#F3F4F6",
-                borderRadius: 12,
-                paddingHorizontal: 12,
-                paddingVertical: 4,
-                marginHorizontal: 10,
-              }}
-            >
-              <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "500" }}>
-                {formatDateLabel(item.ts)}
-              </Text>
-            </View>
-            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
-          </View>
-        )}
-
         <View className={`mb-2 ${align}`}>
           <View
             className={`rounded-2xl px-3 py-2 ${bg}`}
@@ -1131,24 +1104,25 @@ export default function ChatDetailScreen() {
                       } items-center justify-center mr-2`}
                     >
                       <Ionicons
-                        name="document-text-outline"
+                        name="document-outline"
                         size={18}
-                        color={isMe ? "#ffffff" : "#111827"}
+                        color={isMe ? "#fff" : "#374151"}
                       />
                     </View>
-
-                    <Text className={`${subColor} text-[11px]`}>
-                      {item.mimeType?.includes("pdf") ? "PDF" : item.mimeType ?? "file"}
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        className={`${textColor} text-[13px] font-medium`}
+                        numberOfLines={2}
+                      >
+                        {item.name || "ไฟล์แนบ"}
+                      </Text>
+                      {item.size != null && (
+                        <Text className={`${subColor} text-[11px] mt-0.5`}>
+                          {(item.size / 1024).toFixed(1)} KB
+                        </Text>
+                      )}
+                    </View>
                   </View>
-
-                  <Text
-                    className={`${textColor} text-[14px] mt-1`}
-                    numberOfLines={2}
-                    style={{ flexShrink: 1 }}
-                  >
-                    {item.name || "ไฟล์แนบ"}
-                  </Text>
                 </Pressable>
 
                 {!item.uri && item.fileKey ? (
@@ -1163,7 +1137,7 @@ export default function ChatDetailScreen() {
             )}
           </View>
 
-          {/* ✅ เวลา + Read — วางหลัง Bubble เพื่อให้แสดงผลด้านล่าง */}
+          {/* ✅ เวลา + Read */}
           <View className="flex-row items-center mt-1" style={{ gap: 4 }}>
             <Text className="text-[10px] text-gray-400">{item.time}</Text>
             {isMe && item.readByOther && (
@@ -1171,6 +1145,34 @@ export default function ChatDetailScreen() {
             )}
           </View>
         </View>
+
+        {/* ── Date Divider — render หลัง bubble เพื่อให้ขึ้นแสดงเหนือ bubble ใน inverted FlatList ── */}
+        {showDateDivider && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginVertical: 12,
+              paddingHorizontal: 8,
+            }}
+          >
+            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+            <View
+              style={{
+                backgroundColor: "#F3F4F6",
+                borderRadius: 12,
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                marginHorizontal: 10,
+              }}
+            >
+              <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "500" }}>
+                {formatDateLabel(item.ts)}
+              </Text>
+            </View>
+            <View style={{ flex: 1, height: 1, backgroundColor: "#E5E7EB" }} />
+          </View>
+        )}
       </>
     );
   };
