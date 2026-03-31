@@ -24,6 +24,7 @@ import { API_BASE_URL } from "../../config/api";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import { Audio } from "expo-av";
 
 
 // ===============================
@@ -152,6 +153,87 @@ const mergeAndDedupe = (lists: Msg[][]) => {
   return Array.from(map.values()).sort((x, y) => x.ts - y.ts);
 };
 /** =============================== */
+
+const AudioMessagePlayer = ({ item, isMe, textColor, subColor, onRefresh }: any) => {
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [position, setPosition] = useState(0);
+
+  useEffect(() => {
+    return sound ? () => { sound.unloadAsync(); } : undefined;
+  }, [sound]);
+
+  const loadAndPlay = async () => {
+    try {
+      if (!item.uri) {
+        if (onRefresh) await onRefresh();
+        // Return so the user has to tap again once the URI is loaded
+        return; 
+      }
+      
+      if (sound) {
+        if (isPlaying) {
+          await sound.pauseAsync();
+        } else {
+          await sound.playAsync();
+        }
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+      });
+
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri: item.uri },
+        { shouldPlay: true },
+        (status) => {
+          if (status.isLoaded) {
+            setDuration(status.durationMillis || 0);
+            setPosition(status.positionMillis || 0);
+            setIsPlaying(status.isPlaying);
+            if (status.didJustFinish) {
+              newSound.setPositionAsync(0);
+              setIsPlaying(false);
+            }
+          }
+        }
+      );
+      setSound(newSound);
+    } catch (err) {
+      console.log("Audio play error", err);
+    }
+  };
+
+  const formatAudioTime = (millis: number) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  return (
+    <View className="flex-row items-center" style={{ width: 200 }}>
+      <Pressable
+        onPress={loadAndPlay}
+        className={`w-10 h-10 rounded-full mr-3 items-center justify-center ${isMe ? "bg-emerald-700" : "bg-gray-200"}`}
+      >
+        <Ionicons name={isPlaying ? "pause" : "play"} size={20} color={isMe ? "#fff" : "#374151"} style={{ marginLeft: isPlaying ? 0 : 2 }} />
+      </Pressable>
+      <View className="flex-1">
+        <View className="h-1 bg-gray-300 rounded-full overflow-hidden mb-1">
+          <View className={`${isMe ? "bg-emerald-100" : "bg-emerald-500"} h-full`} style={{ width: duration > 0 ? `${(position / duration) * 100}%` : '0%' }} />
+        </View>
+        <Text className={`${subColor} text-[10px]`}>
+          {formatAudioTime(position)} {duration > 0 && `/ ${formatAudioTime(duration)}`} 
+          {!item.uri && !duration && " (Tap to load)"}
+        </Text>
+      </View>
+    </View>
+  );
+};
 
 export default function ChatDetailScreen() {
   const router = useRouter();
@@ -1091,6 +1173,8 @@ export default function ChatDetailScreen() {
                   )}
                 </Pressable>
               </>
+            ) : item.type === "file" && (item.mimeType?.startsWith("audio") || item.name?.endsWith(".m4a")) ? (
+              <AudioMessagePlayer item={item} isMe={isMe} textColor={textColor} subColor={subColor} onRefresh={() => refreshSignedForMessage(item)} />
             ) : (
               <>
                 <Pressable

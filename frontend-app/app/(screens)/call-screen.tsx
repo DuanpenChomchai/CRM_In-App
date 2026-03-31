@@ -7,6 +7,7 @@ import {
   Image,
   Animated,
   Easing,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -57,6 +58,10 @@ export default function CallScreen() {
   const messageSentRef = useRef(false);
   const [avatarError, setAvatarError] = useState(false);
   const [zegoReady, setZegoReady] = useState(false);
+
+  // ─── Recording State ───
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   // ─── Permission Check ───
   useEffect(() => {
@@ -148,6 +153,57 @@ export default function CallScreen() {
   // =========================================================
   // UPDATE call status when phase changes
   // =========================================================
+  
+  const startLocalRecording = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      setIsRecording(true);
+      console.log("✅ Started local recording");
+    } catch (err) {
+      console.error("❌ Failed to start recording:", err);
+    }
+  };
+
+  const stopAndUploadRecording = async () => {
+    if (!recordingRef.current) return null;
+    try {
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      setIsRecording(false);
+      recordingRef.current = null;
+      console.log("✅ Stopped recording, uri:", uri);
+      
+      if (!uri || !token) return null;
+      
+      const safeUri = Platform.OS === "ios" && uri.startsWith("file://") ? uri.replace("file://", "") : uri;
+      const fileName = `call_record_${Date.now()}.m4a`;
+      const mimeType = "audio/m4a";
+      
+      const formData = new FormData();
+      formData.append("file", { uri: safeUri, name: fileName, type: mimeType } as any);
+      
+      const res = await fetch(`${API_BASE_URL}/chat/upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        body: formData,
+      });
+      
+      if (!res.ok) throw new Error("Upload failed");
+      return await res.json();
+    } catch (e) {
+      console.error("❌ stopAndUploadRecording error:", e);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (!callId || !token) return;
 
@@ -169,6 +225,7 @@ export default function CallScreen() {
 
     if (phase === "active") {
       updateStatus("ONGOING");
+      startLocalRecording();
     }
   }, [phase, callId, token]);
 
@@ -294,10 +351,19 @@ export default function CallScreen() {
           try {
             const finalDuration = payload.durationSec ?? seconds;
             const effectiveRoomId = customerId ? `cust:${customerId}` : "general";
-            // ถ้าไม่มีระยะเวลาสนทนา = ไม่ได้รับสาย
+            
             const chatText = finalDuration > 0
               ? `[CALL_ENDED]:${finalDuration}`
               : `[CALL_CANCELED]`;
+              
+            // ─── Upload Audio (if available and duration > 0) ───
+            let uploadedFile = null;
+            if (finalDuration > 0) {
+              uploadedFile = await stopAndUploadRecording();
+            } else {
+              if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
+            }
+            
             await fetch(`${API_BASE_URL}/chat/send`, {
               method: "POST",
               headers: {
@@ -307,8 +373,12 @@ export default function CallScreen() {
               body: JSON.stringify({
                 roomId: effectiveRoomId,
                 customerId: customerId ? Number(customerId) : null,
-                type: "TEXT",
+                type: uploadedFile ? "FILE" : "TEXT",
                 text: chatText,
+                fileKey: uploadedFile?.fileKey || undefined,
+                fileName: uploadedFile?.fileName || undefined,
+                fileMime: uploadedFile?.mimeType || undefined,
+                fileSize: uploadedFile?.size || undefined,
               }),
             });
           } catch(e) { console.error("Error sending proxy call ended message", e) }
@@ -392,10 +462,19 @@ export default function CallScreen() {
           const effectiveRoomId = customerId 
             ? `cust:${customerId}` 
             : "general";
-          // ถ้าไม่มีระยะเวลาสนทนา = ไม่ได้รับสาย
+            
           const chatText = durationSec > 0
             ? `[CALL_ENDED]:${durationSec}`
             : `[CALL_CANCELED]`;
+            
+          // ─── Upload Audio (if available and duration > 0) ───
+          let uploadedFile = null;
+          if (durationSec > 0) {
+            uploadedFile = await stopAndUploadRecording();
+          } else {
+            if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
+          }
+
           await fetch(`${API_BASE_URL}/chat/send`, {
               method: "POST",
               headers: {
@@ -405,11 +484,18 @@ export default function CallScreen() {
               body: JSON.stringify({
                 roomId: effectiveRoomId,
                 customerId: customerId ? Number(customerId) : null,
-                type: "TEXT",
+                type: uploadedFile ? "FILE" : "TEXT",
                 text: chatText,
+                fileKey: uploadedFile?.fileKey || undefined,
+                fileName: uploadedFile?.fileName || undefined,
+                fileMime: uploadedFile?.mimeType || undefined,
+                fileSize: uploadedFile?.size || undefined,
               }),
           });
-          console.log(`✅ Sent call message to chat (${chatText})`);
+          console.log(`✅ Sent call message to chat (${chatText}), attached audio: ${!!uploadedFile}`);
+        } else {
+          // If we're not sending a message, stop recording and discard
+          if (recordingRef.current) await recordingRef.current.stopAndUnloadAsync();
         }
 
       } catch (err) {
