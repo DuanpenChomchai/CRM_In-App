@@ -22,7 +22,7 @@ const toPipelineKey = (mainStatus: string): PipelineStatus | null => {
 export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
   try {
     const me = req.user!;
-    const isSale = me.role === "SALE";
+    const isSale = (me.role || "").toUpperCase() === "SALE";
 
     const whereBase: any = {};
     if (isSale) whereBase.saleId = me.id;
@@ -155,14 +155,28 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
     }
 
     // SALE ทำได้เฉพาะลูกค้าของตัวเอง
+    const currentCustomer = await prisma.customer.findUnique({
+      where: { id },
+      select: { saleId: true, mainStatus: true },
+    });
+
+    if (!currentCustomer) {
+      return res.status(404).json({ message: "ไม่พบลูกค้า" });
+    }
+
     if (me.role === "SALE") {
-      const c = await prisma.customer.findUnique({
-        where: { id },
-        select: { saleId: true },
-      });
-      if (!c || c.saleId !== me.id) {
+      if (currentCustomer.saleId !== me.id) {
         return res.status(403).json({ message: "ไม่มีสิทธิ์" });
       }
+    }
+
+    // ✅ ย้ายได้เฉพาะไปข้างหน้า (หรืออยู่สเตจเดิมเพื่อบันทึกข้อมูล)
+    const stageOrder: PipelineStatus[] = ["CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"];
+    const currentStatus = currentCustomer.mainStatus === "NEW" ? "CONTACTED" : currentCustomer.mainStatus;
+    const fromIdx = stageOrder.indexOf(currentStatus as PipelineStatus);
+    const toIdx = stageOrder.indexOf(toStatus);
+    if (toIdx < fromIdx) {
+      return res.status(400).json({ message: "ไม่สามารถย้ายย้อนกลับได้ ย้ายไปข้างหน้าหรืออัปเดตสเตจเดิมเท่านั้น" });
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -173,36 +187,56 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
 
       // เขียนรายละเอียด stage แบบ “เสริม” (ใช้โชว์ badge/history)
       if (toStatus === "CONTACTED") {
-        // ✅ schema ใหม่: Contacted เป็น log (many) -> create อย่างเดียวพอ
-        await (tx as any).contacted.create({
-          data: {
-            customerId: id,
-            status: contactedStatus || "FOLLOWING_UP",
-            note: note || null,
-          },
-        });
+        const existing = await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        if (existing) {
+          await (tx as any).contacted.update({
+            where: { id: existing.id },
+            data: { status: contactedStatus || existing.status, note: note !== undefined ? note : existing.note },
+          });
+        } else {
+          await (tx as any).contacted.create({
+            data: { customerId: id, status: contactedStatus || "FOLLOWING_UP", note: note || null },
+          });
+        }
       }
 
       if (toStatus === "NEGOTIATING") {
-        await (tx as any).negotiation.create({
-          data: {
-            customerId: id,
-            status: negotiationStatus || "NEGOTIATING",
-            note: note || null,
-          },
-        });
+        const existing = await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        if (existing) {
+          await (tx as any).negotiation.update({
+             where: { id: existing.id },
+             data: { status: negotiationStatus || existing.status, note: note !== undefined ? note : existing.note },
+          });
+        } else {
+          await (tx as any).negotiation.create({
+            data: { customerId: id, status: negotiationStatus || "NEGOTIATING", note: note || null },
+          });
+        }
       }
 
       if (toStatus === "CLOSED") {
-        await (tx as any).closedDeal.create({
-          data: {
-            customerId: id,
-            result: closedResult || "LOST",
-            note: note || null,
-            userId: me.role === "SALE" ? me.id : null,
-            closingDate: new Date(),
-          },
-        });
+        const existing = await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        if (existing) {
+           await (tx as any).closedDeal.update({
+             where: { id: existing.id },
+             data: { 
+               result: closedResult || existing.result, 
+               note: note !== undefined ? note : existing.note,
+               finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue
+             },
+           });
+        } else {
+          await (tx as any).closedDeal.create({
+            data: {
+              customerId: id,
+              result: closedResult || "LOST",
+              note: note || null,
+              finalValue: req.body.finalValue || null,
+              userId: me.role === "SALE" ? me.id : null,
+              closingDate: new Date(),
+            },
+          });
+        }
       }
 
       return customer;

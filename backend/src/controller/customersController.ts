@@ -2,25 +2,24 @@ import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { Prisma } from "@prisma/client";
 import { getIO } from "../ws";
-
-// ---------- Types ----------
-interface AuthUser {
-  id: number;
-  email: string;
-  role: string;
-}
-
-interface AuthRequest extends Request {
-  user?: AuthUser;
-}
+import { AuthRequest } from "../middlewares/authMiddleware";
 
 /**
  * ดึงลูกค้าทั้งหมด
  * GET /api/customers
  */
-export const getAllCustomers = async (req: Request, res: Response) => {
+export const getAllCustomers = async (req: AuthRequest, res: Response) => {
   try {
+    const userRole = (req.user?.role || "GUEST").toUpperCase();
+    const userId = req.user?.id;
+
+    const whereClause: any = {};
+    if (userRole === "SALE") {
+      whereClause.saleId = userId;
+    }
+
     const customers = await prisma.customer.findMany({
+      where: whereClause,
       include: {
         user: {
           select: {

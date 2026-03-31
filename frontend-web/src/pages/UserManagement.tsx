@@ -36,6 +36,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+
 // ---------- Types ----------
 type UserRole = "admin" | "manager" | "sale";
 
@@ -89,7 +91,7 @@ const UserManagement = () => {
   useEffect(() => {
     const token = localStorage.getItem("token");
 
-    fetch("http://localhost:3000/api/users", {
+    fetch(`${API_BASE}/api/users`, {
       headers: {
         Authorization: "Bearer " + token,
       },
@@ -130,7 +132,7 @@ const UserManagement = () => {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:3000/api/users?role=NOT_CUSTOMER", {
+      const res = await fetch(`${API_BASE}/api/users?role=NOT_CUSTOMER`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -196,7 +198,7 @@ const UserManagement = () => {
 
     try {
       const res = await fetch(
-        `http://localhost:3000/api/users/${editingUser.id}`,
+        `${API_BASE}/api/users/${editingUser.id}`,
         {
           method: "PUT",
           headers: {
@@ -248,7 +250,7 @@ const UserManagement = () => {
 
     try {
       const res = await fetch(
-        `http://localhost:3000/api/users/${deleteUserId}`,
+        `${API_BASE}/api/users/${deleteUserId}`,
         {
           method: "DELETE",
           headers: {

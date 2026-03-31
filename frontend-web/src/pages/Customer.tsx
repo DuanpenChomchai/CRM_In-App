@@ -14,7 +14,20 @@ import {
   UserPlus,
   Search,
   Edit,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -40,6 +53,8 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 // ==========================
 // TYPE ตรงกับ backend 100%
@@ -85,6 +100,9 @@ const Customer = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const ITEMS_PER_PAGE = 10;
 
   const [newCustomer, setNewCustomer] = useState({
     name: "",
@@ -97,12 +115,21 @@ const Customer = () => {
   const [salesTeam, setSalesTeam] = useState<SaleUser[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
 
+  const token = localStorage.getItem("token");
+  const storedUser = localStorage.getItem("user");
+  const user = storedUser ? JSON.parse(storedUser) : null;
+  const role = (user?.role || "GUEST").toUpperCase();
+  const userId = user?.id;
+
   // =============== โหลดลูกค้าจาก backend ===============
   useEffect(() => {
     const fetchCustomers = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/customers", {
+
+        // Backend จะกรองให้เองถ้าเป็น Role: SALE
+        const endpoint = `${API_BASE}/api/customers`;
+
+        const res = await fetch(endpoint, {
           headers: {
             Authorization: token ? `Bearer ${token}` : "",
           },
@@ -126,7 +153,8 @@ const Customer = () => {
     const fetchSales = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("http://localhost:3000/api/users/sales", {
+        // ✅ เปลี่ยนไปใช้ API /sales-list ที่อนุญาตให้ทุก role ดึงข้อมูลเซลล์ได้ (ไม่ต้องเป็น admin)
+        const res = await fetch(`${API_BASE}/api/users/sales-list`, {
           headers: {
             Authorization: token ? `Bearer ${token}` : "",
           },
@@ -155,7 +183,7 @@ const Customer = () => {
   useEffect(() => {
     const token = localStorage.getItem("token");
 
-    const socket: Socket = io("http://localhost:3000", {
+    const socket: Socket = io(API_BASE, {
       transports: ["websocket"],
       extraHeaders: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -180,9 +208,17 @@ const Customer = () => {
   }, []);
 
   // ================================
-  // คำนวณลูกค้าใหม่ (ยังไม่ assign)
+  // คำนวณลูกค้าใหม่ (กรณี Admin/Manager = ยังไม่มอบหมาย, กรณี Sale = รายที่มอบหมายให้ตัวเองแล้วแต่ยังอยู่ในขั้น CONTACTED)
   // ================================
-  const newCustomers = customers.filter((c) => !c.saleId);
+  const newCustomers = customers.filter((c) => {
+    if (role === "ADMIN" || role === "MANAGER") {
+      return !c.saleId;
+    }
+    if (role === "SALE") {
+      return (c.mainStatus === "CONTACTED" || !c.mainStatus);
+    }
+    return false;
+  });
 
   const filteredCustomers = customers.filter(
     (customer) =>
@@ -205,7 +241,7 @@ const Customer = () => {
       const token = localStorage.getItem("token");
 
       const res = await fetch(
-        `http://localhost:3000/api/customers/${customerId}/assign-sale`,
+        `${API_BASE}/api/customers/${customerId}/assign-sale`,
         {
           method: "PATCH",
           headers: {
@@ -249,7 +285,7 @@ const Customer = () => {
     try {
       const token = localStorage.getItem("token");
 
-      const res = await fetch("http://localhost:3000/api/customers", {
+      const res = await fetch(`${API_BASE}/api/customers`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -292,7 +328,7 @@ const Customer = () => {
       const token = localStorage.getItem("token");
 
       const res = await fetch(
-        `http://localhost:3000/api/customers/${editCustomer.id}`,
+        `${API_BASE}/api/customers/${editCustomer.id}`,
         {
           method: "PUT",
           headers: {
@@ -332,6 +368,39 @@ const Customer = () => {
       toast.error("อัปเดทข้อมูลลูกค้าไม่สำเร็จ (network)");
     }
   };
+  // ================================
+  // ลบลูกค้า → DELETE /api/customers/:id
+  // ================================
+  const handleDeleteCustomer = async () => {
+    if (!deleteTarget) return;
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`${API_BASE}/api/customers/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: { Authorization: token ? `Bearer ${token}` : "" },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.message || "ลบลูกค้าไม่สำเร็จ");
+        return;
+      }
+      setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+      toast.success(`ลบลูกค้า ${deleteTarget.name} สำเร็จ`);
+    } catch (err) {
+      console.error(err);
+      toast.error("ลบลูกค้าไม่สำเร็จ (network)");
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
+
+  // Pagination
+  const totalPages = Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE);
+  const paginatedCustomers = filteredCustomers.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
   // ======================== UI ========================
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -343,104 +412,104 @@ const Customer = () => {
       {/* การแจ้งเตือนลูกค้าใหม่ */}
       <Card className="shadow-elegant border-l-4 border-l-accent">
         <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-3 rounded-full gradient-primary animate-pulse">
-              <Bell className="w-6 h-6 text-white" />
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-full gradient-primary animate-pulse">
+                <Bell className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl">การแจ้งเตือนลูกค้าใหม่</CardTitle>
+                <p className="text-muted-foreground mt-1">
+                  มีลูกค้าใหม่ {newCustomers.length} รายรอการติดต่อ
+                </p>
+              </div>
             </div>
-            <div>
-              <CardTitle className="text-2xl">การแจ้งเตือนลูกค้าใหม่</CardTitle>
-              <p className="text-muted-foreground mt-1">
-                มีลูกค้าใหม่ {newCustomers.length} รายรอการติดต่อ
-              </p>
-            </div>
-          </div>
-        </CardHeader>
+          </CardHeader>
 
-        <CardContent>
-          <div className="grid gap-4">
-            {newCustomers.map((customer) => (
-              <div
-                key={customer.id}
-                className="p-6 rounded-xl border-2 border-accent/20 bg-gradient-to-br from-accent/5 to-transparent hover:shadow-card transition-all"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-full gradient-primary">
-                      <UserPlus className="w-5 h-5 text-white" />
+          <CardContent>
+            <div className="grid gap-4">
+              {newCustomers.map((customer) => (
+                <div
+                  key={customer.id}
+                  className="p-6 rounded-xl border-2 border-accent/20 bg-gradient-to-br from-accent/5 to-transparent hover:shadow-card transition-all"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 rounded-full gradient-primary">
+                        <UserPlus className="w-5 h-5 text-white" />
+                      </div>
+
+                      <div>
+                        <h3
+                          className="font-bold text-lg cursor-pointer hover:text-primary"
+                          onClick={() => {
+                            setSelectedCustomer(customer);
+                            setIsDetailDialogOpen(true);
+                          }}
+                        >
+                          {customer.name}
+                        </h3>
+                      </div>
                     </div>
 
-                    <div>
-                      <h3
-                        className="font-bold text-lg cursor-pointer hover:text-primary"
-                        onClick={() => {
-                          setSelectedCustomer(customer);
-                          setIsDetailDialogOpen(true);
-                        }}
-                      >
-                        {customer.name}
-                      </h3>
-                    </div>
+                    <Badge className="bg-accent text-accent-foreground">
+                      ลูกค้าใหม่
+                    </Badge>
                   </div>
 
-                  <Badge className="bg-accent text-accent-foreground">
-                    ลูกค้าใหม่
-                  </Badge>
-                </div>
+                  <div className="flex items-start justify-between gap-4 mt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
 
-                <div className="flex items-start justify-between gap-4 mt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-primary" />
+                        <span className="text-sm">{customer.tol}</span>
+                      </div>
 
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-primary" />
-                      <span className="text-sm">{customer.tol}</span>
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-primary" />
+                        <span className="text-sm">{customer.email}</span>
+                      </div>
+
+                      {customer.productType && (
+                        <div className="flex items-center gap-2">
+                          <Home className="w-4 h-4 text-primary" />
+                          <span className="text-sm">{customer.productType}</span>
+                        </div>
+                      )}
+
+                      {customer.priceBudget && (
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="w-4 h-4 text-primary" />
+                          <span className="text-sm font-semibold text-primary">
+                            {formatCurrency(customer.priceBudget)}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-primary" />
-                      <span className="text-sm">{customer.email}</span>
-                    </div>
-
-                    {customer.productType && (
-                      <div className="flex items-center gap-2">
-                        <Home className="w-4 h-4 text-primary" />
-                        <span className="text-sm">{customer.productType}</span>
-                      </div>
-                    )}
-
-                    {customer.priceBudget && (
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-primary" />
-                        <span className="text-sm font-semibold text-primary">
-                          {formatCurrency(customer.priceBudget)}
-                        </span>
-                      </div>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditCustomer(customer);
+                        setIsEditDialogOpen(true);
+                      }}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      แก้ไขข้อมูล
+                    </Button>
                   </div>
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEditCustomer(customer);
-                      setIsEditDialogOpen(true);
-                    }}
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    แก้ไขข้อมูล
-                  </Button>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            {newCustomers.length === 0 && (
-              <div className="text-center py-12 text-muted-foreground">
-                <Bell className="w-16 h-16 mx-auto mb-4 opacity-20" />
-                <p className="text-lg">ไม่มีลูกค้าใหม่ในขณะนี้</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              {newCustomers.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Bell className="w-16 h-16 mx-auto mb-4 opacity-20" />
+                  <p className="text-lg">ไม่มีลูกค้าใหม่ในขณะนี้</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
       {/* รายชื่อลูกค้าทั้งหมด */}
       <Card className="shadow-card">
@@ -540,10 +609,10 @@ const Customer = () => {
                       {(() => {
                         const s = customer.mainStatus || "CONTACTED";
                         const map: Record<string, { label: string; color: string }> = {
-                          CONTACTED: { label: "Contacted", color: "bg-blue-100 text-blue-700" },
-                          NEGOTIATING: { label: "Negotiation", color: "bg-yellow-100 text-yellow-700" },
-                          QUOTATION: { label: "Quotation", color: "bg-purple-100 text-purple-700" },
-                          CLOSED: { label: "Closed Deal", color: "bg-green-100 text-green-700" },
+                          CONTACTED: { label: "ติดต่อแล้ว", color: "bg-blue-100 text-blue-700" },
+                          NEGOTIATING: { label: "เจรจาต่อรอง", color: "bg-yellow-100 text-yellow-700" },
+                          QUOTATION: { label: "เสนอราคา", color: "bg-purple-100 text-purple-700" },
+                          CLOSED: { label: "ปิดการขาย", color: "bg-green-100 text-green-700" },
                         };
                         const info = map[s] || map["CONTACTED"];
                         return (
@@ -555,16 +624,26 @@ const Customer = () => {
                     </TableCell>
 
                     <TableCell className="text-center">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setEditCustomer(customer);
-                          setIsEditDialogOpen(true);
-                        }}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditCustomer(customer);
+                            setIsEditDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => setDeleteTarget(customer)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -593,10 +672,10 @@ const Customer = () => {
           <div className="py-2">
             <div className="flex items-center w-full">
               {[
-                { id: "CONTACTED", label: "Contacted", step: 1 },
-                { id: "NEGOTIATING", label: "Negotiation", step: 2 },
-                { id: "QUOTATION", label: "Quotation", step: 3 },
-                { id: "CLOSED", label: "Closed Deal", step: 4 },
+                { id: "CONTACTED", label: "ติดต่อแล้ว", step: 1 },
+                { id: "NEGOTIATING", label: "เจรจาต่อรอง", step: 2 },
+                { id: "QUOTATION", label: "เสนอราคา", step: 3 },
+                { id: "CLOSED", label: "ปิดการขาย", step: 4 },
               ].map((s, idx, arr) => {
                 const order = ["CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"];
                 const currentIdx = order.indexOf(selectedCustomer?.mainStatus || "CONTACTED");

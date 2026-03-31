@@ -269,7 +269,29 @@ export const uploadPropertyImage = async (req: AuthRequest, res: Response) => {
 export const deleteProperty = async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
-    await prisma.property.delete({ where: { id } });
+
+    // ตรวจสอบว่ามี property จริง
+    const exists = await prisma.property.findUnique({ where: { id } });
+    if (!exists) return res.status(404).json({ message: "ไม่พบอสังหาฯ" });
+
+    // ใช้ transaction เพื่อลบข้อมูลที่เกี่ยวข้องทั้งหมด
+    await prisma.$transaction(async (tx) => {
+      // 1. ลบ QuotationItem ที่เชื่อมกับ Property นี้
+      await tx.quotationItem.deleteMany({ where: { propertyId: id } });
+
+      // 2. ลบ Quotation ที่เชื่อมกับ Property นี้
+      await tx.quotation.deleteMany({ where: { propertyId: id } });
+
+      // 3. ปลด Customer ที่สนใจ Property นี้ (set null)
+      await tx.customer.updateMany({
+        where: { interestedPropertyId: id },
+        data: { interestedPropertyId: null },
+      });
+
+      // 4. ลบ Property
+      await tx.property.delete({ where: { id } });
+    });
+
     return res.json({ ok: true });
   } catch (err: any) {
     console.error("deleteProperty error:", err);

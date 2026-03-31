@@ -1,4 +1,5 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import {
   Workflow,
   Users,
@@ -6,12 +7,24 @@ import {
   Building2,
   LayoutDashboard,
   UserCog,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const Sidebar = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   // ดึง user จาก localStorage
   const storedUser = localStorage.getItem("user");
@@ -70,6 +83,39 @@ const Sidebar = () => {
           );
         })}
       </nav>
+
+      {/* Logout Button */}
+      <div className="p-4 border-t">
+        <Button
+          variant="ghost"
+          className="w-full justify-start gap-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+          onClick={() => setLogoutOpen(true)}
+        >
+          <LogOut className="h-5 w-5" />
+          ออกจากระบบ
+        </Button>
+      </div>
+
+      {/* Logout Confirmation Dialog */}
+      <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันออกจากระบบ</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการออกจากระบบใช่หรือไม่?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-500 hover:bg-red-600 text-white"
+              onClick={handleLogout}
+            >
+              ออกจากระบบ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 };

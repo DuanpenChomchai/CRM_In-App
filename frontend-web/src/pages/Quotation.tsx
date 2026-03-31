@@ -138,8 +138,17 @@ const Quotation = () => {
     const run = async () => {
       setLoadingPage(true);
       try {
+        const storedUser = localStorage.getItem("user");
+        const userObj = storedUser ? JSON.parse(storedUser) : null;
+        const role = userObj?.role || "GUEST";
+        const userId = userObj?.id;
+
+        const customerEndpoint = role === "SALE" 
+          ? `/api/customers/sale/${userId}` 
+          : `/api/customers`;
+
         const [cResRaw, pResRaw] = await Promise.all([
-          apiFetch<any>("/api/customers"),
+          apiFetch<any>(customerEndpoint),
           // ✅ ใช้ endpoint เบาๆ สำหรับ dropdown สินค้าในใบเสนอราคา
           apiFetch<any>("/api/properties/simple"),
         ]);

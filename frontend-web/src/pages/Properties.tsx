@@ -181,10 +181,10 @@ type PropertyForm = {
   type: PropertyTypeUI;
   location: string;
   address: string;
-  price: number;
-  bedrooms: number;
-  bathrooms: number;
-  size: number;
+  price: string;
+  bedrooms: string;
+  bathrooms: string;
+  size: string;
   status: PropertyStatusUI;
   description: string;
   imageFile: File | null; // อัปโหลดเข้า MinIO
@@ -195,10 +195,10 @@ const initialForm: PropertyForm = {
   type: "บ้านเดี่ยว",
   location: "",
   address: "",
-  price: 0,
-  bedrooms: 1,
-  bathrooms: 1,
-  size: 0,
+  price: "",
+  bedrooms: "1",
+  bathrooms: "1",
+  size: "",
   status: "available",
   description: "",
   imageFile: null,
@@ -243,6 +243,7 @@ export default function Properties() {
   // ✅ ย้ายมาไว้ใน component (เพราะใช้ form)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
+  const [existingImgUrl, setExistingImgUrl] = useState<string>("");
 
   useEffect(() => {
     if (!form.imageFile) {
@@ -325,13 +326,7 @@ export default function Properties() {
 
     setForm((prev) => ({
       ...prev,
-      [name]:
-        name === "price" ||
-        name === "bedrooms" ||
-        name === "bathrooms" ||
-        name === "size"
-          ? Number(value)
-          : value,
+      [name]: value,
     }));
   };
 
@@ -353,6 +348,7 @@ export default function Properties() {
     setMode("create");
     setEditId(null);
     setForm(initialForm);
+    setExistingImgUrl("");
     setFormOpen(true);
   };
 
@@ -365,14 +361,15 @@ export default function Properties() {
       type: p.type,
       location: p.location,
       address: p.address,
-      price: p.price,
-      bedrooms: p.bedrooms,
-      bathrooms: p.bathrooms,
-      size: p.size,
+      price: String(p.price),
+      bedrooms: String(p.bedrooms),
+      bathrooms: String(p.bathrooms),
+      size: String(p.size),
       status: p.status,
       description: p.description,
       imageFile: null,
     });
+    setExistingImgUrl(toImgUrl(p.img));
     setFormOpen(true);
   };
 
@@ -391,7 +388,8 @@ export default function Properties() {
         toast.error("กรอก ชื่อ / ทำเล / ประเภท ให้ครบ");
         return;
       }
-      if (!form.price || form.price <= 0) {
+      const priceNum = Number(form.price);
+      if (!priceNum || priceNum <= 0) {
         toast.error("กรอกราคาให้ถูกต้อง");
         return;
       }
@@ -410,10 +408,10 @@ export default function Properties() {
             type: form.type,
             location: form.location,
             address: form.address,
-            price: form.price,
-            bedrooms: form.bedrooms,
-            bathrooms: form.bathrooms,
-            size: form.size,
+            price: Number(form.price) || 0,
+            bedrooms: Number(form.bedrooms) || 0,
+            bathrooms: Number(form.bathrooms) || 0,
+            size: Number(form.size) || 0,
             status: form.status,
             description: form.description,
           }),
@@ -435,10 +433,10 @@ export default function Properties() {
             type: form.type,
             location: form.location,
             address: form.address,
-            price: form.price,
-            bedrooms: form.bedrooms,
-            bathrooms: form.bathrooms,
-            size: form.size,
+            price: Number(form.price) || 0,
+            bedrooms: Number(form.bedrooms) || 0,
+            bathrooms: Number(form.bathrooms) || 0,
+            size: Number(form.size) || 0,
             status: form.status,
             description: form.description,
           }),
@@ -598,7 +596,10 @@ export default function Properties() {
             <img
               src={toImgUrl(p.img)}
               alt={p.name}
-              className="w-full h-48 object-cover rounded-t-md"
+              className="w-full h-48 object-cover rounded-t-md bg-gray-100"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
             />
 
             <CardHeader className="pb-2">
@@ -777,8 +778,8 @@ export default function Properties() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <Button variant="outline" onClick={() => setDetailOpen(false)}>
+              <div className={`mt-4 flex gap-3 ${isAdmin ? "grid grid-cols-3" : "justify-center"}`}>
+                <Button variant="outline" className={!isAdmin ? "min-w-32" : ""} onClick={() => setDetailOpen(false)}>
                   ปิด
                 </Button>
 
@@ -1024,13 +1025,16 @@ export default function Properties() {
                     </div>
                   </div>
 
-                  {previewUrl && (
+                  {(previewUrl || existingImgUrl) && (
                     <div className="mt-3">
                       <div className="rounded-xl overflow-hidden border bg-background">
                         <img
-                          src={previewUrl}
+                          src={previewUrl || existingImgUrl}
                           alt="preview"
                           className="h-48 w-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
                         />
                       </div>
                     </div>
@@ -1040,6 +1044,8 @@ export default function Properties() {
                 <div className="text-xs text-muted-foreground mt-2">
                   {form.imageFile
                     ? "พร้อมอัปโหลดเมื่อกดบันทึก"
+                    : existingImgUrl
+                    ? "ใช้รูปเดิม (เลือกไฟล์ใหม่เพื่อเปลี่ยน)"
                     : "ยังไม่ได้เลือกไฟล์"}
                 </div>
               </div>
