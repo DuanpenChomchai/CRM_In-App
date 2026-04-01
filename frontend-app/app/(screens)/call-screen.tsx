@@ -604,17 +604,6 @@ export default function CallScreen() {
         {phase === "ended" && (
           <Text className="text-red-300 text-base">วางสายแล้ว</Text>
         )}
-
-        {/* Encryption badge */}
-        <View
-          className="flex-row items-center mt-6 px-4 py-2 rounded-full"
-          style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
-        >
-          <Ionicons name="lock-closed" size={12} color="#6ee7b7" />
-          <Text className="text-emerald-300 text-xs ml-1.5">
-            End-to-end encrypted
-          </Text>
-        </View>
       </View>
 
       {/* ─── Action buttons ─── */}
@@ -699,7 +688,7 @@ export default function CallScreen() {
                       <Ionicons name="call" size={32} color="#ffffff" style={{ transform: [{ rotate: "135deg" }] }} />
                     </View>
                   </Pressable>
-                  <Text className="text-red-300 text-xs mt-2">ปฏิเสธ (Decline)</Text>
+                  <Text className="text-red-300 text-xs mt-2">ปฏิเสธ</Text>
                 </View>
 
                 {/* Answer */}
@@ -709,7 +698,7 @@ export default function CallScreen() {
                       <Ionicons name="call" size={32} color="#ffffff" />
                     </View>
                   </Pressable>
-                  <Text className="text-emerald-100 text-xs mt-2">รับสาย (Answer)</Text>
+                  <Text className="text-emerald-100 text-xs mt-2">รับสาย</Text>
                 </View>
              </View>
           ) : (
@@ -722,7 +711,7 @@ export default function CallScreen() {
                   <Ionicons name="call" size={32} color="#ffffff" style={{ transform: [{ rotate: "135deg" }] }} />
                 </View>
               </Pressable>
-              <Text className="text-red-300 text-xs mt-2">วางสาย (End)</Text>
+              <Text className="text-red-300 text-xs mt-2">วางสาย</Text>
             </View>
           )}
         </View>

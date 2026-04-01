@@ -28,6 +28,7 @@ type ChatItem = {
   isSaleChat?: boolean; // true = ลูกค้าฝั่งแอพ แชทกับเซลล์
   unreadCount?: number;
   profileUserId?: number | null; // User ID สำหรับโหลดรูป profile
+  managerSubtext?: string;
 };
 
 const THAI_MONTHS = [
@@ -91,6 +92,10 @@ export default function ChatsScreen() {
   // SALE: ห้องแชทลูกค้าที่เราเป็นเซลล์ดูแล
   const [saleRooms, setSaleRooms] = useState<ChatItem[]>([]);
   const [loadingSaleRooms, setLoadingSaleRooms] = useState(false);
+
+  // MANAGER: ห้องแชทลูกค้าที่เซลล์ในทีมดูแล
+  const [managerRooms, setManagerRooms] = useState<ChatItem[]>([]);
+  const [loadingManagerRooms, setLoadingManagerRooms] = useState(false);
 
   // ===== CUSTOMER: ดึงเซลล์ที่ดูแลลูกค้าที่ล็อกอิน (รีเฟรชทุกครั้งที่หน้า focus) =====
   useFocusEffect(
@@ -203,6 +208,58 @@ export default function ChatsScreen() {
     }, [token, user?.role, user?.id])
   );
 
+  // ===== MANAGER: ดึงลูกค้าทั้งหมดของทีมตัวเอง (รีเฟรชทุกครั้งที่หน้า focus) =====
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+
+      const fetchManagerRooms = async () => {
+        try {
+          if (!token || (user?.role !== "MANAGER" && user?.role !== "ADMIN")) return;
+
+          setLoadingManagerRooms(true);
+
+          const res = await fetch(`${API_BASE_URL}/customers/manager/chats`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!res.ok) {
+            console.log("customers/manager/chats error status:", res.status);
+            return;
+          }
+
+          const data = await res.json();
+          if (cancelled) return;
+
+          const mapped: ChatItem[] = data.map((c: any) => ({
+            id: `cust:${c.id}`,
+            customerId: c.id,
+            name: c.name || `Customer #${c.id}`,
+            time: formatLastTime(c.lastMessageAt),
+            lastMessageAt: c.lastMessageAt ?? null,
+            unreadCount: c.unreadCount ?? 0,
+            profileUserId: c.userId ?? null,
+            managerSubtext: c.sale?.name ? `Sale: ${c.sale.name}` : undefined,
+          }));
+
+          setManagerRooms(mapped);
+        } catch (err) {
+          console.error("fetchManagerRooms error:", err);
+        } finally {
+          if (!cancelled) setLoadingManagerRooms(false);
+        }
+      };
+
+      fetchManagerRooms();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [token, user?.role])
+  );
+
   // ===== ฟัง unread-count จาก WebSocket แล้วอัปเดต badge แบบ realtime =====
   useEffect(() => {
     const handleUnread = (payload: WsUnreadPayload) => {
@@ -216,6 +273,14 @@ export default function ChatsScreen() {
         });
       } else if (user.role === "SALE") {
         setSaleRooms((prev) =>
+          prev.map((room) =>
+            room.id === payload.roomId
+              ? { ...room, unreadCount: payload.saleUnread }
+              : room
+          )
+        );
+      } else if (user.role === "MANAGER" || user.role === "ADMIN") {
+        setManagerRooms((prev) =>
           prev.map((room) =>
             room.id === payload.roomId
               ? { ...room, unreadCount: payload.saleUnread }
@@ -243,6 +308,10 @@ export default function ChatsScreen() {
       rooms.push(...saleRooms);
     }
 
+    if ((user?.role === "MANAGER" || user?.role === "ADMIN") && managerRooms.length > 0) {
+      rooms.push(...managerRooms);
+    }
+
     // เรียงตามข้อความล่าสุดไว้บนสุด
     rooms.sort((a, b) => {
       const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
@@ -251,7 +320,7 @@ export default function ChatsScreen() {
     });
 
     return rooms;
-  }, [user?.role, saleChat, saleRooms]);
+  }, [user?.role, saleChat, saleRooms, managerRooms]);
 
   const data = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -297,6 +366,10 @@ export default function ChatsScreen() {
           room.id === item.id ? { ...room, unreadCount: 0 } : room
         )
       );
+    } else if (user?.role === "MANAGER" || user?.role === "ADMIN") {
+      // สำหรับผู้จัดการ เราไม่ต้องลบ badge การอ่านจริงของฝั่งเซลล์
+      // แต่ลบบน client ก็ได้เพื่อให้รู้ว่าคลิกไปแล้ว หรือจะไม่ลบก็ได้
+      // ในที่นี้จะยังไม่ลบเพื่อให้สอดคล้องกับ backend ที่ manager ไม่ทำให้ข้อความถูก mark read
     }
 
     if (item.customerId != null) {
@@ -355,6 +428,12 @@ export default function ChatsScreen() {
             {item.isSaleChat && (
               <Text className="text-[11px] text-gray-500 mt-0.5">
                 Your assigned sale
+              </Text>
+            )}
+
+            {item.managerSubtext && (
+              <Text className="text-[11px] text-gray-500 mt-0.5">
+                {item.managerSubtext}
               </Text>
             )}
           </View>
@@ -435,6 +514,23 @@ export default function ChatsScreen() {
             <View className="mt-2">
               <Text className="text-[11px] text-gray-400">
                 คุณยังไม่ถูกมอบหมายลูกค้าคนใด
+              </Text>
+            </View>
+          )}
+
+        {loadingManagerRooms && (user?.role === "MANAGER" || user?.role === "ADMIN") && (
+          <View className="mt-2">
+            <Text className="text-[11px] text-gray-400">
+              กำลังโหลดแชทของคนในทีม...
+            </Text>
+          </View>
+        )}
+        {!loadingManagerRooms &&
+          (user?.role === "MANAGER" || user?.role === "ADMIN") &&
+          managerRooms.length === 0 && (
+            <View className="mt-2">
+              <Text className="text-[11px] text-gray-400">
+                ไม่มีแชทของลูกค้าในทีมของคุณ
               </Text>
             </View>
           )}

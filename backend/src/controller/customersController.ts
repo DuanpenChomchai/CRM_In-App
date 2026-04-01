@@ -591,3 +591,77 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
 };
 
 export const getCustomers = getAllCustomers;
+
+/**
+ * ดึงลูกค้าและแชทสำหรับผู้จัดการ (ดูเซลล์ในทีม)
+ * GET /api/customers/manager/chats
+ */
+export const getManagerChats = async (req: AuthRequest, res: Response) => {
+  try {
+    const role = (req.user?.role || "").toUpperCase();
+    const userId = req.user?.id;
+
+    if (!userId || (role !== "MANAGER" && role !== "ADMIN")) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
+    const scope = buildCustomerScope(req.user);
+    if (!scope) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
+    const customers = await prisma.customer.findMany({
+      where: scope,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        userId: true,
+        tol: true,
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            img: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const enriched = await Promise.all(
+      customers.map(async (c) => {
+        const unreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: c.id,
+            readBySaleAt: null, 
+          },
+        });
+
+        const lastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: c.id },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
+        // คืนค่ารูปแบบเดียวกันแต่เพิ่ม c.sale ลงไป
+        return {
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          userId: c.userId,
+          tol: c.tol,
+          sale: c.sale,
+          unreadCount,
+          lastMessageAt: lastMsg?.createdAt ?? null,
+        };
+      })
+    );
+
+    return res.json(enriched);
+  } catch (err) {
+    console.error("getManagerChats error:", err);
+    return res.status(500).json({ message: "ดึงข้อมูลลูกค้าสำหรับผู้จัดการล้มเหลว" });
+  }
+};

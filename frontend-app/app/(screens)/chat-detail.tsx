@@ -469,6 +469,10 @@ export default function ChatDetailScreen() {
   // =========================================================
   const [partner, setPartner] = useState<ChatPartner | null>(null);
 
+  // สำหรับ MANAGER ถือเสมือนเซลล์เป็น "Me"
+  const [targetSaleUserId, setTargetSaleUserId] = useState<number | null>(null);
+  const [targetSaleEmail, setTargetSaleEmail] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchPartner = async () => {
       try {
@@ -486,7 +490,7 @@ export default function ChatDetailScreen() {
               : null;
             setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
           }
-        } else if (user?.role === "SALE" && effectiveCustomerId) {
+        } else if ((user?.role === "SALE" || user?.role === "MANAGER" || user?.role === "ADMIN") && effectiveCustomerId) {
           const res = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -497,6 +501,11 @@ export default function ChatDetailScreen() {
             ? `${API_BASE_URL}/users/profile-image/${userId}?t=${encodeURIComponent(token)}&b=${Date.now()}`
             : null;
           setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl, userId });
+
+          if ((user?.role === "MANAGER" || user?.role === "ADMIN") && c.sale) {
+            setTargetSaleUserId(c.sale.id);
+            setTargetSaleEmail(c.sale.email);
+          }
         } else {
           setPartner(null);
         }
@@ -524,14 +533,24 @@ export default function ChatDetailScreen() {
   }, [effectiveRoomId]);
 
   // ✅ ย้ายออกมาข้างนอกเพื่อให้ textMsgs เข้าถึงได้
-  const computeFromMe = (m: any) => {
+  const computeFromMe = (m: any, forcedSaleUserId?: number | null, forcedSaleEmail?: string | null) => {
     // 1) เช็คจาก ID (ถ้ามี)
     const senderId = m.senderId ?? m.userId ?? null;
-    if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
+    if (senderId != null) {
+      if (myUserId != null && Number(senderId) === Number(myUserId)) return true;
+      const chkSaleId = forcedSaleUserId ?? targetSaleUserId;
+      if (chkSaleId != null && Number(senderId) === Number(chkSaleId)) return true;
+    }
 
     // 2) เช็คจาก Email/Name (รองรับทั้ง Socket Payload และ DB Object)
     const senderEmail = normalizeEmail(m.user ?? m.senderName ?? m.senderEmail ?? m.sender ?? "");
-    return senderEmail && myEmail ? senderEmail === myEmail : false;
+    if (senderEmail) {
+      if (myEmail && senderEmail === myEmail) return true;
+      const chkSaleEmail = forcedSaleEmail ?? targetSaleEmail;
+      if (chkSaleEmail && senderEmail === normalizeEmail(chkSaleEmail)) return true;
+    }
+
+    return false;
   };
 
   useEffect(() => {
@@ -550,6 +569,27 @@ export default function ChatDetailScreen() {
         const json = await res.json();
         const arr = Array.isArray(json) ? json : Array.isArray(json.data) ? json.data : [];
 
+        // ถ้าเป็น MANAGER จำเป็นต้องรู้ตัวเซลล์ก่อนจึงจะคำนวณ isFromMe ของประวัติได้ถูก
+        let localSaleUserId = targetSaleUserId;
+        let localSaleEmail = targetSaleEmail;
+
+        if ((user?.role === "MANAGER" || user?.role === "ADMIN") && !localSaleUserId && effectiveCustomerId) {
+          try {
+            const cres = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (cres.ok) {
+              const cjson = await cres.json();
+              if (cjson.sale) {
+                localSaleUserId = cjson.sale.id;
+                localSaleEmail = cjson.sale.email;
+              }
+            }
+          } catch (e) {
+            console.warn("fetch customer for manager failed", e);
+          }
+        }
+
         const mappedBase: Msg[] = arr.map((m: any) => {
           const t = String(m.type || "TEXT").toUpperCase();
           const fileKey = m.fileKey ?? m.filekey ?? m.imgMessage ?? m.fileMessage ?? null;
@@ -557,7 +597,7 @@ export default function ChatDetailScreen() {
           const createdAt = new Date(m.createdAt || Date.now());
           const ts = createdAt.getTime();
 
-          const isFromMe = computeFromMe(m);
+          const isFromMe = computeFromMe(m, localSaleUserId, localSaleEmail);
 
           // ✅ ถ้าเราเป็น SALE → ดูว่า Customer อ่านหรือยัง (readByCustomerAt)
           // ✅ ถ้าเราเป็น CUSTOMER → ดูว่า Sale อ่านหรือยัง (readBySaleAt)
@@ -738,7 +778,7 @@ export default function ChatDetailScreen() {
           text: String(m.text ?? ""),
         } as Msg;
       }),
-    [socketMessages, myEmail, token, user?.role]
+    [socketMessages, myEmail, token, user?.role, targetSaleUserId, targetSaleEmail]
   );
 
   useEffect(() => {
@@ -1351,31 +1391,33 @@ export default function ChatDetailScreen() {
         </View>
 
         <View className="pl-3">
-          <Pressable
-            onPress={() => {
-              const targetUserId = partner?.userId ? String(partner.userId) : "";
-              if (!targetUserId) {
-                Toast.show({ type: "info", text1: "Not Ready", text2: "Target User ID not loaded yet" });
-                return;
-              }
-              router.push({
-                pathname: "/(screens)/call-screen",
-                params: {
-                  name: partner?.name ?? nameParam ?? "User",
-                  avatarUrl: partner?.avatarUrl ?? "",
-                  customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
-                  targetUserId: targetUserId,
-                },
-              });
-            }}
-            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 8 }]}
-          >
-            <Ionicons name="call-outline" size={24} color="#047857" />
-          </Pressable>
+          {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
+            <Pressable
+              onPress={() => {
+                const targetUserId = partner?.userId ? String(partner.userId) : "";
+                if (!targetUserId) {
+                  Toast.show({ type: "info", text1: "Not Ready", text2: "Target User ID not loaded yet" });
+                  return;
+                }
+                router.push({
+                  pathname: "/(screens)/call-screen",
+                  params: {
+                    name: partner?.name ?? nameParam ?? "User",
+                    avatarUrl: partner?.avatarUrl ?? "",
+                    customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
+                    targetUserId: targetUserId,
+                  },
+                });
+              }}
+              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 8 }]}
+            >
+              <Ionicons name="call-outline" size={24} color="#047857" />
+            </Pressable>
+          )}
         </View>
       </View>
     ),
-    [effectiveRoomId, nameParam, connected, partner, router]
+    [effectiveRoomId, nameParam, connected, partner, router, user?.role]
   );
 
   return (
@@ -1415,43 +1457,45 @@ export default function ChatDetailScreen() {
           </View>
         )}
 
-        <View
-          className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
-          style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}
-        >
-          <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
-            <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
-          </Pressable>
-
-          <View className="flex-1 mx-2 rounded-2xl px-3 bg-gray-100">
-            <TextInput
-              className="py-2"
-              placeholder="Message"
-              placeholderTextColor="#9CA3AF"
-              value={input}
-              onChangeText={(v) => {
-                setInput(v);
-                if (v.trim().length > 0) startTyping();
-              }}
-              returnKeyType="send"
-              onSubmitEditing={onSend}
-            />
-          </View>
-
-          {input.trim().length > 0 ? (
-            <Pressable
-              className="px-3 py-2 rounded-2xl"
-              onPress={onSend}
-              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Ionicons name="send" size={20} color="#047857" />
+        {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
+          <View
+            className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
+            style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}
+          >
+            <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
+              <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
             </Pressable>
-          ) : (
-            <View className="px-3 py-2">
-              <Ionicons name="send" size={20} color="#D1D5DB" />
+
+            <View className="flex-1 mx-2 rounded-2xl px-3 bg-gray-100">
+              <TextInput
+                className="py-2"
+                placeholder="Message"
+                placeholderTextColor="#9CA3AF"
+                value={input}
+                onChangeText={(v) => {
+                  setInput(v);
+                  if (v.trim().length > 0) startTyping();
+                }}
+                returnKeyType="send"
+                onSubmitEditing={onSend}
+              />
             </View>
-          )}
-        </View>
+
+            {input.trim().length > 0 ? (
+              <Pressable
+                className="px-3 py-2 rounded-2xl"
+                onPress={onSend}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="send" size={20} color="#047857" />
+              </Pressable>
+            ) : (
+              <View className="px-3 py-2">
+                <Ionicons name="send" size={20} color="#D1D5DB" />
+              </View>
+            )}
+          </View>
+        )}
       </SafeAreaView>
 
       <Modal transparent visible={attachOpen} animationType="fade" onRequestClose={() => setAttachOpen(false)}>
