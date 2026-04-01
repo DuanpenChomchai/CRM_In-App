@@ -125,8 +125,8 @@ const Quotation = () => {
 
   const [newItem, setNewItem] = useState({
     propertyId: "",
-    quantity: 1,
-    discount: 0,
+    quantity: "1",
+    discount: "0",
   });
 
   const grandTotal = useMemo(
@@ -143,8 +143,8 @@ const Quotation = () => {
         const role = userObj?.role || "GUEST";
         const userId = userObj?.id;
 
-        const customerEndpoint = role === "SALE" 
-          ? `/api/customers/sale/${userId}` 
+        const customerEndpoint = role === "SALE"
+          ? `/api/customers/sale/${userId}`
           : `/api/customers`;
 
         const [cResRaw, pResRaw] = await Promise.all([
@@ -255,7 +255,7 @@ const Quotation = () => {
       },
     ]);
 
-    setNewItem({ propertyId: "", quantity: 1, discount: 0 });
+    setNewItem({ propertyId: "", quantity: "1", discount: "0" });
     toast.success("เพิ่มรายการสินค้าแล้ว");
   };
 
@@ -327,13 +327,13 @@ const Quotation = () => {
 
   return (
     <div className="container mx-auto p-6 space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <FileText className="w-8 h-8 text-primary" />
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+          <FileText className="w-6 h-6 md:w-8 md:h-8 text-primary" />
           {isEditMode ? `แก้ไขใบเสนอราคา #${quotationNumber}` : "สร้างใบเสนอราคา"}
         </h1>
 
-        <Button variant="outline" onClick={() => navigate("/quotationlist")}>
+        <Button variant="outline" onClick={() => navigate("/quotationlist")} className="w-full sm:w-auto">
           <List className="w-4 h-4 mr-2" />
           ดูรายการทั้งหมด
         </Button>
@@ -344,17 +344,17 @@ const Quotation = () => {
         <CardHeader>
           <CardTitle>ข้อมูลลูกค้าและเอกสาร</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="p-4 md:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
             <div>
-              <Label>เลขที่ใบเสนอราคา *</Label>
-              <Input value={quotationNumber} disabled placeholder="กำลังสร้าง..." />
+              <Label className="text-xs md:text-sm">เลขที่ใบเสนอราคา *</Label>
+              <Input value={quotationNumber} disabled placeholder="กำลังสร้าง..." className="h-9 md:h-10" />
             </div>
 
             <div>
-              <Label>เลือกลูกค้า *</Label>
+              <Label className="text-xs md:text-sm">เลือกลูกค้า *</Label>
               <Select value={customerId ? String(customerId) : ""} onValueChange={handleSelectCustomer}>
-                <SelectTrigger>
+                <SelectTrigger className="h-9 md:h-10">
                   <SelectValue placeholder="เลือกลูกค้า" />
                 </SelectTrigger>
                 <SelectContent>
@@ -368,21 +368,19 @@ const Quotation = () => {
             </div>
 
             <div>
-              <Label>สถานะใบเสนอราคา</Label>
+              <Label className="text-xs md:text-sm">สถานะใบเสนอราคา</Label>
               {isLocked ? (
-                // APPROVED / REJECTED — แสดง badge อ่านอย่างเดียว (Manager เท่านั้นที่เปลี่ยนได้)
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 px-1">
                   <Badge className={status === "APPROVED" ? "bg-green-500 text-white" : "bg-red-500 text-white"}>
                     {status === "APPROVED" ? "อนุมัติแล้ว" : "ปฏิเสธ"}
                   </Badge>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Lock className="w-3 h-3" /> Manager อนุมัติแล้ว
+                  <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> ล็อกแล้ว
                   </span>
                 </div>
               ) : (
-                // DRAFT / SENT — เซลล์เลือกได้
                 <Select value={status} onValueChange={(v) => setStatus(v as QuotationStatus)}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-9 md:h-10">
                     <SelectValue placeholder="เลือกสถานะ" />
                   </SelectTrigger>
                   <SelectContent>
@@ -394,63 +392,84 @@ const Quotation = () => {
             </div>
 
             <div>
-              <Label>ชื่อลูกค้า *</Label>
-              <Input value={customerForm.name} onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))} />
+              <Label className="text-xs md:text-sm">ชื่อลูกค้า *</Label>
+              <Input value={customerForm.name} onChange={(e) => setCustomerForm((p) => ({ ...p, name: e.target.value }))} className="h-9 md:h-10" />
             </div>
 
             <div>
-              <Label>อีเมล *</Label>
-              <Input type="email" value={customerForm.email} onChange={(e) => setCustomerForm((p) => ({ ...p, email: e.target.value }))} />
+              <Label className="text-xs md:text-sm">อีเมล *</Label>
+              <Input type="email" value={customerForm.email} onChange={(e) => setCustomerForm((p) => ({ ...p, email: e.target.value }))} className="h-9 md:h-10" />
             </div>
 
             <div>
-              <Label>เบอร์โทรศัพท์ *</Label>
-              <Input value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))} />
+              <Label className="text-xs md:text-sm">เบอร์โทรศัพท์ *</Label>
+              <Input value={customerForm.phone} onChange={(e) => setCustomerForm((p) => ({ ...p, phone: e.target.value }))} className="h-9 md:h-10" />
             </div>
 
-            <div className="md:col-span-2">
-              <Label>ที่อยู่</Label>
-              <Input value={customerForm.address} onChange={(e) => setCustomerForm((p) => ({ ...p, address: e.target.value }))} />
+            <div className="md:col-span-3">
+              <Label className="text-xs md:text-sm">ที่อยู่</Label>
+              <Input value={customerForm.address} onChange={(e) => setCustomerForm((p) => ({ ...p, address: e.target.value }))} className="h-9 md:h-10" />
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Add Item */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle>เพิ่มรายการสินค้า</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-            <div className="md:col-span-2">
-              <Label>สินค้า</Label>
+      <Card className="shadow-card overflow-hidden border-primary/20">
+        <CardContent className="p-4 md:p-5">
+          <p className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5" />
+            เพิ่มรายการสินค้า
+          </p>
+          <div className="flex flex-col sm:flex-row items-end gap-3">
+            {/* Property selector — shorter */}
+            <div className="w-full sm:w-72 shrink-0">
+              <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">อสังหาริมทรัพย์ *</Label>
               <Select value={newItem.propertyId} onValueChange={(v) => setNewItem((p) => ({ ...p, propertyId: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกสินค้า" />
+                <SelectTrigger className="h-9 bg-muted/30 text-sm">
+                  <SelectValue placeholder="เลือกอสังหาฯ..." />
                 </SelectTrigger>
                 <SelectContent>
                   {properties.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
-                      {p.name}
-                    </SelectItem>
+                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            <div>
-              <Label>จำนวน</Label>
-              <Input type="number" min="1" value={newItem.quantity} onChange={(e) => setNewItem((p) => ({ ...p, quantity: valToInt(e.target.value) || 1 }))} />
+            {/* Quantity — wider */}
+            <div className="flex-1 w-full sm:w-auto">
+              <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">จำนวน</Label>
+              <Input
+                type="number" min="1"
+                value={newItem.quantity}
+                onChange={(e) => setNewItem((p) => ({ ...p, quantity: e.target.value }))}
+                onBlur={(e) => {
+                  const n = clamp(valToInt(e.target.value), 1, 999999);
+                  setNewItem((p) => ({ ...p, quantity: String(n) }));
+                }}
+                className="h-9 text-center font-bold bg-muted/30"
+              />
             </div>
 
-            <div>
-              <Label>ส่วนลด (%)</Label>
-              <Input type="number" min="0" max="100" value={newItem.discount} onChange={(e) => setNewItem((p) => ({ ...p, discount: toNumber(e.target.value) || 0 }))} />
+            {/* Discount — wider */}
+            <div className="flex-1 w-full sm:w-auto">
+              <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">ส่วนลด %</Label>
+              <Input
+                type="number" min="0"
+                value={newItem.discount}
+                onChange={(e) => setNewItem((p) => ({ ...p, discount: e.target.value }))}
+                onBlur={(e) => {
+                  const n = Math.max(0, toNumber(e.target.value));
+                  setNewItem((p) => ({ ...p, discount: String(n) }));
+                }}
+                className="h-9 text-center font-bold bg-muted/30"
+              />
             </div>
 
-            <Button onClick={handleAddItem} className="gradient-primary text-white">
-              <Plus className="w-4 h-4 mr-2" />
+            {/* Add button */}
+            <Button onClick={handleAddItem} className="gradient-primary text-white h-9 px-5 font-bold shrink-0 w-full sm:w-auto">
+              <Plus className="w-4 h-4 mr-1.5" />
               เพิ่ม
             </Button>
           </div>
@@ -462,50 +481,52 @@ const Quotation = () => {
         <CardHeader>
           <CardTitle>รายการสินค้า</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0 md:p-6">
           {items.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground">
-              <FileText className="w-16 h-16 mx-auto mb-4 opacity-20" />
-              <p>ยังไม่มีรายการสินค้า</p>
+              <FileText className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-4 opacity-20" />
+              <p className="text-sm">ยังไม่มีรายการสินค้า</p>
             </div>
           ) : (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>สินค้า</TableHead>
-                    <TableHead className="text-center">จำนวน</TableHead>
-                    <TableHead className="text-right">ราคา/หน่วย</TableHead>
-                    <TableHead className="text-center">ส่วนลด</TableHead>
-                    <TableHead className="text-right">ยอดรวม</TableHead>
-                    <TableHead className="text-center">จัดการ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((it) => (
-                    <TableRow key={it.uiId}>
-                      <TableCell className="font-medium">{it.name}</TableCell>
-                      <TableCell className="text-center">{it.quantity}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(it.unitPrice)}</TableCell>
-                      <TableCell className="text-center">
-                        {it.discount > 0 ? <Badge variant="destructive">{it.discount}%</Badge> : "-"}
-                      </TableCell>
-                      <TableCell className="text-right font-bold">{formatCurrency(calcLineTotal(it.unitPrice, it.quantity, it.discount))}</TableCell>
-                      <TableCell className="text-center">
-                        <Button variant="ghost" size="sm" onClick={() => handleRemoveItem(it.uiId)}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
-                      </TableCell>
+              <div className="overflow-x-auto border-t md:border-none">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead className="min-w-[150px] md:min-w-0">สินค้า</TableHead>
+                      <TableHead className="text-center min-w-[80px]">จำนวน</TableHead>
+                      <TableHead className="text-right min-w-[120px]">ราคา/หน่วย</TableHead>
+                      <TableHead className="text-center min-w-[80px]">ส่วนลด</TableHead>
+                      <TableHead className="text-right min-w-[120px]">ยอดรวม</TableHead>
+                      <TableHead className="text-center min-w-[60px]">จัดการ</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((it) => (
+                      <TableRow key={it.uiId}>
+                        <TableCell className="font-medium text-sm">{it.name}</TableCell>
+                        <TableCell className="text-center text-sm">{it.quantity}</TableCell>
+                        <TableCell className="text-right text-sm">{formatCurrency(it.unitPrice)}</TableCell>
+                        <TableCell className="text-center text-sm">
+                          {it.discount > 0 ? <Badge variant="destructive" className="p-0.5 px-1.5 text-[10px]">{it.discount}%</Badge> : "-"}
+                        </TableCell>
+                        <TableCell className="text-right font-bold text-sm text-primary">{formatCurrency(calcLineTotal(it.unitPrice, it.quantity, it.discount))}</TableCell>
+                        <TableCell className="text-center">
+                          <Button variant="ghost" size="sm" onClick={() => handleRemoveItem(it.uiId)} className="h-8 w-8 p-0">
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
-              <div className="mt-6 flex justify-end">
-                <div className="w-full md:w-1/3 space-y-2">
-                  <div className="flex justify-between text-lg">
-                    <span>ยอดรวมทั้งหมด:</span>
-                    <span className="font-bold text-2xl text-primary">{formatCurrency(grandTotal)}</span>
+              <div className="mt-4 md:mt-6 flex justify-end px-4 md:px-0">
+                <div className="w-full md:w-1/3 space-y-2 border-t pt-4 md:border-none md:pt-0">
+                  <div className="flex justify-between items-center text-base md:text-lg">
+                    <span className="text-muted-foreground">ยอดรวมทั้งหมด:</span>
+                    <span className="font-bold text-xl md:text-2xl text-primary">{formatCurrency(grandTotal)}</span>
                   </div>
                 </div>
               </div>
@@ -514,13 +535,13 @@ const Quotation = () => {
         </CardContent>
       </Card>
 
-      <div className="flex gap-3 justify-end">
-        <Button variant="outline" onClick={() => navigate("/quotationlist")} disabled={loading}>
+      <div className="flex flex-col sm:flex-row gap-3 justify-end pb-10">
+        <Button variant="outline" onClick={() => navigate("/quotationlist")} disabled={loading} className="w-full sm:w-auto order-2 sm:order-1">
           {isLocked ? "กลับ" : "ยกเลิก"}
         </Button>
 
         {!isLocked && (
-          <Button className="gradient-primary text-white" onClick={handleSubmit} disabled={loading}>
+          <Button className="gradient-primary text-white w-full sm:w-auto order-1 sm:order-2" onClick={handleSubmit} disabled={loading}>
             {isEditMode ? (
               <>
                 <Save className="w-4 h-4 mr-2" />

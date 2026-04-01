@@ -1,4 +1,4 @@
-import { Building2, LogOut, User } from "lucide-react";
+import { Building2, LogOut, User, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,7 +12,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 
-const Navbar = () => {
+const Navbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   const navigate = useNavigate();
 
   const storedUser = localStorage.getItem("user");
@@ -38,13 +38,25 @@ const Navbar = () => {
   };
 
   return (
-    <nav className="w-full bg-gradient-to-r from-pink-400 to-green-400 shadow-md">
-      <div className="flex items-center justify-between h-16 px-6">
-        <div className="flex items-center gap-2">
-          <div className="bg-white/20 p-2 rounded-lg">
-            <Building2 className="w-6 h-6 text-white" />
+    <nav className="w-full bg-gradient-to-r from-pink-400 to-green-400 shadow-md relative z-50">
+      <div className="flex items-center justify-between h-16 px-4 md:px-6">
+        <div className="flex items-center gap-3">
+          {/* Hamburger Menu - เฉพาะ Mobile */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden text-white hover:bg-white/20"
+            onClick={onMenuClick}
+          >
+            <Menu className="w-6 h-6" />
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <div className="bg-white/20 p-2 rounded-lg hidden sm:block">
+              <Building2 className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-white font-semibold text-base md:text-lg whitespace-nowrap">CRM System</h1>
           </div>
-          <h1 className="text-white font-semibold text-lg">CRM System</h1>
         </div>
 
         {/* เมนูผู้ใช้ */}

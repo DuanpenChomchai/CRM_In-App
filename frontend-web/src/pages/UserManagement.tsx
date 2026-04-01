@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
-import { UserPlus, Shield, Users, Briefcase, Edit, Trash2 } from "lucide-react";
+import { UserPlus, Shield, Users, Briefcase, Edit, Trash2, UserX } from "lucide-react";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
@@ -62,6 +68,26 @@ const mapRole = (r: string | undefined): UserRole => {
   return "sale";
 };
 
+// ---------- Team Types ----------
+interface SaleUser {
+  id: number;
+  name: string;
+  email: string;
+  tol?: string;
+  img?: string | null;
+  role: string;
+}
+
+interface ManagerTeam {
+  id: number;
+  name: string;
+  email: string;
+  tol?: string;
+  img?: string | null;
+  role: string;
+  team: SaleUser[];
+}
+
 // ---------- Component ----------
 const UserManagement = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -87,6 +113,49 @@ const UserManagement = () => {
     phone: "",
   });
 
+  // ---------- Team Management State ----------
+  const [managers, setManagers] = useState<ManagerTeam[]>([]);
+  const [unassignedSales, setUnassignedSales] = useState<SaleUser[]>([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+
+  const token = localStorage.getItem("token");
+
+  const fetchTeams = async () => {
+    setTeamLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/users/managers-with-teams`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("โหลดทีมไม่สำเร็จ");
+      const data = await res.json();
+      setManagers(data.managers || []);
+      setUnassignedSales(data.unassignedSales || []);
+    } catch {
+      toast.error("โหลดข้อมูลทีมไม่สำเร็จ");
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  const handleAssignManager = async (saleId: number, managerId: number | null) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/users/sales/${saleId}/assign-manager`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ managerId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err?.message || "กำหนดผู้จัดการไม่สำเร็จ");
+        return;
+      }
+      toast.success(managerId ? "เพิ่มเซลล์เข้าทีมสำเร็จ" : "นำเซลล์ออกจากทีมสำเร็จ");
+      fetchTeams();
+    } catch {
+      toast.error("เกิดข้อผิดพลาด");
+    }
+  };
+
   // ---------- Load Users (GET) ----------
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -110,6 +179,10 @@ const UserManagement = () => {
         }
       })
       .catch(() => toast.error("โหลดข้อมูลผู้ใช้ล้มเหลว"));
+  }, []);
+
+  useEffect(() => {
+    fetchTeams();
   }, []);
 
   // ---------- Add User (POST) ----------
@@ -225,12 +298,12 @@ const UserManagement = () => {
         prev.map((u) =>
           u.id === editingUser.id
             ? {
-                ...u,
-                name: editData.name,
-                email: editData.email,
-                phone: editData.phone,
-                role: editData.role,
-              }
+              ...u,
+              name: editData.name,
+              email: editData.email,
+              phone: editData.phone,
+              role: editData.role,
+            }
             : u
         )
       );
@@ -352,60 +425,214 @@ const UserManagement = () => {
         </Card>
       </div>
 
-      {/* USER TABLE */}
-      <Card>
-        <CardHeader>
-          <CardTitle>รายชื่อผู้ใช้งาน</CardTitle>
-          <CardDescription>จัดการข้อมูลผู้ใช้งานทั้งหมดในระบบ</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ชื่อ</TableHead>
-                <TableHead>อีเมล</TableHead>
-                <TableHead>เบอร์โทร</TableHead>
-                <TableHead>บทบาท</TableHead>
-                <TableHead className="text-right">จัดการ</TableHead>
-              </TableRow>
-            </TableHeader>
+      {/* TABS: รายชื่อผู้ใช้ / จัดทีม */}
+      <Tabs defaultValue="users">
+        <TabsList className="mb-4">
+          <TabsTrigger value="users" className="gap-2">
+            <Users className="h-4 w-4" />
+            รายชื่อผู้ใช้งาน
+          </TabsTrigger>
+          <TabsTrigger value="teams" className="gap-2">
+            <Briefcase className="h-4 w-4" />
+            จัดทีม Manager
+          </TabsTrigger>
+        </TabsList>
 
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>{user.name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.phone}</TableCell>
-                  <TableCell>{getRoleBadge(user.role)}</TableCell>
+        {/* TAB: รายชื่อผู้ใช้งาน */}
+        <TabsContent value="users">
+          <Card>
+            <CardHeader>
+              <CardTitle>รายชื่อผู้ใช้งาน</CardTitle>
+              <CardDescription>จัดการข้อมูลผู้ใช้งานทั้งหมดในระบบ</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ชื่อ</TableHead>
+                    <TableHead>อีเมล</TableHead>
+                    <TableHead>เบอร์โทร</TableHead>
+                    <TableHead>บทบาท</TableHead>
+                    <TableHead className="text-right">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
 
-                  <TableCell className="text-right space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openEditDialog(user)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
+                <TableBody>
+                  {users.map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>{user.name}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.phone}</TableCell>
+                      <TableCell>{getRoleBadge(user.role)}</TableCell>
 
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => {
-                        setDeleteUserId(user.id);
-                        setIsDeleteDialogOpen(true);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditDialog(user)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
 
-     
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            setDeleteUserId(user.id);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* TAB: จัดทีม Manager */}
+        <TabsContent value="teams">
+          <div className="space-y-6">
+            {/* เซลล์ยังไม่มีทีม */}
+            {unassignedSales.length > 0 && (
+              <Card className="border-orange-200 dark:border-orange-800 shadow-sm overflow-hidden border-l-4">
+                <CardHeader className="pb-3 bg-orange-50/30">
+                  <div className="flex items-center gap-2">
+                    <UserX className="h-5 w-5 text-orange-600" />
+                    <CardTitle className="text-base text-orange-800 dark:text-orange-400 font-bold">
+                      พนักงานขายที่ยังไม่มีทีม ({unassignedSales.length} คน)
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs">เซลล์เหล่านี้ยังไม่ถูกจัดสรรให้ผู้จัดการคนใด</CardDescription>
+                </CardHeader>
+                <CardContent className="p-3 md:p-6">
+                  <div className="space-y-3">
+                    {unassignedSales.map((sale) => (
+                      <div key={sale.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 rounded-xl bg-orange-50/50 border border-orange-100 gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-orange-200 flex items-center justify-center text-sm font-bold text-orange-800">
+                            {sale.name.charAt(0)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm md:text-base truncate">{sale.name}</div>
+                            <div className="text-[10px] md:text-xs text-muted-foreground truncate">{sale.email}</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 bg-white/60 p-1.5 px-3 rounded-lg border border-orange-200 w-full sm:w-auto overflow-hidden">
+                          <span className="text-[10px] font-bold text-orange-700 uppercase tracking-tighter whitespace-nowrap">มอบหมายให้:</span>
+                          <Select onValueChange={(val) => handleAssignManager(sale.id, Number(val))}>
+                            <SelectTrigger className="flex-1 sm:w-[150px] h-8 text-[11px] border-none bg-transparent shadow-none focus:ring-0">
+                              <SelectValue placeholder="เลือก Manager" />
+                            </SelectTrigger>
+                            <SelectContent className="max-w-[200px]">
+                              {managers.map((m) => (
+                                <SelectItem key={m.id} value={String(m.id)}>
+                                  {m.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Manager Cards พร้อมทีม */}
+            {teamLoading ? (
+              <div className="text-center py-12 text-muted-foreground">กำลังโหลด...</div>
+            ) : managers.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <Briefcase className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>ยังไม่มีผู้จัดการในระบบ</p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {managers.map((manager) => (
+                  <Card key={manager.id} className="shadow-sm">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                          {manager.name.charAt(0)}
+                        </div>
+                        <div>
+                          <CardTitle className="text-base">{manager.name}</CardTitle>
+                          <CardDescription className="text-xs">{manager.email}</CardDescription>
+                        </div>
+                        <Badge variant="default" className="ml-auto gap-1">
+                          <Briefcase className="h-3 w-3" />
+                          ผู้จัดการ
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-muted-foreground">
+                            ทีมพนักงานขาย ({manager.team.length} คน)
+                          </span>
+                          {/* เพิ่มเซลล์เข้าทีม */}
+                          {unassignedSales.length > 0 && (
+                            <Select onValueChange={(val) => handleAssignManager(Number(val), manager.id)}>
+                              <SelectTrigger className="w-[140px] h-7 text-xs">
+                                <SelectValue placeholder="+ เพิ่มเซลล์" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {unassignedSales.map((s) => (
+                                  <SelectItem key={s.id} value={String(s.id)}>
+                                    {s.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
+
+                        {manager.team.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground text-xs border-2 border-dashed rounded-lg">
+                            ยังไม่มีพนักงานขายในทีม
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {manager.team.map((sale) => (
+                              <div key={sale.id} className="flex items-center justify-between p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center text-xs font-semibold text-primary">
+                                    {sale.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="text-sm font-medium">{sale.name}</div>
+                                    <div className="text-xs text-muted-foreground">{sale.email}</div>
+                                  </div>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  title="นำออกจากทีม"
+                                  onClick={() => handleAssignManager(sale.id, null)}
+                                >
+                                  <UserX className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
+
       {/* ADD USER DIALOG */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="max-w-lg w-full rounded-xl ">

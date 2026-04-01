@@ -111,7 +111,7 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Sarabun', sans-serif;
+    font-family: 'Inter', 'Prompt', sans-serif;
   }
 }
 

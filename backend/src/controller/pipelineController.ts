@@ -22,10 +22,14 @@ const toPipelineKey = (mainStatus: string): PipelineStatus | null => {
 export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
   try {
     const me = req.user!;
-    const isSale = (me.role || "").toUpperCase() === "SALE";
+    const roleUpper = (me.role || "").toUpperCase();
 
     const whereBase: any = {};
-    if (isSale) whereBase.saleId = me.id;
+    if (roleUpper === "SALE") {
+      whereBase.saleId = me.id;
+    } else if (roleUpper === "MANAGER") {
+      whereBase.sale = { managerId: me.id };
+    }
 
     // คอลัมน์ที่แสดงบน Pipeline (ตาม UI ของคุณ)
     const statuses = ["NEW", "CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"] as const;
@@ -46,6 +50,7 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           interestedProperty: { select: { id: true, name: true, type: true } } as any,
 
           quotations: {
+            where: { status: "APPROVED" },
             select: {
               id: true,
               quotationNumber: true,
@@ -72,7 +77,7 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
               createdAt: true,
             } as any,
             orderBy: { createdAt: "desc" },
-            take: 1,
+            take: 50,
           },
 
           // ✅ schema ใหม่: ใช้ contactedLogs เท่านั้น (เป็น array)
@@ -101,22 +106,66 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
       CLOSED: 0,
     };
 
+    let totalClosedCount = 0;
+
     for (const c of counts) {
       const key = String(c.mainStatus) as PipelineStatus;
-      if (countMap[key] !== undefined) countMap[key] = c._count._all;
+      if (countMap[key] !== undefined && key !== "CLOSED") {
+        countMap[key] = c._count._all;
+      }
     }
 
     const columns: Record<PipelineStatus, any[]> = {
-  CONTACTED: [],
-  NEGOTIATING: [],
-  QUOTATION: [],
-  CLOSED: [],
-};
+      CONTACTED: [],
+      NEGOTIATING: [],
+      QUOTATION: [],
+      CLOSED: [],
+    };
 
-for (const c of customers) {
-  const key = toPipelineKey(String(c.mainStatus));
-  if (key) columns[key].push(c);
-}
+    for (const c of customers) {
+      const isCurrentlyClosed = c.mainStatus === "CLOSED";
+      const key = toPipelineKey(String(c.mainStatus));
+
+      // 1. นำเข้าสเตจปัจจุบัน (ถ้าไม่ใช่ CLOSED)
+      if (key && !isCurrentlyClosed) {
+        columns[key].push(c);
+      }
+
+      // 2. นำลูกค้าไปไว้ใน CLOSED ทีละการ์ดตามจำนวนประวัติ closedDeals ที่มี
+      const hasClosedDeals = c.closedDeals && c.closedDeals.length > 0;
+      
+      if (hasClosedDeals) {
+        // เอาประวัติแต่ละรอบไปสร้างการ์ดใน CLOSED แยกกัน
+        c.closedDeals.forEach((cd: any, index: number) => {
+          // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
+          const isHistorical = !(isCurrentlyClosed && index === 0);
+          
+          columns.CLOSED.push({
+            ...c,
+            // ID ปลอมเพื่อให้หน้าบ้านมองเห็นเป็นคนละการ์ด
+            dummyId: isHistorical ? `history_${c.id}_${cd.id}` : c.id,
+            closedDeals: [cd], // ส่งไปแค่อันเดียวให้ Frontend รู้ว่าการ์ดนี้คือดีลนี้
+            isHistorical, // flag แจ้ง Frontend
+            roundNumber: c.closedDeals.length - index, // ลำดับครั้งที่ซื้อ
+          });
+          
+          if (cd.result === "WON" || cd.result === "LOST") {
+            totalClosedCount++;
+          }
+        });
+      } else if (isCurrentlyClosed) {
+        // กรณีเพิ่งลากเข้า CLOSED แต่ยังสร้าง closedDeal ไม่เสร็จ (เผื่อมีจังหวะ delay)
+        columns.CLOSED.push({
+          ...c,
+          dummyId: c.id,
+          isHistorical: false,
+          roundNumber: c.closedDeals ? c.closedDeals.length + 1 : 1,
+        });
+        totalClosedCount++;
+      }
+    }
+    
+    countMap.CLOSED = totalClosedCount;
 
 
 
@@ -186,8 +235,10 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       });
 
       // เขียนรายละเอียด stage แบบ “เสริม” (ใช้โชว์ badge/history)
+      const isSameStage = currentCustomer.mainStatus === toStatus;
+
       if (toStatus === "CONTACTED") {
-        const existing = await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        const existing = isSameStage ? await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).contacted.update({
             where: { id: existing.id },
@@ -201,11 +252,11 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       }
 
       if (toStatus === "NEGOTIATING") {
-        const existing = await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        const existing = isSameStage ? await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).negotiation.update({
-             where: { id: existing.id },
-             data: { status: negotiationStatus || existing.status, note: note !== undefined ? note : existing.note },
+            where: { id: existing.id },
+            data: { status: negotiationStatus || existing.status, note: note !== undefined ? note : existing.note },
           });
         } else {
           await (tx as any).negotiation.create({
@@ -215,16 +266,16 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       }
 
       if (toStatus === "CLOSED") {
-        const existing = await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } });
+        const existing = isSameStage ? await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
-           await (tx as any).closedDeal.update({
-             where: { id: existing.id },
-             data: { 
-               result: closedResult || existing.result, 
-               note: note !== undefined ? note : existing.note,
-               finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue
-             },
-           });
+          await (tx as any).closedDeal.update({
+            where: { id: existing.id },
+            data: {
+              result: closedResult || existing.result,
+              note: note !== undefined ? note : existing.note,
+              finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue
+            },
+          });
         } else {
           await (tx as any).closedDeal.create({
             data: {
@@ -246,5 +297,61 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error("moveCustomerStage error:", err);
     return res.status(500).json({ message: "Move stage failed" });
+  }
+};
+
+/**
+ * POST /api/pipeline/repeat
+ * Reset ลูกค้าที่ปิดการขายแล้วกลับไป CONTACTED เพื่อเริ่มซื้อซ้ำ
+ */
+export const repeatPurchase = async (req: AuthRequest, res: Response) => {
+  try {
+    const me = req.user!;
+    const { customerId } = req.body;
+
+    const id = Number(customerId);
+    if (!Number.isInteger(id)) {
+      return res.status(400).json({ message: "customerId ไม่ถูกต้อง" });
+    }
+
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { saleId: true, mainStatus: true, sale: { select: { managerId: true } } },
+    });
+
+    if (!customer) {
+      return res.status(404).json({ message: "ไม่พบลูกค้า" });
+    }
+
+    // ✅ เพิ่มความเป๊ะ: ต้องเป็นลูกค้าที่ CLOSED แล้วเท่านั้นถึงจะเริ่มดีลใหม่ได้
+    if (customer.mainStatus !== "CLOSED") {
+      return res.status(400).json({ message: "เฉพาะลูกค้าที่ปิดการขายแล้วเท่านั้นที่สามารถเริ่มดีลซื้อซ้ำได้" });
+    }
+
+    // ตรวจสิทธิ์: SALE ต้องเป็นเซลล์ของลูกค้านั้น, MANAGER ต้องอยู่ในทีม
+    const roleUpper = (me.role || "").toUpperCase();
+    if (roleUpper === "SALE") {
+      if (customer.saleId !== me.id) {
+        return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+      }
+    } else if (roleUpper === "MANAGER") {
+      if ((customer.sale as any)?.managerId !== me.id) {
+        return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+      }
+    }
+
+    // Reset กลับไปเป็น NEW + ปลดเซลล์เก่า (saleId: null) เพื่อให้รอแอดมินหรือระบบจัดสรรใหม่
+    await prisma.customer.update({
+      where: { id },
+      data: {
+        mainStatus: "NEW",
+        saleId: null,
+      },
+    });
+
+    return res.json({ ok: true, message: "เตรียมการซื้อซ้ำเรียบร้อย สินค้ารอการจัดสรรเซลล์ใหม่ที่เมนูลูกค้า" });
+  } catch (err) {
+    console.error("repeatPurchase error:", err);
+    return res.status(500).json({ message: "Repeat purchase failed" });
   }
 };

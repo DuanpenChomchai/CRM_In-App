@@ -147,6 +147,11 @@ const QuotationList = () => {
 
   const handleCreateNew = () => navigate("/quotation");
   const handleEdit = (id: number) => navigate(`/quotation?edit=${id}`);
+  const handleView = (id: number) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    window.open(`${API_BASE}/api/quotations/${id}/pdf?t=${encodeURIComponent(token)}`, "_blank");
+  };
 
   const handleDownload = async (quotation: QuotationRow) => {
     try {
@@ -190,33 +195,37 @@ const QuotationList = () => {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6 animate-fade-in">
+    <div className="container mx-auto p-4 md:p-6 space-y-4 md:space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <FileText className="w-8 h-8 text-primary" />
-          รายการใบเสนอราคา
-        </h1>
-        <Button onClick={handleCreateNew} className="gradient-primary text-white hover:opacity-90">
-          <Plus className="w-4 h-4 mr-2" />
-          สร้างใบเสนอราคาใหม่
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-2 rounded-lg gradient-primary text-white shadow-md shrink-0">
+            <FileText className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-2xl font-bold leading-tight truncate">รายการใบเสนอราคา</h1>
+            <p className="text-[10px] md:text-xs text-muted-foreground hidden sm:block">จัดการเอกสารทั้งหมดในระบบ</p>
+          </div>
+        </div>
+        <Button onClick={handleCreateNew} className="gradient-primary text-white hover:opacity-90 shrink-0 h-9 md:h-10 px-3 md:px-4 text-xs md:text-sm">
+          <Plus className="w-4 h-4 mr-1 md:mr-2" />
+          <span className="hidden sm:inline">สร้างใบเสนอราคาใหม่</span>
+          <span className="sm:hidden">สร้างใหม่</span>
         </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "ทั้งหมด", value: countAll, color: "" },
-          { label: "แบบร่าง", value: countDraft, color: "text-gray-600" },
-          { label: "ส่งแล้ว", value: countSent, color: "text-blue-600" },
-          { label: "อนุมัติแล้ว", value: countApproved, color: "text-green-600" },
+          { label: "ทั้งหมด", value: countAll, color: "text-foreground", border: "border-l-primary", bg: "" },
+          { label: "แบบร่าง", value: countDraft, color: "text-gray-600", border: "border-l-gray-400", bg: "" },
+          { label: "ส่งแล้ว", value: countSent, color: "text-blue-600", border: "border-l-blue-500", bg: "" },
+          { label: "อนุมัติแล้ว", value: countApproved, color: "text-green-600", border: "border-l-green-500", bg: "" },
         ].map((s) => (
-          <Card key={s.label} className="shadow-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+          <Card key={s.label} className={`overflow-hidden border-l-4 ${s.border}`}>
+            <CardContent className="p-3 md:p-4">
+              <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{s.label}</p>
+              <div className={`text-2xl md:text-3xl font-bold ${s.color}`}>{s.value}</div>
             </CardContent>
           </Card>
         ))}
@@ -224,34 +233,34 @@ const QuotationList = () => {
 
       {/* Table */}
       <Card className="shadow-card">
-        <CardHeader>
-          <div className="flex items-center justify-between">
+        <CardHeader className="p-4 md:p-6">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <CardTitle>รายการใบเสนอราคาทั้งหมด</CardTitle>
-            <div className="relative w-96">
+            <div className="relative w-full md:w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="ค้นหาเลขที่ใบเสนอราคา / ลูกค้า / อสังหาฯ"
+                placeholder="ค้นหาเลขที่ใบเสนอราคา..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 w-full"
               />
             </div>
           </div>
         </CardHeader>
 
-        <CardContent>
-          <div className="rounded-md border">
+        <CardContent className="p-0 md:p-6 pt-0">
+          <div className="border-t md:border md:rounded-md overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>เลขที่ใบเสนอราคา</TableHead>
-                  <TableHead>ชื่อลูกค้า</TableHead>
-                  <TableHead>อสังหาฯ</TableHead>
-                  <TableHead>วันที่</TableHead>
-                  <TableHead className="text-right">ยอดรวม</TableHead>
-                  <TableHead className="text-center">จำนวนรายการ</TableHead>
-                  <TableHead className="text-center">สถานะ</TableHead>
-                  <TableHead className="text-center">จัดการ</TableHead>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="min-w-[150px]">เลขที่ใบเสนอราคา</TableHead>
+                  <TableHead className="min-w-[150px]">ชื่อลูกค้า</TableHead>
+                  <TableHead className="min-w-[150px]">อสังหาฯ</TableHead>
+                  <TableHead className="min-w-[120px]">วันที่</TableHead>
+                  <TableHead className="text-right min-w-[120px]">ยอดรวม</TableHead>
+                  <TableHead className="text-center min-w-[100px]">จำนวนรายการ</TableHead>
+                  <TableHead className="text-center min-w-[100px]">สถานะ</TableHead>
+                  <TableHead className="text-center min-w-[120px]">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
 
@@ -264,25 +273,33 @@ const QuotationList = () => {
                   </TableRow>
                 ) : (
                   filtered.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.quotationNumber}</TableCell>
-                      <TableCell>{r.customerName}</TableCell>
-                      <TableCell>{r.propertyName}</TableCell>
-                      <TableCell>{formatDate(r.stateDate)}</TableCell>
-                      <TableCell className="text-right font-semibold text-primary">
+                    <TableRow key={r.id} className="hover:bg-muted/30">
+                      <TableCell className="font-medium">
+                        <button
+                          onClick={() => handleView(r.id)}
+                          className="text-primary hover:underline hover:text-primary/80 transition-all font-bold text-sm"
+                          title="คลิกเพื่อดูใบเสนอราคา"
+                        >
+                          {r.quotationNumber}
+                        </button>
+                      </TableCell>
+                      <TableCell className="text-sm">{r.customerName}</TableCell>
+                      <TableCell className="text-sm">{r.propertyName}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{formatDate(r.stateDate)}</TableCell>
+                      <TableCell className="text-right font-semibold text-primary text-sm whitespace-nowrap">
                         {formatCurrency(r.totalAmount)}
                       </TableCell>
-                      <TableCell className="text-center">{r.itemsCount}</TableCell>
+                      <TableCell className="text-center text-sm">{r.itemsCount}</TableCell>
                       <TableCell className="text-center">{getStatusBadge(r.status)}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           {/* Edit */}
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(r.id)} title="แก้ไข">
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(r.id)} title="แก้ไข" className="h-8 w-8 p-0">
                             <Edit className="w-4 h-4" />
                           </Button>
 
                           {/* Download PDF */}
-                          <Button variant="ghost" size="sm" onClick={() => handleDownload(r)} title="ดาวน์โหลด PDF">
+                          <Button variant="ghost" size="sm" onClick={() => handleDownload(r)} title="ดาวน์โหลด PDF" className="h-8 w-8 p-0">
                             <Download className="w-4 h-4" />
                           </Button>
 
