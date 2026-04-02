@@ -14,7 +14,7 @@ export const DroppableStageColumn = ({ id, children }: DroppableStageColumnProps
   return (
     <div
       ref={setNodeRef}
-      className={`min-h-[400px] transition-colors ${
+      className={`h-full overflow-y-auto pr-1 pb-20 transition-colors flex flex-col gap-3 rounded-xl p-0.5 scrollbar-thin scrollbar-thumb-stone-200 hover:scrollbar-thumb-stone-300 dark:scrollbar-thumb-stone-800 ${
         isOver ? "bg-accent/20 ring-2 ring-primary/50" : ""
       }`}
     >

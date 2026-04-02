@@ -576,3 +576,113 @@ export const getProfile = async (req: Request, res: Response) => {
     img: signedUrl,
   })
 };
+
+/* =======================
+   GET: getManagersWithTeams
+   ดึง Manager ทั้งหมด พร้อมรายชื่อ SALE ในทีม
+   ======================= */
+export const getManagersWithTeams = async (req: Request, res: Response) => {
+  try {
+    const managers = await prisma.user.findMany({
+      where: { role: "MANAGER" },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        tol: true,
+        img: true,
+        role: true,
+        // ดึง SALE ที่มี managerId ชี้มาหา manager นี้
+        team: {
+          where: { role: "SALE" },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            tol: true,
+            img: true,
+            role: true,
+          },
+          orderBy: { name: "asc" },
+        },
+      },
+    });
+
+    // ดึง SALE ที่ยังไม่มี manager
+    const unassignedSales = await prisma.user.findMany({
+      where: { role: "SALE", managerId: null },
+      select: { id: true, name: true, email: true, tol: true, img: true, role: true },
+      orderBy: { name: "asc" },
+    });
+
+    const mappedManagers = managers.map((m) => ({
+      ...m,
+      img: buildProfileImageUrl(m.id, m.img),
+      team: m.team.map((s) => ({
+        ...s,
+        img: buildProfileImageUrl(s.id, s.img),
+      })),
+    }));
+
+    return res.json({
+      managers: mappedManagers,
+      unassignedSales: unassignedSales.map((s) => ({
+        ...s,
+        img: buildProfileImageUrl(s.id, s.img),
+      })),
+    });
+  } catch (err) {
+    console.error("getManagersWithTeams error:", err);
+    return res.status(500).json({ message: "ดึงข้อมูลทีมล้มเหลว" });
+  }
+};
+
+/* =======================
+   PATCH: assignManager
+   กำหนด managerId ให้ SALE user
+   ======================= */
+export const assignManager = async (req: Request, res: Response) => {
+  try {
+    const saleId = Number(req.params.saleId);
+    if (Number.isNaN(saleId)) {
+      return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
+    }
+
+    const { managerId } = req.body;
+
+    // ตรวจว่า sale มีอยู่และเป็น SALE role
+    const sale = await prisma.user.findFirst({
+      where: { id: saleId, role: "SALE" },
+    });
+    if (!sale) {
+      return res.status(404).json({ message: "ไม่พบพนักงานขาย" });
+    }
+
+    // ถ้าส่ง managerId = null → ลบออกจากทีม
+    let finalManagerId: number | null = null;
+    if (managerId !== null && managerId !== undefined && managerId !== "") {
+      const manager = await prisma.user.findFirst({
+        where: { id: Number(managerId), role: "MANAGER" },
+      });
+      if (!manager) {
+        return res.status(404).json({ message: "ไม่พบผู้จัดการ" });
+      }
+      finalManagerId = Number(managerId);
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: saleId },
+      data: { managerId: finalManagerId },
+      select: { id: true, name: true, email: true, tol: true, img: true, role: true, managerId: true },
+    });
+
+    return res.json({
+      ...updated,
+      img: buildProfileImageUrl(updated.id, updated.img),
+    });
+  } catch (err) {
+    console.error("assignManager error:", err);
+    return res.status(500).json({ message: "กำหนดผู้จัดการไม่สำเร็จ" });
+  }
+};

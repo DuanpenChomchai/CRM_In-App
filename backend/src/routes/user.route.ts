@@ -10,7 +10,9 @@ import {
   listSales,
   uploadProfileImage,
   getUserProfle,
-  getProfile
+  getProfile,
+  getManagersWithTeams,
+  assignManager,
 } from "../controller/userController";
 
 import { authMiddleware, verifyAdmin, AuthRequest } from "../middlewares/authMiddleware";
@@ -116,6 +118,9 @@ router.put("/profile/profile-image", authMiddleware, upload.single("img"), uploa
 router.get("/sales", authMiddleware, verifyAdmin, listSales);
 // ดึงรายชื่อเซลล์สำหรับ dropdown (ทุก role เข้าได้ แค่ login)
 router.get("/sales-list", authMiddleware, listSales);
+// จัดการทีม manager
+router.get("/managers-with-teams", authMiddleware, verifyAdmin, getManagersWithTeams);
+router.patch("/sales/:saleId/assign-manager", authMiddleware, verifyAdmin, assignManager);
 router.get("/", authMiddleware, verifyAdmin, listUsers);
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);
 router.post("/", authMiddleware, verifyAdmin, createUser);

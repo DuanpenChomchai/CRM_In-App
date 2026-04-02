@@ -28,6 +28,8 @@ import {
   Pencil,
   Trash2,
   Image as ImageIcon,
+  Search,
+  DollarSign,
 } from "lucide-react";
 import {
   Dialog,
@@ -37,20 +39,27 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
-/** =========================
- * CONFIG
- * ========================= */
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
 const parseJwt = (token: string) => {
   try {
     const payload = token.split(".")[1];
     if (!payload) return null;
-
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
     const jsonPayload = decodeURIComponent(
       atob(base64)
@@ -58,7 +67,6 @@ const parseJwt = (token: string) => {
         .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
         .join(""),
     );
-
     return JSON.parse(jsonPayload);
   } catch {
     return null;
@@ -68,14 +76,10 @@ const parseJwt = (token: string) => {
 const getToken = () =>
   localStorage.getItem("token") || localStorage.getItem("accessToken") || "";
 
-/** =========================
- * Helpers
- * ========================= */
 const toImgUrl = (img?: string | null) => {
   if (!img) return "";
   if (img.startsWith("http")) return img;
   if (img.startsWith("/")) return `${API_BASE}${img}`;
-
   return `${API_BASE}/api/properties/img?key=${encodeURIComponent(img)}`;
 };
 
@@ -123,24 +127,19 @@ const statusBadge = (status: PropertyStatusUI) => {
   }
 };
 
-/** =========================
- * Types from Backend
- * ========================= */
 type PropertyDb = {
   id: number;
   name: string;
-  type: string; // HOUSE/CONDO/TOWNHOME
+  type: string;
   location: string;
   address?: string | null;
-  price: any; // Decimal from prisma -> may be string
+  price: any;
   bedrooms: number;
   bathrooms: number;
   size: number;
-  status: string; // AVAILABLE/RESERVED/SOLD
+  status: string;
   description?: string | null;
   img?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
 };
 
 type PropertyUI = {
@@ -173,9 +172,6 @@ const normalizeDbToUI = (p: PropertyDb): PropertyUI => ({
   img: p.img ?? null,
 });
 
-/** =========================
- * Form
- * ========================= */
 type PropertyForm = {
   name: string;
   type: PropertyTypeUI;
@@ -187,7 +183,7 @@ type PropertyForm = {
   size: string;
   status: PropertyStatusUI;
   description: string;
-  imageFile: File | null; // อัปโหลดเข้า MinIO
+  imageFile: File | null;
 };
 
 const initialForm: PropertyForm = {
@@ -205,29 +201,17 @@ const initialForm: PropertyForm = {
 };
 
 export default function Properties() {
-  /** =========================
-   * Filters + pagination
-   * ========================= */
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | PropertyTypeUI>("all");
-  const [filterStatus, setFilterStatus] = useState<"all" | PropertyStatusUI>(
-    "all",
-  );
-
+  const [filterStatus, setFilterStatus] = useState<"all" | PropertyStatusUI>("all");
   const [page, setPage] = useState(1);
   const pageSize = 12;
 
-  /** =========================
-   * Data
-   * ========================= */
   const [items, setItems] = useState<PropertyUI[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  /** =========================
-   * Dialogs
-   * ========================= */
   const [detailOpen, setDetailOpen] = useState(false);
   const [selected, setSelected] = useState<PropertyUI | null>(null);
 
@@ -237,10 +221,8 @@ export default function Properties() {
   const [form, setForm] = useState<PropertyForm>(initialForm);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
-  const [deleteName, setDeleteName] = useState<string>("");
+  const [deleteTarget, setDeleteTarget] = useState<PropertyUI | null>(null);
 
-  // ✅ ย้ายมาไว้ใน component (เพราะใช้ form)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [existingImgUrl, setExistingImgUrl] = useState<string>("");
@@ -266,9 +248,6 @@ export default function Properties() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  /** =========================
-   * Fetch list (DB + pagination + search)
-   * ========================= */
   const fetchList = async () => {
     setLoading(true);
     try {
@@ -279,14 +258,9 @@ export default function Properties() {
       if (filterType !== "all") params.set("type", filterType);
       if (filterStatus !== "all") params.set("status", filterStatus);
 
-      const res = await fetch(
-        `${API_BASE}/api/properties?${params.toString()}`,
-        {
-          headers: {
-            ...authHeaders,
-          },
-        },
-      );
+      const res = await fetch(`${API_BASE}/api/properties?${params.toString()}`, {
+        headers: { ...authHeaders },
+      });
 
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "โหลดรายการไม่สำเร็จ");
@@ -304,7 +278,6 @@ export default function Properties() {
 
   useEffect(() => {
     fetchList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, filterType, filterStatus]);
 
   useEffect(() => {
@@ -313,28 +286,15 @@ export default function Properties() {
       fetchList();
     }, 350);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  /** =========================
-   * Form handlers
-   * ========================= */
-  const handleTextChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-
-    setForm((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSelectChange = (name: keyof PropertyForm, value: string) => {
-    setForm((prev) => ({
-      ...prev,
-      [name]: value as any,
-    }));
+    setForm((prev) => ({ ...prev, [name]: value as any }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -373,17 +333,8 @@ export default function Properties() {
     setFormOpen(true);
   };
 
-  /** =========================
-   * Create / Update + Upload image (MinIO)
-   * ========================= */
   const saveProperty = async () => {
     try {
-      const token = getToken();
-      if (!token) {
-        toast.error("ไม่มี token (กรุณา login)");
-        return;
-      }
-
       if (!form.name.trim() || !form.location.trim() || !form.type) {
         toast.error("กรอก ชื่อ / ทำเล / ประเภท ให้ครบ");
         return;
@@ -399,10 +350,7 @@ export default function Properties() {
       if (mode === "create") {
         const res = await fetch(`${API_BASE}/api/properties`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             name: form.name,
             type: form.type,
@@ -421,13 +369,9 @@ export default function Properties() {
         id = json.id;
       } else {
         if (!editId) throw new Error("ไม่มี id สำหรับแก้ไข");
-
         const res = await fetch(`${API_BASE}/api/properties/${editId}`, {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             name: form.name,
             type: form.type,
@@ -448,112 +392,83 @@ export default function Properties() {
       if (id && form.imageFile) {
         const fd = new FormData();
         fd.append("img", form.imageFile);
-
         const up = await fetch(`${API_BASE}/api/properties/${id}/image`, {
           method: "POST",
-          headers: {
-            ...authHeaders,
-          },
+          headers: { ...authHeaders },
           body: fd,
         });
-
-        const upJson = await up.json();
-        if (!up.ok) throw new Error(upJson?.message || "อัปโหลดรูปไม่สำเร็จ");
+        if (!up.ok) throw new Error("อัปโหลดรูปไม่สำเร็จ");
       }
 
-      toast.success(mode === "create" ? "เพิ่มอสังหาฯสำเร็จ" : "แก้ไขสำเร็จ");
+      toast.success(mode === "create" ? "เพิ่มสำเร็จ" : "แก้ไขสำเร็จ");
       setFormOpen(false);
-      setForm(initialForm);
-
       setPage(1);
-      await fetchList();
+      fetchList();
     } catch (e: any) {
       toast.error(e?.message || "บันทึกไม่สำเร็จ");
     }
   };
 
-  /** =========================
-   * Delete
-   * ========================= */
-  const confirmDelete = (p: PropertyUI) => {
-    if (!isAdmin) return toast.error("สิทธิ์ไม่พอ (Admin เท่านั้น)");
-    setDeleteId(p.id);
-    setDeleteName(p.name);
-    setDeleteOpen(true);
-  };
-
   const doDelete = async () => {
     try {
-      if (!deleteId) return;
-
-      const res = await fetch(`${API_BASE}/api/properties/${deleteId}`, {
+      if (!deleteTarget) return;
+      const res = await fetch(`${API_BASE}/api/properties/${deleteTarget.id}`, {
         method: "DELETE",
-        headers: {
-          ...authHeaders,
-        },
+        headers: { ...authHeaders },
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message || "ลบไม่สำเร็จ");
-
+      if (!res.ok) throw new Error("ลบไม่สำเร็จ");
       toast.success("ลบสำเร็จ");
       setDeleteOpen(false);
-      setDeleteId(null);
-      setDeleteName("");
-
       setPage(1);
-      await fetchList();
+      fetchList();
     } catch (e: any) {
       toast.error(e?.message || "ลบไม่สำเร็จ");
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+    <div className="container mx-auto p-4 md:p-6 space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground flex items-center gap-2">
+            <Building className="w-6 h-6 md:w-8 md:h-8 text-primary" />
             อสังหาริมทรัพย์
           </h1>
-          <p className="text-muted-foreground">
-            จัดการรายการอสังหาริมทรัพย์ของคุณ
+          <p className="text-xs md:text-sm text-muted-foreground">
+            จัดการรายการอสังหาริมทรัพย์และห้องชุด
           </p>
         </div>
         {isAdmin && (
-          <Button
-            onClick={openCreate}
-            className="gradient-primary text-white hover:opacity-90"
-          >
+          <Button onClick={openCreate} className="gradient-primary text-white hover:shadow-lg w-full sm:w-auto h-10 md:h-11">
             <Plus className="w-4 h-4 mr-2" />
             เพิ่มอสังหาฯ
           </Button>
         )}
       </div>
 
-      {/* Filters */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle>กรองข้อมูล</CardTitle>
+      <Card className="shadow-elegant overflow-hidden">
+        <CardHeader className="p-4 md:p-6 bg-muted/20">
+          <CardTitle className="text-lg font-bold flex items-center gap-2">
+            <Search className="w-5 h-5 text-primary" />
+            ตัวกรองค้นหา
+          </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
-            <div>
-              <label className="text-sm font-medium">ค้นหา</label>
+        <CardContent className="p-4 md:p-6">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">ค้นหาชื่อ/ทำเล</Label>
               <Input
-                placeholder="ชื่อ / ทำเล / ที่อยู่..."
+                placeholder="ระบุชื่อหรือทำเล..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                className="h-10"
               />
             </div>
-
-            <div>
-              <label className="text-sm font-medium">ประเภท</label>
-              <Select
-                value={filterType}
-                onValueChange={(v) => setFilterType(v as any)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกประเภท" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">ประเภท</Label>
+              <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="ทุกประเภท" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทั้งหมด</SelectItem>
@@ -563,15 +478,11 @@ export default function Properties() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div>
-              <label className="text-sm font-medium">สถานะ</label>
-              <Select
-                value={filterStatus}
-                onValueChange={(v) => setFilterStatus(v as any)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกสถานะ" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">สถานะการขาย</Label>
+              <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as any)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="ทุกสถานะ" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">ทั้งหมด</SelectItem>
@@ -582,276 +493,192 @@ export default function Properties() {
               </Select>
             </div>
           </div>
-
-          <div className="mt-4 text-sm text-muted-foreground">
-            {loading ? "กำลังโหลด..." : `ทั้งหมด ${total} รายการ`}
+          <div className="mt-4 text-xs text-muted-foreground italic">
+            พบทั้งหมด {total} รายการ
           </div>
         </CardContent>
       </Card>
 
-      {/* Grid */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((p) => (
-          <Card key={p.id} className="shadow-card hover:shadow-lg transition">
-            <img
-              src={toImgUrl(p.img)}
-              alt={p.name}
-              className="w-full h-48 object-cover rounded-t-md bg-gray-100"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
+          <Card key={p.id} className="shadow-card hover:shadow-lg transition-all duration-300 flex flex-col h-full overflow-hidden group">
+            <div className="relative h-48 md:h-56 shrink-0 overflow-hidden">
+              <img
+                src={toImgUrl(p.img)}
+                alt={p.name}
+                className="w-full h-full object-cover bg-muted group-hover:scale-105 transition-transform duration-500"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = "https://placehold.co/600x400?text=No+Image";
+                }}
+              />
+              <div className="absolute top-3 right-3">{statusBadge(p.status)}</div>
+            </div>
 
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {p.type === "คอนโด" ? (
-                    <Building2 className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Home className="h-4 w-4 text-primary" />
-                  )}
-                  <Badge variant="outline">{p.type}</Badge>
-                </div>
-                {statusBadge(p.status)}
+            <CardHeader className="p-4 pb-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-tight">{p.type}</Badge>
               </div>
-              <CardTitle className="text-lg font-semibold">{p.name}</CardTitle>
+              <CardTitle className="text-base md:text-lg font-bold line-clamp-1">{p.name}</CardTitle>
             </CardHeader>
 
-            <CardContent className="space-y-4">
-              <div className="flex items-center text-sm text-muted-foreground">
-                <MapPin className="h-4 w-4 mr-1 text-primary" /> {p.location}
+            <CardContent className="p-4 pt-0 flex-1 flex flex-col justify-between space-y-4">
+              <div className="flex items-center text-xs text-muted-foreground">
+                <MapPin className="h-3.5 w-3.5 mr-1 text-primary shrink-0" />
+                <span className="truncate">{p.location}</span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-2 rounded bg-muted/40">
+              <div className="grid grid-cols-3 gap-2 py-2">
+                <div className="p-2 rounded-lg bg-muted/30 text-center">
                   <Bed className="h-4 w-4 mx-auto text-primary mb-1" />
-                  <p className="text-xs text-muted-foreground">ห้องนอน</p>
-                  <p className="font-medium">{p.bedrooms}</p>
+                  <p className="text-[10px] text-muted-foreground">ห้องนอน</p>
+                  <p className="text-xs font-bold">{p.bedrooms}</p>
                 </div>
-                <div className="p-2 rounded bg-muted/40">
+                <div className="p-2 rounded-lg bg-muted/30 text-center">
                   <Bath className="h-4 w-4 mx-auto text-primary mb-1" />
-                  <p className="text-xs text-muted-foreground">ห้องน้ำ</p>
-                  <p className="font-medium">{p.bathrooms}</p>
+                  <p className="text-[10px] text-muted-foreground">ห้องน้ำ</p>
+                  <p className="text-xs font-bold">{p.bathrooms}</p>
                 </div>
-                <div className="p-2 rounded bg-muted/40">
+                <div className="p-2 rounded-lg bg-muted/30 text-center">
                   <Maximize2 className="h-4 w-4 mx-auto text-primary mb-1" />
-                  <p className="text-xs text-muted-foreground">พื้นที่</p>
-                  <p className="font-medium">{p.size} ตร.ม.</p>
+                  <p className="text-[10px] text-muted-foreground">พื้นที่</p>
+                  <p className="text-xs font-bold">{p.size}<span className="text-[8px] ml-0.5">m²</span></p>
                 </div>
               </div>
 
-              <div className="border-t pt-3 flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">ราคา</span>
-                <span className="text-2xl font-bold text-green-600">
-                  {formatPrice(p.price)}
-                </span>
+              <div className="pt-2 flex justify-between items-center border-t border-dashed">
+                <span className="text-xs text-muted-foreground">ราคาขาย</span>
+                <span className="text-xl font-bold text-primary">{formatPrice(p.price)}</span>
               </div>
             </CardContent>
 
-            <CardFooter className="flex gap-2">
+            <CardFooter className="p-4 pt-0 flex gap-2">
               <Button
-                className="flex-1 gradient-primary text-white hover:opacity-90"
-                onClick={() => {
-                  setSelected(p);
-                  setDetailOpen(true);
-                }}
+                variant="outline"
+                className="flex-1 h-9 text-xs font-bold"
+                onClick={() => { setSelected(p); setDetailOpen(true); }}
               >
                 ดูรายละเอียด
               </Button>
-
               {isAdmin && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => openEdit(p)}
-                    title="แก้ไข"
-                  >
-                    <Pencil className="w-4 h-4" />
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => openEdit(p)}>
+                    <Pencil className="w-4 h-4 text-blue-500" />
                   </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => confirmDelete(p)}
-                    title="ลบ"
-                  >
-                    <Trash2 className="w-4 h-4" />
+                  <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => { setDeleteTarget(p); setDeleteOpen(true); }}>
+                    <Trash2 className="w-4 h-4 text-red-500" />
                   </Button>
-                </>
+                </div>
               )}
             </CardFooter>
           </Card>
         ))}
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-center gap-3">
-        <Button
-          variant="outline"
-          disabled={page <= 1 || loading}
-          onClick={() => setPage((p) => p - 1)}
-        >
-          ก่อนหน้า
-        </Button>
-        <span className="text-sm text-muted-foreground">
-          หน้า {page} / {totalPages}
-        </span>
-        <Button
-          variant="outline"
-          disabled={page >= totalPages || loading}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          ถัดไป
-        </Button>
+      <div className="flex items-center justify-center gap-2 md:gap-4 py-8">
+        <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)} className="h-9">ก่อนหน้า</Button>
+        <span className="text-xs font-bold bg-muted px-4 py-1.5 rounded-full">หน้า {page} / {totalPages}</span>
+        <Button variant="outline" size="sm" disabled={page >= totalPages || loading} onClick={() => setPage((p) => p + 1)} className="h-9">ถัดไป</Button>
       </div>
 
       {/* Detail Dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">
-              {selected?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {selected?.type} • {selected?.location}
-            </DialogDescription>
-          </DialogHeader>
-
+        <DialogContent className="max-w-[95vw] md:max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl p-0 border-none shadow-2xl">
           {selected && (
-            <div className="space-y-6">
-              <div className="relative h-80 rounded-xl overflow-hidden">
-                <img
-                  src={toImgUrl(selected.img)}
-                  alt={selected.name}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute top-4 right-4">
-                  {statusBadge(selected.status)}
+            <div className="space-y-0">
+              <div className="relative h-64 md:h-96 w-full">
+                <img src={toImgUrl(selected.img)} alt={selected.name} className="w-full h-full object-cover" />
+                <div className="absolute top-4 right-4">{statusBadge(selected.status)}</div>
+                <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white">
+                  <Badge className="mb-2 bg-primary/80">{selected.type}</Badge>
+                  <h2 className="text-2xl md:text-3xl font-bold">{selected.name}</h2>
+                  <p className="flex items-center gap-1 text-sm opacity-90 mt-1"><MapPin className="w-4 h-4" /> {selected.location}</p>
                 </div>
               </div>
 
-              <div className="text-center py-4 bg-gradient-to-r from-green-100 to-pink-100 rounded-xl">
-                <p className="text-sm text-muted-foreground mb-1">ราคา</p>
-                <p className="text-4xl font-bold bg-gradient-to-r from-green-500 to-pink-500 bg-clip-text text-transparent">
-                  {formatPrice(selected.price)}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-card rounded-lg border text-center">
-                  <Maximize2 className="w-6 h-6 mx-auto mb-2 text-primary" />
-                  <p className="text-sm text-muted-foreground">ขนาด</p>
-                  <p className="font-bold">{selected.size} ตร.ม.</p>
-                </div>
-                <div className="p-4 bg-card rounded-lg border text-center">
-                  <Home className="w-6 h-6 mx-auto mb-2 text-primary" />
-                  <p className="text-sm text-muted-foreground">ห้องนอน</p>
-                  <p className="font-bold">{selected.bedrooms} ห้อง</p>
-                </div>
-                <div className="p-4 bg-card rounded-lg border text-center">
-                  <Building className="w-6 h-6 mx-auto mb-2 text-primary" />
-                  <p className="text-sm text-muted-foreground">ห้องน้ำ</p>
-                  <p className="font-bold">{selected.bathrooms} ห้อง</p>
-                </div>
-                <div className="p-4 bg-card rounded-lg border text-center">
-                  <Building2 className="w-6 h-6 mx-auto mb-2 text-primary" />
-                  <p className="text-sm text-muted-foreground">ประเภท</p>
-                  <p className="font-bold">{selected.type}</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-card rounded-lg border">
-                <div className="flex items-start gap-3">
-                  <MapPin className="w-5 h-5 text-primary mt-1" />
-                  <div>
-                    <p className="font-semibold mb-1">ที่อยู่</p>
-                    <p className="text-muted-foreground leading-relaxed">
-                      {selected.address || "-"}
-                    </p>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-4 bg-muted/30 rounded-xl text-center">
+                    <Maximize2 className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">พื้นที่</p>
+                    <p className="text-lg font-bold">{selected.size} ตร.ม.</p>
+                  </div>
+                  <div className="p-4 bg-muted/30 rounded-xl text-center">
+                    <Bed className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ห้องนอน</p>
+                    <p className="text-lg font-bold">{selected.bedrooms} ห้อง</p>
+                  </div>
+                  <div className="p-4 bg-muted/30 rounded-xl text-center">
+                    <Bath className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ห้องน้ำ</p>
+                    <p className="text-lg font-bold">{selected.bathrooms} ห้อง</p>
+                  </div>
+                  <div className="p-4 bg-primary/10 rounded-xl text-center">
+                    <DollarSign className="w-6 h-6 mx-auto mb-2 text-primary" />
+                    <p className="text-xs text-muted-foreground uppercase font-bold tracking-wider">ราคา</p>
+                    <p className="text-lg font-bold text-primary">{formatPrice(selected.price)}</p>
                   </div>
                 </div>
-              </div>
 
-              <div className="p-4 bg-card rounded-lg border">
-                <p className="font-semibold mb-2">รายละเอียด</p>
-                <p className="text-muted-foreground leading-relaxed">
-                  {selected.description || "-"}
-                </p>
-              </div>
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl border border-dashed">
+                    <h3 className="font-bold mb-2 flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> ที่อยู่</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">{selected.address || "ไม่มีข้อมูลที่อยู่โดยละเอียด"}</p>
+                  </div>
+                  <div className="p-4 rounded-xl border border-dashed">
+                    <h3 className="font-bold mb-2 flex items-center gap-2"><Plus className="w-4 h-4 text-primary" /> รายละเอียดเพิ่มเติม</h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">{selected.description || "ไม่มีรายละเอียดเพิ่มเติมสำหรับอสังหาริมทรัพย์นี้"}</p>
+                  </div>
+                </div>
 
-              <div className={`mt-4 flex gap-3 ${isAdmin ? "grid grid-cols-3" : "justify-center"}`}>
-                <Button variant="outline" className={!isAdmin ? "min-w-32" : ""} onClick={() => setDetailOpen(false)}>
-                  ปิด
-                </Button>
-
-                {isAdmin && (
-                  <>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        openEdit(selected);
-                        setDetailOpen(false);
-                      }}
-                    >
-                      <Pencil className="w-4 h-4 mr-2" />
-                      แก้ไข
-                    </Button>
-
-                    <Button
-                      variant="destructive"
-                      onClick={() => {
-                        confirmDelete(selected);
-                        setDetailOpen(false);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      ลบ
-                    </Button>
-                  </>
-                )}
+                <DialogFooter className="pt-4 border-t">
+                  <Button variant="outline" onClick={() => setDetailOpen(false)} className="w-full sm:w-auto">ปิดหน้าต่าง</Button>
+                </DialogFooter>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Create/Edit Dialog */}
+      {/* Form Dialog */}
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">
-              {mode === "create"
-                ? "เพิ่มอสังหาริมทรัพย์ใหม่"
-                : "แก้ไขอสังหาริมทรัพย์"}
-            </DialogTitle>
-            <DialogDescription>
-              {mode === "create"
-                ? "กรอกข้อมูลเพื่อเพิ่มรายการอสังหาฯ ใหม่"
-                : "แก้ไขข้อมูลอสังหาฯ ของคุณ"}
-            </DialogDescription>
+        <DialogContent className="max-w-[95vw] md:max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl p-0 border-none shadow-2xl">
+          <DialogHeader className="p-6 pb-4 border-b bg-muted/20">
+            <DialogTitle className="text-xl md:text-2xl font-bold">{mode === "create" ? "เพิ่มอสังหาริมทรัพย์ใหม่" : "แก้ไขข้อมูลอสังหาริมทรัพย์"}</DialogTitle>
           </DialogHeader>
 
-          <div className="py-4 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <Label htmlFor="name">ชื่ออสังหาฯ</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={form.name}
-                  onChange={handleTextChange}
-                  placeholder="เช่น คอนโด ใกล้ BTS..."
-                />
+          <div className="p-4 md:p-6 space-y-6">
+            <div className="space-y-3">
+              <Label className="text-sm font-bold">รูปภาพหลัก</Label>
+              <div
+                className="relative h-48 md:h-64 rounded-xl border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:bg-muted/10 transition-colors overflow-hidden group"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {previewUrl || existingImgUrl ? (
+                  <>
+                    <img src={previewUrl || existingImgUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <p className="text-white font-bold bg-primary px-4 py-2 rounded-full">เปลี่ยนรูป</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="w-12 h-12 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground font-medium">คลิกเพื่ออัปโหลดรูปภาพ</p>
+                  </>
+                )}
+                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
               </div>
+            </div>
 
-              <div>
-                <Label htmlFor="type">ประเภท</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(v) => handleSelectChange("type", v)}
-                >
-                  <SelectTrigger id="type">
-                    <SelectValue />
-                  </SelectTrigger>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-sm font-bold">ชื่อโครงการ / ชื่อทรัพย์ *</Label>
+                <Input name="name" value={form.name} onChange={handleTextChange} placeholder="ระบุชื่อเรียก..." className="h-10 md:h-11" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-bold">ประเภท *</Label>
+                <Select value={form.type} onValueChange={(v) => handleSelectChange("type", v)}>
+                  <SelectTrigger className="h-10 md:h-11"><SelectValue placeholder="เลือกประเภท" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="บ้านเดี่ยว">บ้านเดี่ยว</SelectItem>
                     <SelectItem value="คอนโด">คอนโด</SelectItem>
@@ -859,16 +686,10 @@ export default function Properties() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <Label htmlFor="status">สถานะ</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) => handleSelectChange("status", v)}
-                >
-                  <SelectTrigger id="status">
-                    <SelectValue />
-                  </SelectTrigger>
+              <div className="space-y-2">
+                <Label className="text-sm font-bold">สถานะ *</Label>
+                <Select value={form.status} onValueChange={(v) => handleSelectChange("status", v)}>
+                  <SelectTrigger className="h-10 md:h-11"><SelectValue placeholder="เลือกสถานะ" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="available">พร้อมขาย</SelectItem>
                     <SelectItem value="reserved">จอง</SelectItem>
@@ -876,226 +697,67 @@ export default function Properties() {
                   </SelectContent>
                 </Select>
               </div>
-
-              <div>
-                <Label htmlFor="price">ราคา (บาท)</Label>
-                <Input
-                  id="price"
-                  name="price"
-                  type="number"
-                  value={form.price}
-                  onChange={handleTextChange}
-                />
+              <div className="space-y-2">
+                <Label className="text-sm font-bold">ทำเล *</Label>
+                <Input name="location" value={form.location} onChange={handleTextChange} placeholder="ระบุย่าน/ทำเล..." className="h-10 md:h-11" />
               </div>
-
-              <div>
-                <Label htmlFor="size">ขนาด (ตร.ม.)</Label>
-                <Input
-                  id="size"
-                  name="size"
-                  type="number"
-                  value={form.size}
-                  onChange={handleTextChange}
-                />
+              <div className="space-y-2">
+                <Label className="text-sm font-bold">ราคาขาย (บาท) *</Label>
+                <Input name="price" type="number" value={form.price} onChange={handleTextChange} placeholder="0" className="h-10 md:h-11 font-bold text-primary" />
               </div>
-
-              <div>
-                <Label htmlFor="bedrooms">ห้องนอน</Label>
-                <Input
-                  id="bedrooms"
-                  name="bedrooms"
-                  type="number"
-                  min={0}
-                  value={form.bedrooms}
-                  onChange={handleTextChange}
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="bathrooms">ห้องน้ำ</Label>
-                <Input
-                  id="bathrooms"
-                  name="bathrooms"
-                  type="number"
-                  min={0}
-                  value={form.bathrooms}
-                  onChange={handleTextChange}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Label htmlFor="location">ทำเล (ย่าน)</Label>
-                <Input
-                  id="location"
-                  name="location"
-                  value={form.location}
-                  onChange={handleTextChange}
-                  placeholder="เช่น สุขุมวิท, รัตนาธิเบศร์"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Label htmlFor="address">ที่อยู่ (เต็ม)</Label>
-                <Input
-                  id="address"
-                  name="address"
-                  value={form.address}
-                  onChange={handleTextChange}
-                  placeholder="123/45 ถนน..."
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Label htmlFor="image">แนบรูปภาพ</Label>
-
-                <Input
-                  ref={fileInputRef}
-                  id="image"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-
-                <div
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const file = e.dataTransfer.files?.[0];
-                    if (!file) return;
-
-                    const dt = new DataTransfer();
-                    dt.items.add(file);
-                    const input = fileInputRef.current;
-                    if (input) {
-                      input.files = dt.files;
-                      const evt = new Event("change", { bubbles: true });
-                      input.dispatchEvent(evt);
-                    }
-                  }}
-                  className={[
-                    "mt-2 rounded-xl border border-dashed p-4",
-                    "bg-background/40",
-                    "transition-colors",
-                    form.imageFile
-                      ? "border-emerald-300"
-                      : "border-muted-foreground/30 hover:border-emerald-300",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">
-                        {form.imageFile
-                          ? "เลือกไฟล์แล้ว"
-                          : "ลากรูปมาวาง หรือกดเลือกไฟล์"}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate mt-1">
-                        {form.imageFile
-                          ? `ไฟล์: ${form.imageFile.name}`
-                          : "รองรับ JPG/PNG/WEBP (แนะนำไม่เกิน 5MB)"}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 ">
-                      <Button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        เลือกไฟล์
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!form.imageFile}
-                        onClick={() => {
-                          setForm((p) => ({ ...p, imageFile: null }));
-                          if (fileInputRef.current)
-                            fileInputRef.current.value = "";
-                        }}
-                        title="ลบไฟล์"
-                      >
-                        <ImageIcon className="w-4 h-4 mr-2" />
-                        ลบไฟล์
-                      </Button>
-                    </div>
-                  </div>
-
-                  {(previewUrl || existingImgUrl) && (
-                    <div className="mt-3">
-                      <div className="rounded-xl overflow-hidden border bg-background">
-                        <img
-                          src={previewUrl || existingImgUrl}
-                          alt="preview"
-                          className="h-48 w-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
+              <div className="grid grid-cols-3 gap-3 md:col-span-2">
+                <div className="space-y-2">
+                  <Label className="text-sm font-bold">ห้องนอน</Label>
+                  <Input name="bedrooms" type="number" value={form.bedrooms} onChange={handleTextChange} className="h-10" />
                 </div>
-
-                <div className="text-xs text-muted-foreground mt-2">
-                  {form.imageFile
-                    ? "พร้อมอัปโหลดเมื่อกดบันทึก"
-                    : existingImgUrl
-                    ? "ใช้รูปเดิม (เลือกไฟล์ใหม่เพื่อเปลี่ยน)"
-                    : "ยังไม่ได้เลือกไฟล์"}
+                <div className="space-y-2">
+                  <Label className="text-sm font-bold">ห้องน้ำ</Label>
+                  <Input name="bathrooms" type="number" value={form.bathrooms} onChange={handleTextChange} className="h-10" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-bold">พื้นที่ (ตร.ม.)</Label>
+                  <Input name="size" type="number" value={form.size} onChange={handleTextChange} className="h-10" />
                 </div>
               </div>
-
-              <div className="md:col-span-2">
-                <Label htmlFor="description">รายละเอียด</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  value={form.description}
-                  onChange={handleTextChange}
-                  placeholder="อธิบายเกี่ยวกับอสังหาฯ นี้..."
-                />
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-sm font-bold">ที่อยู่โดยละเอียด</Label>
+                <Input name="address" value={form.address} onChange={handleTextChange} placeholder="ระบุที่อยู่..." className="h-10" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label className="text-sm font-bold">รายละเอียด</Label>
+                <Textarea name="description" value={form.description} onChange={handleTextChange} rows={4} placeholder="ระบุรายละเอียดเพิ่มเติม..." className="resize-none" />
               </div>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>
-              ยกเลิก
-            </Button>
-            <Button
-              onClick={saveProperty}
-              className="gradient-primary text-white hover:opacity-90"
-            >
-              {mode === "create" ? "บันทึก" : "อัปเดต"}
+          <DialogFooter className="p-6 border-t flex-col sm:flex-row gap-3 bg-muted/10">
+            <Button variant="outline" onClick={() => setFormOpen(false)} className="w-full sm:w-auto h-11 order-2 sm:order-1">ยกเลิก</Button>
+            <Button onClick={saveProperty} className="w-full sm:w-auto h-11 gradient-primary text-white order-1 sm:order-2 shadow-lg font-bold">
+              <Plus className="w-4 h-4 mr-2" />
+              {mode === "create" ? "เพิ่มทรัพย์" : "บันทึกการแก้ไข"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete confirm Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold">ยืนยันการลบ</DialogTitle>
-            <DialogDescription>
-              ต้องการลบ <b>{deleteName}</b> ใช่ไหม?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              ยกเลิก
-            </Button>
-            <Button variant="destructive" onClick={doDelete}>
-              ลบ
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent className="rounded-xl max-w-[90vw] md:max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-xl font-bold text-destructive flex items-center gap-2">
+              <Trash2 className="w-5 h-5" />
+              ยืนยันการลบทรัพย์
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-base pt-2">
+              คุณแน่ใจหรือไม่ว่าต้องการลบ <span className="font-bold text-foreground">"{deleteTarget?.name}"</span>?
+              <br />ข้อมูลที่เกี่ยวข้องทั้งหมดจะถูกลบออกจากระบบเป็นการถาวร
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2 mt-4">
+            <AlertDialogCancel className="w-full sm:w-auto h-10 md:h-11">ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={doDelete} className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto h-10 md:h-11">ยืนยันการลบ</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

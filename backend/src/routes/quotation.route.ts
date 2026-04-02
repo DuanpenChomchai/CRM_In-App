@@ -9,6 +9,7 @@ import {
   getQuotationById,
   generateQuotationPDF,
   approveQuotation,
+  deleteQuotation,
 } from "../controller/quotationController";
 
 const router = Router();
@@ -30,5 +31,8 @@ router.get("/:id/pdf", authMiddleware, verifyRoles("SALE", "MANAGER", "ADMIN"), 
 
 /** APPROVE: Manager/Admin */
 router.post("/:id/approve", authMiddleware, verifyRoles("MANAGER", "ADMIN"), approveQuotation);
+
+/** DELETE: Any authorized (เช็ค owner/team ใน controller) */
+router.delete("/:id", authMiddleware, verifyRoles("SALE", "MANAGER", "ADMIN"), deleteQuotation);
 
 export default router;

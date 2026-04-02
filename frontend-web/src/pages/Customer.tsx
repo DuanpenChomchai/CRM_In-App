@@ -15,6 +15,7 @@ import {
   Search,
   Edit,
   Trash2,
+  Users,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -51,6 +52,7 @@ import {
 } from "@/components/ui/table";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
 
@@ -70,6 +72,26 @@ interface SaleUser {
   id: number;
   name: string;
 }
+
+const getMainStatusColor = (status: string) => {
+  const map: Record<string, string> = {
+    CONTACTED: "bg-blue-100 text-blue-700",
+    NEGOTIATING: "bg-yellow-100 text-yellow-700",
+    QUOTATION: "bg-purple-100 text-purple-700",
+    CLOSED: "bg-green-100 text-green-700",
+  };
+  return map[(status || "").toUpperCase()] || "bg-gray-100 text-gray-700";
+};
+
+const getMainStatusLabel = (status: string) => {
+  const map: Record<string, string> = {
+    CONTACTED: "ติดต่อแล้ว",
+    NEGOTIATING: "เจรจาต่อรอง",
+    QUOTATION: "เสนอราคา",
+    CLOSED: "ปิดการขาย",
+  };
+  return map[(status || "").toUpperCase()] || "ไม่ระบุ";
+};
 
 const mapApiCustomerToUi = (c: any): Customer => {
   return {
@@ -94,6 +116,7 @@ const Customer = () => {
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
   const [salesTeam, setSalesTeam] = useState<SaleUser[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [properties, setProperties] = useState<{ id: number; name: string }[]>([]);
 
   const token = localStorage.getItem("token");
   const storedUser = localStorage.getItem("user");
@@ -115,7 +138,6 @@ const Customer = () => {
     } else {
       setEditCustomer(customer);
     }
-
     setIsEditDialogOpen(true);
   };
 
@@ -126,9 +148,7 @@ const Customer = () => {
           Authorization: token ? `Bearer ${token}` : "",
         },
       });
-
       if (!res.ok) throw new Error("โหลดลูกค้าไม่ได้");
-
       const data = await res.json();
       const mapped: Customer[] = data.map(mapApiCustomerToUi);
       setCustomers(mapped);
@@ -143,6 +163,20 @@ const Customer = () => {
   }, []);
 
   useEffect(() => {
+    const fetchProperties = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/properties/simple`, {
+          headers: { Authorization: token ? `Bearer ${token}` : "" },
+        });
+        const json = await res.json();
+        const list = Array.isArray(json) ? json : json.data || [];
+        setProperties(list.map((p: any) => ({ id: p.id, name: p.name })));
+      } catch { /* silently fail */ }
+    };
+    fetchProperties();
+  }, []);
+
+  useEffect(() => {
     const fetchSales = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/users/sales-list`, {
@@ -150,23 +184,18 @@ const Customer = () => {
             Authorization: token ? `Bearer ${token}` : "",
           },
         });
-
         if (!res.ok) throw new Error("โหลดเซลล์ไม่ได้");
-
         const json = await res.json();
-
         const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
           id: u.id,
           name: u.name,
         }));
-
         setSalesTeam(mapped);
       } catch (err) {
         console.error(err);
         toast.error("โหลดรายชื่อพนักงานขายไม่สำเร็จ");
       }
     };
-
     fetchSales();
   }, []);
 
@@ -185,36 +214,28 @@ const Customer = () => {
       toast.success(`มีลูกค้าใหม่จากแอป: ${mapped.name}`);
     });
 
-    
-
     socket.on("customer:assigned", (payload: any) => {
       const mapped = mapApiCustomerToUi(payload);
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === mapped.id ? mapped : c))
-      );
-        
+      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
     });
 
     return () => {
       socket.disconnect();
-      
     };
   }, []);
 
-const newCustomers = customers.filter((c) => {
-  if (role === "ADMIN" || role === "MANAGER") {
-    return !c.saleId;
-  }
-
-  if (role === "SALE") {
-    return (
-      String(c.mainStatus || "").toUpperCase() === "CONTACTED" &&
-      Number(c.saleId) === Number(mySaleId)
-    );
-  }
-
-  return false;
-});
+  const newCustomers = customers.filter((c) => {
+    if (role === "ADMIN" || role === "MANAGER") {
+      return !c.saleId;
+    }
+    if (role === "SALE") {
+      return (
+        String(c.mainStatus || "").toUpperCase() === "CONTACTED" &&
+        Number(c.saleId) === Number(mySaleId)
+      );
+    }
+    return false;
+  });
 
   const filteredCustomers = customers.filter(
     (customer) =>
@@ -232,33 +253,23 @@ const newCustomers = customers.filter((c) => {
 
   const handleAssignSales = async (customerId: number, saleId: number) => {
     if (!isAdmin) return;
-
     try {
-      const res = await fetch(
-        `${API_BASE}/api/customers/${customerId}/assign-sale`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-          body: JSON.stringify({ saleId }),
-        }
-      );
-
+      const res = await fetch(`${API_BASE}/api/customers/${customerId}/assign-sale`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: token ? `Bearer ${token}` : "",
+        },
+        body: JSON.stringify({ saleId }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.message || "มอบหมายเซลล์ไม่สำเร็จ");
         return;
       }
-
       const updated = await res.json();
       const mapped = mapApiCustomerToUi(updated);
-
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === mapped.id ? mapped : c))
-      );
-
+      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
       const sale = salesTeam.find((s) => s.id === saleId);
       toast.success(`มอบหมายลูกค้าให้ ${sale?.name || "พนักงานขาย"}`);
     } catch (err) {
@@ -269,7 +280,6 @@ const newCustomers = customers.filter((c) => {
 
   const handleUpdateCustomer = async () => {
     if (!editCustomer) return;
-
     try {
       const payload: any = {
         name: editCustomer.name,
@@ -278,11 +288,9 @@ const newCustomers = customers.filter((c) => {
         productType: editCustomer.productType,
         budget: editCustomer.priceBudget,
       };
-
       if (isAdmin) {
         payload.saleId = editCustomer.saleId ?? null;
       }
-
       const res = await fetch(`${API_BASE}/api/customers/${editCustomer.id}`, {
         method: "PUT",
         headers: {
@@ -291,20 +299,14 @@ const newCustomers = customers.filter((c) => {
         },
         body: JSON.stringify(payload),
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.message || "อัปเดทข้อมูลลูกค้าไม่สำเร็จ");
         return;
       }
-
       const updated = await res.json();
       const mapped = mapApiCustomerToUi(updated);
-
-      setCustomers((prev) =>
-        prev.map((c) => (c.id === mapped.id ? mapped : c))
-      );
-
+      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
       toast.success("อัปเดทข้อมูลลูกค้าสำเร็จ");
       setIsEditDialogOpen(false);
       setEditCustomer(null);
@@ -316,7 +318,6 @@ const newCustomers = customers.filter((c) => {
 
   const handleDeleteCustomer = async () => {
     if (!deleteTarget) return;
-
     try {
       const res = await fetch(`${API_BASE}/api/customers/${deleteTarget.id}`, {
         method: "DELETE",
@@ -324,13 +325,11 @@ const newCustomers = customers.filter((c) => {
           Authorization: token ? `Bearer ${token}` : "",
         },
       });
-
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         toast.error(err?.message || "ลบลูกค้าไม่สำเร็จ");
         return;
       }
-
       setCustomers((prev) => prev.filter((c) => c.id !== deleteTarget.id));
       toast.success(`ลบลูกค้า ${deleteTarget.name} สำเร็จ`);
     } catch (err) {
@@ -347,6 +346,7 @@ const newCustomers = customers.filter((c) => {
         <h1 className="text-3xl font-bold">ลูกค้า</h1>
       </div>
 
+      {/* New Customer Notifications */}
       <Card className="shadow-elegant border-l-4 border-l-accent">
         <CardHeader>
           <div className="flex items-center gap-3">
@@ -374,7 +374,6 @@ const newCustomers = customers.filter((c) => {
                     <div className="p-3 rounded-full gradient-primary">
                       <UserPlus className="w-5 h-5 text-white" />
                     </div>
-
                     <div>
                       <h3
                         className="font-bold text-lg cursor-pointer hover:text-primary"
@@ -387,10 +386,7 @@ const newCustomers = customers.filter((c) => {
                       </h3>
                     </div>
                   </div>
-
-                  <Badge className="bg-accent text-accent-foreground">
-                    ลูกค้าใหม่
-                  </Badge>
+                  <Badge className="bg-accent text-accent-foreground">ลูกค้าใหม่</Badge>
                 </div>
 
                 <div className="flex items-start justify-between gap-4 mt-4">
@@ -399,19 +395,16 @@ const newCustomers = customers.filter((c) => {
                       <Phone className="w-4 h-4 text-primary" />
                       <span className="text-sm">{customer.tol}</span>
                     </div>
-
                     <div className="flex items-center gap-2">
                       <Mail className="w-4 h-4 text-primary" />
                       <span className="text-sm">{customer.email}</span>
                     </div>
-
                     {customer.productType && (
                       <div className="flex items-center gap-2">
                         <Home className="w-4 h-4 text-primary" />
                         <span className="text-sm">{customer.productType}</span>
                       </div>
                     )}
-
                     {customer.priceBudget && (
                       <div className="flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-primary" />
@@ -421,7 +414,6 @@ const newCustomers = customers.filter((c) => {
                       </div>
                     )}
                   </div>
-
                   <Button
                     size="sm"
                     variant="outline"
@@ -444,176 +436,124 @@ const newCustomers = customers.filter((c) => {
         </CardContent>
       </Card>
 
+      {/* All Customers Table */}
       <Card className="shadow-card">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>รายชื่อลูกค้าทั้งหมด</CardTitle>
-
-            <div className="relative w-96">
+        <CardHeader className="p-4 md:p-6 pb-2 md:pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <CardTitle className="text-xl md:text-2xl font-bold flex items-center gap-2">
+              <Users className="w-6 h-6 text-primary" />
+              รายชื่อลูกค้าทั้งหมด
+            </CardTitle>
+            <div className="relative w-full md:w-96">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
-                placeholder="ค้นหาลูกค้า (ชื่อ, เบอร์โทร, อีเมล)"
+                placeholder="ค้นหาชื่อ, เบอร์โทร, อีเมล..."
+                className="pl-10 h-10 w-full"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
               />
             </div>
           </div>
         </CardHeader>
-
-        <CardContent>
-          <div className="rounded-md border">
+        <CardContent className="p-0 md:p-6 md:pt-2">
+          <div className="border-t md:border md:rounded-lg overflow-x-auto">
             <Table>
-              <TableHeader>
+              <TableHeader className="bg-muted/50">
                 <TableRow>
-                  <TableHead>ชื่อลูกค้า</TableHead>
-                  <TableHead>เบอร์โทร</TableHead>
-                  <TableHead>อีเมล</TableHead>
-                  <TableHead>ประเภทอสังหา</TableHead>
-                  <TableHead>งบประมาณ</TableHead>
-                  <TableHead>พนักงานที่ดูแล</TableHead>
-                  <TableHead>สถานะ Pipeline</TableHead>
-                  <TableHead className="text-center">จัดการ</TableHead>
+                  <TableHead className="min-w-[150px]">ชื่อลูกค้า</TableHead>
+                  <TableHead className="min-w-[120px]">เบอร์โทร</TableHead>
+                  <TableHead className="min-w-[180px]">อีเมล</TableHead>
+                  <TableHead className="min-w-[150px]">พนักงานดูแล</TableHead>
+                  <TableHead className="min-w-[120px] text-center">สถานะปัจจุบัน</TableHead>
+                  <TableHead className="text-center min-w-[140px]">จัดการ</TableHead>
                 </TableRow>
               </TableHeader>
-
               <TableBody>
-                {filteredCustomers.map((customer) => (
-                  <TableRow key={customer.id}>
-                    <TableCell>{customer.name}</TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Phone className="w-3 h-3 text-primary" />
-                        {customer.tol}
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Mail className="w-3 h-3 text-primary" />
-                        {customer.email}
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
-                      {customer.productType || (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {customer.priceBudget ? (
-                        <div className="flex items-center gap-2 font-semibold text-primary">
-                          <DollarSign className="w-3 h-3" />
-                          {formatCurrency(customer.priceBudget)}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {customer.saleId ? (
-                        customer.saleName
-                      ) : isAdmin ? (
-                        <Select
-                          onValueChange={(value) =>
-                            handleAssignSales(customer.id, Number(value))
-                          }
-                        >
-                          <SelectTrigger className="w-[180px]">
-                            <SelectValue placeholder="เลือกพนักงาน" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {salesTeam.map((sale) => (
-                              <SelectItem key={sale.id} value={String(sale.id)}>
-                                {sale.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <span>{mySaleName || "-"}</span>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {(() => {
-                        const s = customer.mainStatus || "CONTACTED";
-                        const map: Record<string, { label: string; color: string }> = {
-                          CONTACTED: {
-                            label: "ติดต่อแล้ว",
-                            color: "bg-blue-100 text-blue-700",
-                          },
-                          NEGOTIATING: {
-                            label: "เจรจาต่อรอง",
-                            color: "bg-yellow-100 text-yellow-700",
-                          },
-                          QUOTATION: {
-                            label: "เสนอราคา",
-                            color: "bg-purple-100 text-purple-700",
-                          },
-                          CLOSED: {
-                            label: "ปิดการขาย",
-                            color: "bg-green-100 text-green-700",
-                          },
-                        };
-                        const info = map[s] || map["CONTACTED"];
-                        return (
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-semibold ${info.color}`}
+                {filteredCustomers.length > 0 ? (
+                  filteredCustomers.map((customer) => (
+                    <TableRow key={customer.id} className="hover:bg-muted/30">
+                      <TableCell className="font-semibold text-sm">{customer.name}</TableCell>
+                      <TableCell className="text-sm">{customer.tol}</TableCell>
+                      <TableCell className="text-sm truncate max-w-[180px]">{customer.email}</TableCell>
+                      <TableCell>
+                        {isAdmin ? (
+                          <Select
+                            defaultValue={String(customer.saleId || "")}
+                            onValueChange={(val) => handleAssignSales(customer.id, Number(val))}
                           >
-                            {info.label}
+                            <SelectTrigger className="h-8 md:h-9 text-xs md:text-sm bg-muted/20 border-none hover:bg-muted/40 transition-all">
+                              <SelectValue placeholder="ระบุพนักงาน" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {salesTeam.map((sale) => (
+                                <SelectItem key={sale.id} value={String(sale.id)}>
+                                  {sale.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-full whitespace-nowrap">
+                            <User className="w-3 h-3" />
+                            {customer.saleName || "ไม่ระบุ"}
                           </span>
-                        );
-                      })()}
-                    </TableCell>
-
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEditCustomerDialog(customer)}
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          className={cn(
+                            "px-2 py-0.5 text-[10px] md:text-xs font-bold uppercase tracking-wider",
+                            getMainStatusColor(customer.mainStatus || "")
+                          )}
                         >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={() => setDeleteTarget(customer)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
+                          {getMainStatusLabel(customer.mainStatus || "")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => openEditCustomerDialog(customer)}
+                          >
+                            <Edit className="w-4 h-4 text-blue-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setDeleteTarget(customer)}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic">
+                      ไม่พบข้อมูลลูกค้าที่ค้นหา...
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </div>
-
-          {filteredCustomers.length === 0 && (
-            <div className="text-center py-12 text-muted-foreground">
-              <UserPlus className="w-16 h-16 mx-auto mb-4 opacity-20" />
-              <p className="text-lg">ไม่พบข้อมูลลูกค้า</p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
+      {/* Detail Dialog */}
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-[95vw] md:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>รายละเอียดลูกค้า</DialogTitle>
             <DialogDescription>ข้อมูลทั้งหมดของลูกค้า</DialogDescription>
           </DialogHeader>
 
-          <div className="py-2">
-            <div className="flex items-center w-full">
+          <div className="py-2 overflow-x-auto">
+            <div className="flex items-center w-full min-w-[400px]">
               {[
                 { id: "CONTACTED", label: "ติดต่อแล้ว", step: 1 },
                 { id: "NEGOTIATING", label: "เจรจาต่อรอง", step: 2 },
@@ -621,9 +561,7 @@ const newCustomers = customers.filter((c) => {
                 { id: "CLOSED", label: "ปิดการขาย", step: 4 },
               ].map((s, idx, arr) => {
                 const order = ["CONTACTED", "NEGOTIATING", "QUOTATION", "CLOSED"];
-                const currentIdx = order.indexOf(
-                  selectedCustomer?.mainStatus || "CONTACTED"
-                );
+                const currentIdx = order.indexOf(selectedCustomer?.mainStatus || "CONTACTED");
                 const thisIdx = order.indexOf(s.id);
                 const isDone = thisIdx < currentIdx;
                 const isActive = thisIdx === currentIdx;
@@ -656,7 +594,6 @@ const newCustomers = customers.filter((c) => {
                         {s.label}
                       </span>
                     </div>
-
                     {idx < arr.length - 1 && (
                       <div
                         className={[
@@ -672,7 +609,7 @@ const newCustomers = customers.filter((c) => {
           </div>
 
           <div className="space-y-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <Label>ชื่อลูกค้า</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -680,7 +617,6 @@ const newCustomers = customers.filter((c) => {
                   <span className="font-medium">{selectedCustomer?.name}</span>
                 </div>
               </div>
-
               <div>
                 <Label>เบอร์โทร</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -688,7 +624,6 @@ const newCustomers = customers.filter((c) => {
                   <span className="font-medium">{selectedCustomer?.tol}</span>
                 </div>
               </div>
-
               <div>
                 <Label>อีเมล</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -696,17 +631,13 @@ const newCustomers = customers.filter((c) => {
                   <span className="font-medium">{selectedCustomer?.email}</span>
                 </div>
               </div>
-
               <div>
                 <Label>ประเภทอสังหา</Label>
                 <div className="flex items-center gap-2 mt-2">
                   <Home className="w-4 h-4 text-primary" />
-                  <span className="font-medium">
-                    {selectedCustomer?.productType || "-"}
-                  </span>
+                  <span className="font-medium">{selectedCustomer?.productType || "-"}</span>
                 </div>
               </div>
-
               <div>
                 <Label>งบประมาณ</Label>
                 <div className="flex items-center gap-2 mt-2">
@@ -718,7 +649,6 @@ const newCustomers = customers.filter((c) => {
                   </span>
                 </div>
               </div>
-
               <div>
                 <Label>พนักงานที่ดูแล</Label>
                 <div className="mt-2">
@@ -734,159 +664,130 @@ const newCustomers = customers.filter((c) => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Customer Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>แก้ไขข้อมูลลูกค้า</DialogTitle>
+        <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl shadow-2xl p-0 border-none">
+          <DialogHeader className="p-6 pb-4 border-b bg-muted/20">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Edit className="w-5 h-5 text-blue-500" />
+              แก้ไขข้อมูลลูกค้า
+            </DialogTitle>
             <DialogDescription>
-              อัปเดตข้อมูลความต้องการของลูกค้า
+              อัปเดตข้อมูลความต้องการของลูกค้าให้เป็นปัจจุบัน
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div>
-              <Label>ชื่อลูกค้า</Label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 p-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">ชื่อลูกค้า *</Label>
               <Input
                 value={editCustomer?.name || ""}
                 onChange={(e) =>
-                  setEditCustomer(
-                    editCustomer ? { ...editCustomer, name: e.target.value } : null
-                  )
+                  setEditCustomer((prev) => prev ? { ...prev, name: e.target.value } : prev)
                 }
+                className="h-10 md:h-11"
               />
             </div>
-
-            <div>
-              <Label>เบอร์โทร</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">เบอร์โทรศัพท์ *</Label>
               <Input
                 value={editCustomer?.tol || ""}
                 onChange={(e) =>
-                  setEditCustomer(
-                    editCustomer ? { ...editCustomer, tol: e.target.value } : null
-                  )
+                  setEditCustomer((prev) => prev ? { ...prev, tol: e.target.value } : prev)
                 }
+                className="h-10 md:h-11"
               />
             </div>
-
-            <div>
-              <Label>อีเมล</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">อีเมล *</Label>
               <Input
                 value={editCustomer?.email || ""}
                 onChange={(e) =>
-                  setEditCustomer(
-                    editCustomer ? { ...editCustomer, email: e.target.value } : null
-                  )
+                  setEditCustomer((prev) => prev ? { ...prev, email: e.target.value } : prev)
                 }
+                className="h-10 md:h-11"
               />
             </div>
-
-            <div>
-              <Label>ประเภทอสังหา</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">อสังหาริมทรัพย์ที่สนใจ</Label>
               <Select
                 value={editCustomer?.productType || ""}
-                onValueChange={(value) =>
-                  setEditCustomer(
-                    editCustomer ? { ...editCustomer, productType: value } : null
-                  )
+                onValueChange={(v) =>
+                  setEditCustomer((prev) => prev ? { ...prev, productType: v } : prev)
                 }
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกประเภท" />
+                <SelectTrigger className="h-10 md:h-11">
+                  <SelectValue placeholder="เลือกอสังหาฯ ที่สนใจ" />
                 </SelectTrigger>
-
                 <SelectContent>
-                  <SelectItem value="คอนโด">คอนโด</SelectItem>
-                  <SelectItem value="บ้านเดี่ยว">บ้านเดี่ยว</SelectItem>
-                  <SelectItem value="ทาวน์เฮ้าส์">ทาวน์เฮ้าส์</SelectItem>
-                  <SelectItem value="ที่ดิน">ที่ดิน</SelectItem>
+                  {properties.map((p) => (
+                    <SelectItem key={p.id} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-
-            <div>
-              <Label>งบประมาณ</Label>
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">งบประมาณ (บาท)</Label>
               <Input
                 type="number"
-                value={editCustomer?.priceBudget ?? ""}
+                value={editCustomer?.priceBudget === null ? "" : editCustomer?.priceBudget}
                 onChange={(e) =>
-                  setEditCustomer(
-                    editCustomer
-                      ? {
-                          ...editCustomer,
-                          priceBudget: e.target.value ? Number(e.target.value) : null,
-                        }
-                      : null
+                  setEditCustomer((prev) =>
+                    prev ? { ...prev, priceBudget: e.target.value ? Number(e.target.value) : null } : prev
                   )
                 }
+                className="h-10 md:h-11"
               />
             </div>
-
-            <div>
-              <Label>พนักงานที่ดูแล</Label>
-
-              {isAdmin ? (
-                <Select
-                  value={String(editCustomer?.saleId || "")}
-                  onValueChange={(value) =>
-                    setEditCustomer(
-                      editCustomer
-                        ? {
-                            ...editCustomer,
-                            saleId: Number(value),
-                            saleName:
-                              salesTeam.find((s) => s.id === Number(value))?.name ||
-                              null,
-                          }
-                        : null
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกพนักงาน" />
-                  </SelectTrigger>
-
-                  <SelectContent>
-                    {salesTeam.map((sale) => (
-                      <SelectItem key={sale.id} value={String(sale.id)}>
-                        {sale.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={mySaleName || editCustomer?.saleName || ""}
-                  disabled
-                  readOnly
-                />
-              )}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">พนักงานดูแล</Label>
+              <Select
+                disabled={!isAdmin}
+                value={String(editCustomer?.saleId || "")}
+                onValueChange={(val) =>
+                  setEditCustomer((prev) =>
+                    prev
+                      ? { ...prev, saleId: Number(val), saleName: salesTeam.find((s) => s.id === Number(val))?.name || null }
+                      : prev
+                  )
+                }
+              >
+                <SelectTrigger className="h-10 md:h-11 bg-muted/20">
+                  <SelectValue placeholder="เลือกพนักงานขาย" />
+                </SelectTrigger>
+                <SelectContent>
+                  {salesTeam.map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-3 p-6 border-t bg-muted/10">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               ยกเลิก
             </Button>
-
-            <Button
-              onClick={handleUpdateCustomer}
-              className="gradient-primary text-white"
-            >
+            <Button onClick={handleUpdateCustomer} className="gradient-primary text-white">
               บันทึกข้อมูล
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>ยืนยันการลบลูกค้า</AlertDialogTitle>
             <AlertDialogDescription>
-              คุณต้องการลบลูกค้า {deleteTarget?.name || ""} ใช่หรือไม่
+              คุณต้องการลบลูกค้า <strong>{deleteTarget?.name}</strong> ใช่หรือไม่? การดำเนินการนี้ไม่สามารถย้อนกลับได้
             </AlertDialogDescription>
           </AlertDialogHeader>
-
           <AlertDialogFooter>
             <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
             <AlertDialogAction

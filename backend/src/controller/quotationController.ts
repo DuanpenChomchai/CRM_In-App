@@ -515,3 +515,24 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ message: "เกิดข้อผิดพลาดในการสร้าง PDF" });
   }
 };
+
+/** DELETE /api/quotations/:id */
+export const deleteQuotation = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    // ตรวจสิทธิ์เพิ่มเติม: Sale ลบได้เฉพาะของตัวเอง (ซึ่ง assertCanAccessQuotation เช็คให้แล้วว่าถ้าเป็น Sale ต้องเป็นเจ้าของ)
+    // Manager/Admin ลบได้ตามขอบเขต (ซึ่ง assertCanAccessQuotation เช็คให้แล้ว)
+
+    await prisma.quotation.delete({
+      where: { id },
+    });
+
+    return res.json({ message: "ลบใบเสนอราคาเรียบร้อยแล้ว" });
+  } catch (err) {
+    console.error("deleteQuotation error:", err);
+    return res.status(500).json({ message: "ลบใบเสนอราคาล้มเหลว" });
+  }
+};
