@@ -84,11 +84,11 @@ export const getMessagesByRoom = async (req: Request, res: Response) => {
     const [items, total] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first to avoid pagination cutoff
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending chronological order
       prisma.chatMessage.count({ where }),
     ]);
 
@@ -128,11 +128,11 @@ export const getMessagesByCustomer = async (req: Request, res: Response) => {
     const [items, total, unreadCustomer, unreadSale] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending order
       prisma.chatMessage.count({ where }),
       prisma.chatMessage.count({
         where: { customerId, readByCustomerAt: null },
@@ -190,11 +190,11 @@ export const getMyChatMessages = async (req: AuthRequest, res: Response) => {
     const [items, total, unreadCount] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending order
       prisma.chatMessage.count({ where }),
       prisma.chatMessage.count({
         where: { customerId, readByCustomerAt: null },
