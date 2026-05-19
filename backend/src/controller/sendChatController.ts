@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { getIO } from "../ws";
+import { sendPushNotification } from "../services/notificationService";
 
 interface AuthUser {
   id: number;
@@ -275,6 +276,87 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       }
     } catch (e) {
       console.error(`[CHAT:SEND][${rid}] emit error:`, e);
+    }
+
+    // 🚀 Send Push Notification
+    if (customerId) {
+      try {
+        console.log(`[CHAT:SEND][${rid}] 🚀 Starting push notification flow. customerId=${customerId}, senderRole=${authUser.role}`);
+        let recipientTokens: string[] = [];
+
+        if (authUser.role === "CUSTOMER") {
+          const customer = await prisma.customer.findUnique({
+            where: { id: customerId },
+            select: { saleId: true, userId: true }
+          });
+          console.log(`[CHAT:SEND][${rid}] - Sender is Customer. Customer record:`, JSON.stringify(customer));
+
+          const targetUserIds: number[] = [];
+          if (customer?.saleId) targetUserIds.push(customer.saleId);
+          if (customer?.userId) targetUserIds.push(customer.userId);
+
+          if (roomId.startsWith("admin:cust:") || targetUserIds.length === 0) {
+            const adminsAndManagers = await prisma.user.findMany({
+              where: {
+                role: { in: ["ADMIN", "MANAGER"] }
+              },
+              select: { id: true }
+            });
+            console.log(`[CHAT:SEND][${rid}] - Admin room or no assigned sale. Adding ${adminsAndManagers.length} Admins/Managers`);
+            targetUserIds.push(...adminsAndManagers.map(u => u.id));
+          }
+
+          const uniqueUserIds = Array.from(new Set(targetUserIds));
+          console.log(`[CHAT:SEND][${rid}] - Target User IDs:`, uniqueUserIds);
+
+          if (uniqueUserIds.length > 0) {
+            const tokens = await prisma.pushToken.findMany({
+              where: {
+                userId: { in: uniqueUserIds }
+              },
+              select: { token: true }
+            });
+            recipientTokens = tokens.map(t => t.token);
+            console.log(`[CHAT:SEND][${rid}] - Found target tokens for users:`, recipientTokens);
+          }
+        } else {
+          // Sent from Sale / Admin / Manager -> Notify the Customer
+          console.log(`[CHAT:SEND][${rid}] - Sender is Staff. Looking up tokens for customerId=${customerId}`);
+          const tokens = await prisma.pushToken.findMany({
+            where: {
+              customerId: customerId
+            },
+            select: { token: true }
+          });
+          recipientTokens = tokens.map(t => t.token);
+          console.log(`[CHAT:SEND][${rid}] - Found customer tokens:`, recipientTokens);
+        }
+
+        if (recipientTokens.length > 0) {
+          const displaySenderName = authUser.name || authUser.email || "Staff";
+          const title = authUser.role === "CUSTOMER" 
+            ? `💬 ข้อความใหม่จากลูกค้า: ${displaySenderName}` 
+            : `💬 ข้อความใหม่จากเจ้าหน้าที่: ${displaySenderName}`;
+          const bodyMessage = created.text || "ส่งรูปภาพ/ไฟล์ใหม่ให้คุณ";
+
+          console.log(`[CHAT:SEND][${rid}] - Sending push message. Title: "${title}", Body: "${bodyMessage}"`);
+          await sendPushNotification(
+            recipientTokens,
+            title,
+            bodyMessage,
+            {
+              roomId,
+              senderName: displaySenderName,
+              type: "NEW_MESSAGE"
+            }
+          );
+          console.log(`[CHAT:SEND][${rid}] - sendPushNotification completed successfully`);
+        } else {
+          console.log(`[CHAT:SEND][${rid}] - No recipient tokens found. Skipping push notification.`);
+        }
+      } catch (pushErr) {
+        console.error(`[CHAT:SEND][${rid}] ❌ Send push notification error:`, pushErr);
+      }
     }
 
     console.log(`[CHAT:SEND][${rid}] DONE ${Date.now() - startedAt}ms`);

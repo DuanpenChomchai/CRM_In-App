@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../config/prismaclient";
 import { getIO } from "../ws";
+import { sendPushNotification } from "../services/notificationService";
 
 // ─── Auth types (same pattern as other controllers) ───
 interface AuthUser {
@@ -214,6 +215,7 @@ export const createCall = async (req: AuthRequest, res: Response) => {
             ? created.customerUser
             : created.saleUser;
 
+        // 1) WebSocket signaling for online clients
         io.to(`user:${targetUserId}`).emit("call:incoming", {
           callId: created.id,
           callerName: caller?.name || "User",
@@ -221,9 +223,37 @@ export const createCall = async (req: AuthRequest, res: Response) => {
           customerId: created.customerId,
           direction: created.direction
         });
+
+        // 2) Push notifications for offline / background clients
+        const pushTokens = await prisma.pushToken.findMany({
+          where: {
+            OR: [
+              { userId: targetUserId },
+              ...(created.customerId ? [{ customerId: created.customerId }] : [])
+            ]
+          },
+          select: { token: true }
+        });
+        const recipientTokens = pushTokens.map(t => t.token);
+
+        if (recipientTokens.length > 0) {
+          await sendPushNotification(
+            recipientTokens,
+            `📞 สายเรียกเข้าจากคุณ ${caller?.name || "ผู้ใช้งาน"}`,
+            `แตะเพื่อรับสายสนทนา`,
+            {
+              type: "INCOMING_CALL",
+              callId: String(created.id),
+              callerUserId: String(caller?.id || ""),
+              customerId: String(created.customerId || ""),
+              name: caller?.name || "ผู้ติดต่อ",
+              isIncoming: "true"
+            }
+          );
+        }
       }
     } catch (wsErr) {
-      console.error("Emit call:incoming error:", wsErr);
+      console.error("Emit call:incoming or send push error:", wsErr);
     }
 
     return res.status(201).json(created);

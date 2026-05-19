@@ -120,6 +120,8 @@ model User {
   // ✅ Refresh Tokens
   refreshTokens RefreshToken[]
 
+  pushTokens PushToken[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -236,6 +238,8 @@ model Customer {
 
   calls        Call[]
   chatMessages ChatMessage[]
+
+  pushTokens PushToken[]
 
   mainStatus CustomerStatus @default(NEW)
 
@@ -493,4 +497,26 @@ model ChatMessage {
 
   // ✅ กันซ้ำ (cid เดียวกันจากคนเดิมในห้องเดียวกัน)
   @@unique([roomId, senderName, cid])
+}
+
+// ===========================================================
+// PUSH TOKEN FOR NOTIFICATIONS
+// ===========================================================
+model PushToken {
+  id         Int       @id @default(autoincrement())
+  token      String    @unique // โทเค็นเฉพาะของเครื่องนั้น ๆ จาก Expo
+  
+  // เชื่อมกับ User (ฝั่ง Sale / Admin / Manager)
+  userId     Int?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // เชื่อมกับ Customer (ฝั่งลูกค้า)
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([customerId])
 }

@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import prisma from "./config/prismaclient";
+import { sendPushNotification } from "./services/notificationService";
 
 type ChatMessage = {
   id: string;
@@ -251,6 +252,77 @@ export const initWs = (server: HttpServer) => {
             console.log(
               `💾 saved chat & unread-count: customerId=${customerId}, customerUnread=${customerUnread}, saleUnread=${saleUnread}`
             );
+
+            // 3.5 Send Push Notification
+            try {
+              let recipientTokens: string[] = [];
+
+              if (role === "CUSTOMER") {
+                // Sent from Customer -> Notify associated Sales / Admins
+                const customer = await prisma.customer.findUnique({
+                  where: { id: customerId },
+                  select: { saleId: true, userId: true }
+                });
+
+                const targetUserIds: number[] = [];
+                if (customer?.saleId) targetUserIds.push(customer.saleId);
+                if (customer?.userId) targetUserIds.push(customer.userId);
+
+                // If it's an admin room, or if there is no assigned sale/user, let's also fetch all Admins and Managers to notify them
+                if (roomId.startsWith("admin:cust:") || targetUserIds.length === 0) {
+                  const adminsAndManagers = await prisma.user.findMany({
+                    where: {
+                      role: { in: ["ADMIN", "MANAGER"] }
+                    },
+                    select: { id: true }
+                  });
+                  targetUserIds.push(...adminsAndManagers.map(u => u.id));
+                }
+
+                // Deduplicate targetUserIds
+                const uniqueUserIds = Array.from(new Set(targetUserIds));
+
+                if (uniqueUserIds.length > 0) {
+                  const tokens = await prisma.pushToken.findMany({
+                    where: {
+                      userId: { in: uniqueUserIds }
+                    },
+                    select: { token: true }
+                  });
+                  recipientTokens = tokens.map(t => t.token);
+                }
+              } else {
+                // Sent from Sale / Admin / Manager -> Notify the Customer
+                const tokens = await prisma.pushToken.findMany({
+                  where: {
+                    customerId: customerId
+                  },
+                  select: { token: true }
+                });
+                recipientTokens = tokens.map(t => t.token);
+              }
+
+              if (recipientTokens.length > 0) {
+                // Determine display content
+                const title = role === "CUSTOMER" 
+                  ? `💬 ข้อความใหม่จากลูกค้า: ${user}` 
+                  : `💬 ข้อความใหม่จากเจ้าหน้าที่: ${user}`;
+                const body = msg.text || "ส่งรูปภาพ/ไฟล์ใหม่ให้คุณ";
+
+                await sendPushNotification(
+                  recipientTokens,
+                  title,
+                  body,
+                  {
+                    roomId,
+                    senderName: user,
+                    type: "NEW_MESSAGE"
+                  }
+                );
+              }
+            } catch (pushErr) {
+              console.error("❌ Send push notification error:", pushErr);
+            }
           } catch (dbErr) {
             console.error("❌ save chat to DB error:", dbErr);
           }

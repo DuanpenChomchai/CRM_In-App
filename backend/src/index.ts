@@ -16,6 +16,7 @@ import quotationRoutes from "./routes/quotation.route";
 import propertiesRoutes from "./routes/Properties.route";
 import callRoutes from "./routes/call.route";
 import dashboardRoutes from "./routes/dashboard.route";
+import notificationRoutes from "./routes/notification.route";
 
 import { initWs } from "./ws";
 import { getProfile } from "./controller/userController";
@@ -101,6 +102,8 @@ async function main() {
   app.use("/api/calls", callRoutes);
   // ✅ Dashboard
   app.use("/api/dashboard", dashboardRoutes);
+  // ✅ Notifications
+  app.use("/api/notifications", notificationRoutes);
 
   // ✅ profile route
   app.get("/api/myprofile/:id", getProfile);

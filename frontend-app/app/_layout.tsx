@@ -21,6 +21,10 @@ import { View, Text } from "react-native";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { setZegoNavParams } from "../utils/zegoNavigationBridge";
+import axios from "axios";
+import { API_BASE_URL } from "../config/api";
+import { registerForPushNotificationsAsync } from "../utils/notifications";
+import * as Notifications from "expo-notifications";
 
 export const unstable_settings = {
   anchor: "(auth)/login",
@@ -95,6 +99,67 @@ export default function RootLayout() {
       socket.off("call:incoming", onIncomingCall);
     };
   }, [user?.id]);
+
+  // Register Push Token on Login
+  useEffect(() => {
+    if (!user?.id || !token) return;
+
+    registerForPushNotificationsAsync().then(pushToken => {
+      if (pushToken) {
+        console.log("📲 Registered Push Token:", pushToken);
+        axios.post(
+          `${API_BASE_URL}/notifications/register`,
+          {
+            token: pushToken,
+            userId: user.id,
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        ).then(res => {
+          console.log("✅ Server registered push token successfully", res.data);
+        }).catch(err => {
+          console.error("❌ Failed to register push token on server:", err);
+        });
+      }
+    });
+  }, [user?.id, token]);
+
+  // Listen for push notification click / response
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      try {
+        const data = response.notification.request.content.data;
+        console.log("🎯 Push Notification Clicked:", data);
+        
+        // 💬 Room messaging click -> deep link to chat-detail
+        if (data?.roomId) {
+          routerRef.current.push({
+            pathname: "/(screens)/chat-detail" as any,
+            params: { roomId: String(data.roomId) }
+          } as any);
+        }
+        
+        // 📞 Incoming call click -> deep link to call-screen
+        if (data?.type === "INCOMING_CALL") {
+          routerRef.current.push({
+            pathname: "/(screens)/call-screen" as any,
+            params: {
+              callId: String(data.callId),
+              callerUserId: String(data.callerUserId),
+              customerId: String(data.customerId),
+              name: String(data.name || "ผู้ติดต่อ"),
+              isIncoming: "true"
+            }
+          } as any);
+        }
+      } catch (err) {
+        console.error("Error handling push notification response:", err);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
