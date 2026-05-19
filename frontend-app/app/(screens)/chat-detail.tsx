@@ -1362,62 +1362,59 @@ export default function ChatDetailScreen() {
     );
   };
 
-  const ListHeader = useMemo(
-    () => (
-      <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Link href="/(screens)/all-chat" asChild>
-          <Pressable className="pr-3 -ml-2">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-        </Link>
+  const ChatHeader = () => (
+    <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+      <Link href="/(screens)/all-chat" asChild>
+        <Pressable className="pr-3 -ml-2">
+          <Ionicons name="chevron-back" size={24} color="#111827" />
+        </Pressable>
+      </Link>
 
-        <View className="flex-row flex-1 items-center">
-          {partner?.avatarUrl ? (
-            <Image source={{ uri: partner.avatarUrl }} className="w-9 h-9 rounded-full mr-3" />
-          ) : (
-            <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
-              <Ionicons name="person" size={20} color="#047857" />
-            </View>
-          )}
-
-          <View className="flex-1">
-            <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
-              {partner?.name ?? nameParam ?? "Chat"}
-            </Text>
-            <Text className="text-xs text-gray-500">
-              ID: {effectiveRoomId} · {connected ? "🟢 Online" : "🔴 Offline"}
-            </Text>
+      <View className="flex-row flex-1 items-center">
+        {partner?.avatarUrl ? (
+          <Image source={{ uri: partner.avatarUrl }} className="w-9 h-9 rounded-full mr-3" />
+        ) : (
+          <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
+            <Ionicons name="person" size={20} color="#047857" />
           </View>
-        </View>
+        )}
 
-        <View className="pl-3">
-          {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
-            <Pressable
-              onPress={() => {
-                const targetUserId = partner?.userId ? String(partner.userId) : "";
-                if (!targetUserId) {
-                  Toast.show({ type: "info", text1: "Not Ready", text2: "Target User ID not loaded yet" });
-                  return;
-                }
-                router.push({
-                  pathname: "/(screens)/call-screen",
-                  params: {
-                    name: partner?.name ?? nameParam ?? "User",
-                    avatarUrl: partner?.avatarUrl ?? "",
-                    customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
-                    targetUserId: targetUserId,
-                  },
-                });
-              }}
-              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 8 }]}
-            >
-              <Ionicons name="call-outline" size={24} color="#047857" />
-            </Pressable>
-          )}
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
+            {partner?.name ?? nameParam ?? "Chat"}
+          </Text>
+          <Text className="text-xs text-gray-500">
+            ID: {effectiveRoomId} · {connected ? "🟢 Online" : "🔴 Offline"}
+          </Text>
         </View>
       </View>
-    ),
-    [effectiveRoomId, nameParam, connected, partner, router, user?.role]
+
+      <View className="pl-3">
+        {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
+          <Pressable
+            onPress={() => {
+              const targetUserId = partner?.userId ? String(partner.userId) : "";
+              if (!targetUserId) {
+                Toast.show({ type: "info", text1: "Not Ready", text2: "Target User ID not loaded yet" });
+                return;
+              }
+              router.push({
+                pathname: "/(screens)/call-screen",
+                params: {
+                  name: partner?.name ?? nameParam ?? "User",
+                  avatarUrl: partner?.avatarUrl ?? "",
+                  customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
+                  targetUserId: targetUserId,
+                },
+              });
+            }}
+            style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, padding: 8 }]}
+          >
+            <Ionicons name="call-outline" size={24} color="#047857" />
+          </Pressable>
+        )}
+      </View>
+    </View>
   );
 
   return (
@@ -1427,7 +1424,7 @@ export default function ChatDetailScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
       <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
-        {ListHeader}
+        <ChatHeader />
 
         <FlatList
           ref={listRef}
