@@ -254,17 +254,18 @@ export default function ChatsScreen() {
             const rooms: ChatItem[] = [];
             
             // Admin Room
-            rooms.push({
-              id: `admin:cust:${c.id}`,
-              customerId: c.id,
-              name: c.name || `Customer #${c.id}`,
-              time: formatLastTime(c.adminLastMessageAt),
-              lastMessageAt: c.adminLastMessageAt ?? null,
-              unreadCount: c.adminUnreadCount ?? 0,
-              profileUserId: c.userId ?? null,
-              managerSubtext: user?.role === "MANAGER" ? "Admin Chat" : undefined,
-              isAdminChat: true,
-            });
+            if (user?.role === "ADMIN") {
+              rooms.push({
+                id: `admin:cust:${c.id}`,
+                customerId: c.id,
+                name: c.name || `Customer #${c.id}`,
+                time: formatLastTime(c.adminLastMessageAt),
+                lastMessageAt: c.adminLastMessageAt ?? null,
+                unreadCount: c.adminUnreadCount ?? 0,
+                profileUserId: c.userId ?? null,
+                isAdminChat: true,
+              });
+            }
 
             // Sale Room (Only for Manager, not Admin)
             if (user?.role === "MANAGER") {
