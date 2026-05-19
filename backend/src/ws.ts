@@ -34,13 +34,17 @@ const HISTORY_LIMIT = 200;
 
 let io: Server | null = null;
 
-/** แปลง roomId เป็น customerId เช่น "cust:2" -> 2 */
 function parseCustomerId(roomId: string): number | null {
   const parts = String(roomId).split(":");
-  if (parts.length < 2) return null;
-  if (parts[0] !== "cust") return null;
-  const n = Number(parts[1]);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  if (parts.length === 2 && parts[0] === "cust") {
+    const n = Number(parts[1]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  if (parts.length === 3 && parts[0] === "admin" && parts[1] === "cust") {
+    const n = Number(parts[2]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  return null;
 }
 
 export const initWs = (server: HttpServer) => {
@@ -190,7 +194,7 @@ export const initWs = (server: HttpServer) => {
                 fileSize: msg.fileSize ? Number(msg.fileSize) : null,
                 ...(role === "CUSTOMER"
                   ? { readByCustomerAt: now }
-                  : role === "SALE"
+                  : (role === "SALE" || role === "ADMIN" || role === "MANAGER")
                   ? { readBySaleAt: now }
                   : {}),
               },
@@ -212,12 +216,14 @@ export const initWs = (server: HttpServer) => {
               prisma.chatMessage.count({
                 where: {
                   customerId,
+                  roomId,
                   readByCustomerAt: null,
                 },
               }),
               prisma.chatMessage.count({
                 where: {
                   customerId,
+                  roomId,
                   readBySaleAt: null,
                 },
               }),
@@ -231,8 +237,16 @@ export const initWs = (server: HttpServer) => {
 
             // 3.4 ส่ง event unread-count ไปให้ทุกคนในห้อง + ทุก socket ตาม role
             io!.to(roomId).emit("unread-count", payloadUnread);
-            io!.to("role:CUSTOMER").emit("unread-count", payloadUnread);
-            io!.to("role:SALE").emit("unread-count", payloadUnread);
+            
+            if (roomId.startsWith("admin:cust:")) {
+              io!.to("role:CUSTOMER").emit("unread-count", payloadUnread);
+              io!.to("role:ADMIN").emit("unread-count", payloadUnread);
+              io!.to("role:MANAGER").emit("unread-count", payloadUnread);
+            } else {
+              io!.to("role:CUSTOMER").emit("unread-count", payloadUnread);
+              io!.to("role:SALE").emit("unread-count", payloadUnread);
+              io!.to("role:MANAGER").emit("unread-count", payloadUnread);
+            }
 
             console.log(
               `💾 saved chat & unread-count: customerId=${customerId}, customerUnread=${customerUnread}, saleUnread=${saleUnread}`

@@ -352,7 +352,7 @@ export default function ChatDetailScreen() {
   }, [token, user?.role, isFocused]);
 
   const effectiveCustomerId = customerIdParam ?? (user?.role === "CUSTOMER" ? myCustomerId : null);
-  const effectiveRoomId = effectiveCustomerId ? `cust:${effectiveCustomerId}` : idParam ?? "general";
+  const effectiveRoomId = idParam ?? (effectiveCustomerId ? `cust:${effectiveCustomerId}` : "general");
 
   // =========================================================
   // socket
@@ -484,11 +484,21 @@ export default function ChatDetailScreen() {
           });
           if (!res.ok) return;
           const data = await res.json();
-          if (data.sale) {
-            const avatarUrl = data.sale.id
-              ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
-              : null;
-            setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
+          if (effectiveRoomId.startsWith("admin:")) {
+            setPartner({
+              name: data.adminNames || "แอดมินส่วนกลาง",
+              avatarUrl: null,
+              userId: null,
+            });
+          } else {
+            if (data.sale) {
+              const avatarUrl = data.sale.id
+                ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
+                : null;
+              setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
+            } else {
+              setPartner(null);
+            }
           }
         } else if ((user?.role === "SALE" || user?.role === "MANAGER" || user?.role === "ADMIN") && effectiveCustomerId) {
           const res = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
@@ -515,7 +525,7 @@ export default function ChatDetailScreen() {
     };
 
     if (isFocused) fetchPartner();
-  }, [token, user?.role, effectiveCustomerId, isFocused]);
+  }, [token, user?.role, effectiveCustomerId, effectiveRoomId, isFocused]);
 
   // =========================================================
   // history
@@ -805,7 +815,7 @@ export default function ChatDetailScreen() {
         await fetch(`${API_BASE_URL}/chat/mark-read`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ customerId: effectiveCustomerId }),
+          body: JSON.stringify({ customerId: effectiveCustomerId, roomId: effectiveRoomId }),
         });
       } catch (err) {
         console.error("[markRoomAsRead] error:", err);
@@ -813,7 +823,7 @@ export default function ChatDetailScreen() {
     };
 
     markRead();
-  }, [token, effectiveCustomerId, isFocused, mergedMessages.length]);
+  }, [token, effectiveCustomerId, effectiveRoomId, isFocused, mergedMessages.length]);
 
   const [input, setInput] = useState("");
 
@@ -1390,7 +1400,7 @@ export default function ChatDetailScreen() {
       </View>
 
       <View className="pl-3">
-        {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
+        {user?.role !== "MANAGER" && (
           <Pressable
             onPress={() => {
               const targetUserId = partner?.userId ? String(partner.userId) : "";
@@ -1454,7 +1464,7 @@ export default function ChatDetailScreen() {
           </View>
         )}
 
-        {user?.role !== "MANAGER" && user?.role !== "ADMIN" && (
+        {user?.role !== "MANAGER" && (
           <View
             className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
             style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}

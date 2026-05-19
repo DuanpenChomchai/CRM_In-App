@@ -28,7 +28,7 @@ router.post("/send", (req, _res, next) => {
 router.post(
   "/send",
   verifyToken,
-  requireRoles("CUSTOMER", "SALE"),
+  requireRoles("CUSTOMER", "SALE", "ADMIN", "MANAGER"),
   sendChatMessage
 );
 

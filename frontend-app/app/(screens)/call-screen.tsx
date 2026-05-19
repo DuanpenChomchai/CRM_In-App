@@ -117,7 +117,7 @@ export default function CallScreen() {
         };
 
         if (customerId) body.customerId = Number(customerId);
-        if (user?.role === "SALE") {
+        if (user?.role === "SALE" || user?.role === "ADMIN") {
           body.saleUserId = user.id;
           if (targetUserId) body.customerUserId = Number(targetUserId);
         }
