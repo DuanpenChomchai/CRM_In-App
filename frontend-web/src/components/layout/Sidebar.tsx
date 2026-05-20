@@ -10,6 +10,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -136,42 +137,6 @@ const Sidebar = ({
             })}
           </nav>
         </div>
-
-        {/* Logout Section */}
-        <div className={cn("p-4 border-t", isCollapsed ? "flex justify-center" : "")}>
-           <Button
-              variant="ghost"
-              className={cn(
-                "text-red-500 hover:text-red-600 hover:bg-red-50 w-full transition-all",
-                isCollapsed ? "w-10 h-10 p-0 justify-center" : "justify-start"
-              )}
-              onClick={() => setLogoutOpen(true)}
-            >
-              <LogOut className="h-5 w-5 shrink-0" />
-              {!isCollapsed && <span className="ml-2">ออกจากระบบ</span>}
-            </Button>
-        </div>
-
-        {/* Logout Confirmation Dialog */}
-        <AlertDialog open={logoutOpen} onOpenChange={setLogoutOpen}>
-          <AlertDialogContent className="max-w-[90vw] md:max-w-lg rounded-xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle>ยืนยันออกจากระบบ</AlertDialogTitle>
-              <AlertDialogDescription>
-                คุณต้องการออกจากระบบใช่หรือไม่?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-              <AlertDialogCancel className="mt-0">ยกเลิก</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-red-500 hover:bg-red-600 text-white"
-                onClick={handleLogout}
-              >
-                ออกจากระบบ
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </aside>
     </>
   );

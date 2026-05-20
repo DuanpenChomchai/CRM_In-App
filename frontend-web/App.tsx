@@ -17,6 +17,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Quotation from "@/pages/Quotation";
 import StageBased from "@/pages/StageBased";
 import Profile from "@/pages/Profile";
+import About from "@/pages/About";
+import Contact from "@/pages/Contact";
 
 const queryClient = new QueryClient();
 
@@ -127,6 +129,30 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <Profile />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />  
+          
+          {/* About */}
+          <Route
+            path="/about"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <About />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />  
+          
+          {/* Contact */}
+          <Route
+            path="/contact"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Contact />
                 </AppLayout>
               </ProtectedRoute>
             }

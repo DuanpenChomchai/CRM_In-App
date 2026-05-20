@@ -125,8 +125,34 @@ const Customer = () => {
   const role = String(user?.role || "GUEST").toUpperCase();
   const isSale = role === "SALE";
   const isAdmin = role === "ADMIN";
+  const isManager = role === "MANAGER";
   const mySaleId = Number(user?.id || 0);
   const mySaleName = user?.name || "";
+
+  const [selectedTeamSale, setSelectedTeamSale] = useState<{ sale: SaleUser; color: { avatar: string; ring: string; bar: string } } | null>(null);
+  const [teamSaleSearch, setTeamSaleSearch] = useState("");
+
+  // สำหรับ Manager: จำนวนลูกค้าของแต่ละเซลล์ในทีม
+  const teamSaleStats = salesTeam.map((sale) => {
+    const saleCustomers = customers.filter((c) => Number(c.saleId) === Number(sale.id));
+    return {
+      sale,
+      total: saleCustomers.length,
+      contacted: saleCustomers.filter((c) => String(c.mainStatus || "").toUpperCase() === "CONTACTED").length,
+      negotiating: saleCustomers.filter((c) => String(c.mainStatus || "").toUpperCase() === "NEGOTIATING").length,
+      quotation: saleCustomers.filter((c) => String(c.mainStatus || "").toUpperCase() === "QUOTATION").length,
+      closed: saleCustomers.filter((c) => String(c.mainStatus || "").toUpperCase() === "CLOSED").length,
+    };
+  });
+
+  const teamColors = [
+    { avatar: "bg-blue-500", ring: "ring-blue-400/40", bar: "bg-blue-500" },
+    { avatar: "bg-emerald-500", ring: "ring-emerald-400/40", bar: "bg-emerald-500" },
+    { avatar: "bg-violet-500", ring: "ring-violet-400/40", bar: "bg-violet-500" },
+    { avatar: "bg-orange-500", ring: "ring-orange-400/40", bar: "bg-orange-500" },
+    { avatar: "bg-pink-500", ring: "ring-pink-400/40", bar: "bg-pink-500" },
+    { avatar: "bg-teal-500", ring: "ring-teal-400/40", bar: "bg-teal-500" },
+  ];
 
   const openEditCustomerDialog = (customer: Customer) => {
     if (isSale) {
@@ -179,18 +205,34 @@ const Customer = () => {
   useEffect(() => {
     const fetchSales = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/users/sales-list`, {
-          headers: {
-            Authorization: token ? `Bearer ${token}` : "",
-          },
-        });
-        if (!res.ok) throw new Error("โหลดเซลล์ไม่ได้");
-        const json = await res.json();
-        const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
-          id: u.id,
-          name: u.name,
-        }));
-        setSalesTeam(mapped);
+        if (isManager) {
+          // Manager: ดึงเฉพาะทีมของตัวเอง
+          const res = await fetch(`${API_BASE}/api/users/managers-with-teams`, {
+            headers: { Authorization: token ? `Bearer ${token}` : "" },
+          });
+          if (!res.ok) throw new Error("โหลดทีมไม่ได้");
+          const json = await res.json();
+          const myData = (json.managers || []).find(
+            (m: any) => Number(m.id) === Number(user?.id)
+          );
+          const myTeam: SaleUser[] = (myData?.team || []).map((u: any) => ({
+            id: u.id,
+            name: u.name,
+          }));
+          setSalesTeam(myTeam);
+        } else {
+          // Admin / Sale: ดึงเซลล์ทั้งหมด
+          const res = await fetch(`${API_BASE}/api/users/sales-list`, {
+            headers: { Authorization: token ? `Bearer ${token}` : "" },
+          });
+          if (!res.ok) throw new Error("โหลดเซลล์ไม่ได้");
+          const json = await res.json();
+          const mapped: SaleUser[] = (json.data || []).map((u: any) => ({
+            id: u.id,
+            name: u.name,
+          }));
+          setSalesTeam(mapped);
+        }
       } catch (err) {
         console.error(err);
         toast.error("โหลดรายชื่อพนักงานขายไม่สำเร็จ");
@@ -435,6 +477,259 @@ const Customer = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* ===== MANAGER: ทีมเซลล์ของฉัน ===== */}
+      {isManager && salesTeam.length > 0 && (
+        <Card className="shadow-card border-l-4 border-l-violet-500">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-xl bg-violet-500">
+                <Users className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <CardTitle className="text-2xl">ทีมเซลล์ของฉัน</CardTitle>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  เซลล์ในทีม {salesTeam.length} คน · ลูกค้ารวม{" "}
+                  {teamSaleStats.reduce((s, t) => s + t.total, 0)} ราย
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {teamSaleStats.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <User className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>ยังไม่มีเซลล์ในทีม</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {teamSaleStats.map((stat, idx) => {
+                  const color = teamColors[idx % teamColors.length];
+                  const pct = stat.total > 0 ? Math.round((stat.closed / stat.total) * 100) : 0;
+                  return (
+                    <button
+                      key={stat.sale.id}
+                      className="rounded-xl border-2 border-border bg-card p-4 text-left hover:border-violet-400/60 hover:shadow-lg transition-all duration-200 space-y-3 focus:outline-none focus:ring-2 focus:ring-violet-400/50 cursor-pointer w-full"
+                      onClick={() => {
+                        setSelectedTeamSale({ sale: stat.sale, color });
+                        setTeamSaleSearch("");
+                      }}
+                    >
+                      {/* Avatar + ชื่อ + badge */}
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-full ${color.avatar} ring-2 ${color.ring} flex items-center justify-center text-white font-bold text-base flex-shrink-0`}>
+                          {stat.sale.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate">{stat.sale.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            ลูกค้าทั้งหมด <span className="font-semibold text-foreground">{stat.total}</span> ราย
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${color.avatar} text-white flex-shrink-0`}>
+                          {stat.total}
+                        </span>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="space-y-0.5">
+                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                          <span>ปิดการขาย</span>
+                          <span>{pct}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className={`h-full rounded-full ${color.bar} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+
+                      {/* Status pills */}
+                      <div className="flex flex-wrap gap-1">
+                        {stat.contacted > 0 && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getMainStatusColor("CONTACTED")}`}>ติดต่อแล้ว {stat.contacted}</span>}
+                        {stat.negotiating > 0 && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getMainStatusColor("NEGOTIATING")}`}>เจรจา {stat.negotiating}</span>}
+                        {stat.quotation > 0 && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getMainStatusColor("QUOTATION")}`}>เสนอราคา {stat.quotation}</span>}
+                        {stat.closed > 0 && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${getMainStatusColor("CLOSED")}`}>ปิดแล้ว {stat.closed}</span>}
+                        {stat.total === 0 && <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-muted text-muted-foreground">ยังไม่มีลูกค้า</span>}
+                      </div>
+
+                      <p className="text-[10px] text-muted-foreground text-right">คลิกเพื่อดูรายชื่อลูกค้า →</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ===== MANAGER: Sale Customers Popup ===== */}
+      {selectedTeamSale && (() => {
+        const saleCustomers = customers.filter(
+          (c) => Number(c.saleId) === Number(selectedTeamSale.sale.id)
+        );
+        const filtered = saleCustomers.filter(
+          (c) =>
+            c.name.toLowerCase().includes(teamSaleSearch.toLowerCase()) ||
+            c.tol.includes(teamSaleSearch) ||
+            c.email.toLowerCase().includes(teamSaleSearch.toLowerCase())
+        );
+        return (
+          <Dialog open onOpenChange={() => setSelectedTeamSale(null)}>
+            <DialogContent className="max-w-[95vw] md:max-w-2xl max-h-[92vh] flex flex-col p-0 gap-0 rounded-2xl overflow-hidden border-0 shadow-2xl">
+
+              {/* ── Gradient Header ── */}
+              <div className={`relative p-5 pb-4 bg-gradient-to-br ${selectedTeamSale.color.avatar.replace("bg-", "from-").replace("-500", "-600/20")} to-transparent border-b`}>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className={`w-14 h-14 rounded-2xl ${selectedTeamSale.color.avatar} shadow-lg flex items-center justify-center text-white font-black text-2xl flex-shrink-0`}>
+                    {selectedTeamSale.sale.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <DialogTitle className="text-xl font-bold leading-tight truncate">
+                      {selectedTeamSale.sale.name}
+                    </DialogTitle>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${selectedTeamSale.color.avatar} text-white`}>
+                        {saleCustomers.length} ลูกค้า
+                      </span>
+                      {teamSaleSearch && (
+                        <span className="text-xs text-muted-foreground">
+                          · พบ {filtered.length} รายการ
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4 pointer-events-none" />
+                  <Input
+                    placeholder="ค้นหาชื่อ, เบอร์โทร, อีเมล..."
+                    className="pl-10 h-10 rounded-xl border-muted-foreground/20 bg-background/80 backdrop-blur-sm focus:ring-2 focus:ring-violet-400/50"
+                    value={teamSaleSearch}
+                    onChange={(e) => setTeamSaleSearch(e.target.value)}
+                    autoFocus
+                  />
+                  {teamSaleSearch && (
+                    <button
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setTeamSaleSearch("")}
+                    >✕</button>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Body: card list ── */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {filtered.length === 0 ? (
+                  <div className="text-center py-16 text-muted-foreground">
+                    <User className="w-14 h-14 mx-auto mb-3 opacity-15" />
+                    <p className="font-medium">{teamSaleSearch ? "ไม่พบลูกค้าที่ค้นหา" : "เซลล์คนนี้ยังไม่มีลูกค้า"}</p>
+                    {teamSaleSearch && (
+                      <button className="mt-2 text-sm text-primary underline" onClick={() => setTeamSaleSearch("")}>
+                        ล้างการค้นหา
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  filtered.map((customer, idx) => (
+                    <div
+                      key={customer.id}
+                      className="group flex items-start gap-3 p-3.5 rounded-xl border bg-card hover:bg-muted/30 hover:shadow-sm transition-all"
+                    >
+                      {/* Number badge */}
+                      <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground flex-shrink-0 mt-0.5">
+                        {idx + 1}
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        {/* Name + Status */}
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <button
+                            className="font-bold text-sm hover:text-primary hover:underline text-left leading-tight"
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setIsDetailDialogOpen(true);
+                              setSelectedTeamSale(null);
+                            }}
+                          >
+                            {customer.name}
+                          </button>
+                          <Badge
+                            className={cn(
+                              "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide flex-shrink-0",
+                              getMainStatusColor(customer.mainStatus || "")
+                            )}
+                          >
+                            {getMainStatusLabel(customer.mainStatus || "")}
+                          </Badge>
+                        </div>
+
+                        {/* Contact row */}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Phone className="w-3 h-3 flex-shrink-0" />
+                            <a href={`tel:${customer.tol}`} className="hover:text-primary hover:underline">
+                              {customer.tol}
+                            </a>
+                          </span>
+                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground truncate max-w-[180px]">
+                            <Mail className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{customer.email}</span>
+                          </span>
+                        </div>
+
+                        {/* Property + Budget */}
+                        {(customer.productType || customer.priceBudget) && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {customer.productType && (
+                              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Home className="w-3 h-3 flex-shrink-0" />
+                                {customer.productType}
+                              </span>
+                            )}
+                            {customer.priceBudget && (
+                              <span className="flex items-center gap-1.5 text-xs font-semibold text-primary">
+                                <DollarSign className="w-3 h-3 flex-shrink-0" />
+                                {formatCurrency(customer.priceBudget)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          onClick={() => { openEditCustomerDialog(customer); setSelectedTeamSale(null); }}>
+                          <Edit className="w-3.5 h-3.5 text-blue-500" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          onClick={() => { setDeleteTarget(customer); setSelectedTeamSale(null); }}>
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* ── Footer ── */}
+              <div className="px-5 py-3 border-t bg-muted/10 flex items-center justify-between gap-3 flex-shrink-0">
+                <p className="text-xs text-muted-foreground">
+                  {teamSaleSearch
+                    ? `พบ ${filtered.length} จาก ${saleCustomers.length} รายการ`
+                    : `ลูกค้าทั้งหมด ${saleCustomers.length} ราย`}
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setSelectedTeamSale(null)}>
+                  ปิด
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* All Customers Table */}
       <Card className="shadow-card">
