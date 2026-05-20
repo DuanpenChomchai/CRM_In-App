@@ -84,11 +84,11 @@ export const getMessagesByRoom = async (req: Request, res: Response) => {
     const [items, total] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first to avoid pagination cutoff
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending chronological order
       prisma.chatMessage.count({ where }),
     ]);
 
@@ -116,6 +116,17 @@ export const getMessagesByCustomer = async (req: Request, res: Response) => {
     if (!customerId || Number.isNaN(customerId))
       return res.status(400).json({ message: "customerId ไม่ถูกต้อง" });
 
+    const authUser = (req as any).user;
+    let roomId = req.params.roomId || (req.query.roomId as string);
+
+    if (!roomId && authUser) {
+      if (authUser.role === "SALE") {
+        roomId = `cust:${customerId}`;
+      } else if (authUser.role === "ADMIN") {
+        roomId = `admin:cust:${customerId}`;
+      }
+    }
+
     const page = Math.max(parseInt(String(req.query.page ?? "1"), 10), 1);
     const pageSize = Math.min(
       Math.max(parseInt(String(req.query.pageSize ?? "50"), 10), 1),
@@ -123,22 +134,22 @@ export const getMessagesByCustomer = async (req: Request, res: Response) => {
     );
     const q = req.query.q ? String(req.query.q) : undefined;
 
-    const where = buildChatWhere(undefined, customerId, q);
+    const where = buildChatWhere(roomId, customerId, q);
 
     const [items, total, unreadCustomer, unreadSale] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending order
       prisma.chatMessage.count({ where }),
       prisma.chatMessage.count({
-        where: { customerId, readByCustomerAt: null },
+        where: { customerId, ...(roomId ? { roomId } : {}), readByCustomerAt: null },
       }),
       prisma.chatMessage.count({
-        where: { customerId, readBySaleAt: null },
+        where: { customerId, ...(roomId ? { roomId } : {}), readBySaleAt: null },
       }),
     ]);
 
@@ -178,6 +189,7 @@ export const getMyChatMessages = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
 
     const customerId = customer.id;
+    const roomId = req.query.roomId as string | undefined;
 
     const page = Math.max(parseInt(String(req.query.page ?? "1"), 10), 1);
     const pageSize = Math.min(
@@ -185,19 +197,19 @@ export const getMyChatMessages = async (req: AuthRequest, res: Response) => {
       500
     );
 
-    const where = buildChatWhere(undefined, customerId, req.query.q as any);
+    const where = buildChatWhere(roomId, customerId, req.query.q as any);
 
     const [items, total, unreadCount] = await Promise.all([
       prisma.chatMessage.findMany({
         where,
-        orderBy: { createdAt: "asc" },
+        orderBy: { createdAt: "desc" }, // Fetch latest first
         skip: (page - 1) * pageSize,
         take: pageSize,
         select: baseSelect,
-      }),
+      }).then(list => list.reverse()), // Restore ascending order
       prisma.chatMessage.count({ where }),
       prisma.chatMessage.count({
-        where: { customerId, readByCustomerAt: null },
+        where: { customerId, ...(roomId ? { roomId } : {}), readByCustomerAt: null },
       }),
     ]);
 
@@ -225,19 +237,21 @@ export const getMyChatMessages = async (req: AuthRequest, res: Response) => {
  */
 
 // ===== helper นับ unread ตาม role =====
-const countUnreadForCustomer = async (customerId: number) => {
+const countUnreadForCustomer = async (customerId: number, roomId: string) => {
   return prisma.chatMessage.count({
     where: {
       customerId,
+      roomId,
       readByCustomerAt: null,
     },
   });
 };
 
-const countUnreadForSale = async (customerId: number) => {
+const countUnreadForSaleOrAdmin = async (customerId: number, roomId: string) => {
   return prisma.chatMessage.count({
     where: {
       customerId,
+      roomId,
       readBySaleAt: null,
     },
   });
@@ -245,8 +259,8 @@ const countUnreadForSale = async (customerId: number) => {
 
 /**
  * POST /api/chat/mark-read
- * body: { customerId: number }
- * ใช้ได้ทั้งฝั่ง CUSTOMER และ SALE
+ * body: { customerId: number, roomId?: string }
+ * ใช้ได้ทั้งฝั่ง CUSTOMER, SALE และ ADMIN
  */
 export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
   try {
@@ -260,21 +274,23 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "customerId ไม่ถูกต้อง" });
     }
 
+    const roomId = req.body.roomId || `cust:${customerId}`;
     const now = new Date();
 
-    // ✅ อัปเดตฝั่งที่อ่าน ตาม role
     if (authUser.role === "CUSTOMER") {
       await prisma.chatMessage.updateMany({
         where: {
           customerId,
+          roomId,
           readByCustomerAt: null,
         },
         data: { readByCustomerAt: now },
       });
-    } else if (authUser.role === "SALE") {
+    } else if (authUser.role === "SALE" || authUser.role === "ADMIN" || authUser.role === "MANAGER") {
       await prisma.chatMessage.updateMany({
         where: {
           customerId,
+          roomId,
           readBySaleAt: null,
         },
         data: { readBySaleAt: now },
@@ -285,13 +301,11 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
         .json({ message: "role นี้ยังไม่รองรับ mark-read" });
     }
 
-    // ✅ คำนวณ unread ใหม่ทั้งสองฝั่ง
+    // ✅ คำนวณ unread ใหม่ทั้งสองฝั่ง (เฉพาะห้องนั้น)
     const [customerUnread, saleUnread] = await Promise.all([
-      countUnreadForCustomer(customerId),
-      countUnreadForSale(customerId),
+      countUnreadForCustomer(customerId, roomId),
+      countUnreadForSaleOrAdmin(customerId, roomId),
     ]);
-
-    const roomId = `cust:${customerId}`;
 
     // ✅ broadcast ผ่าน Socket.IO ให้ทั้งห้อง + ทุก role ที่เกี่ยว
     try {
@@ -299,13 +313,22 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
       const payload = { roomId, customerUnread, saleUnread };
 
       io.to(roomId).emit("unread-count", payload);
-      io.to("role:CUSTOMER").emit("unread-count", payload);
-      io.to("role:SALE").emit("unread-count", payload);
+      
+      // Emit events to specific roles
+      if (roomId.startsWith("admin:cust:")) {
+        io.to("role:CUSTOMER").emit("unread-count", payload);
+        io.to("role:ADMIN").emit("unread-count", payload);
+        io.to("role:MANAGER").emit("unread-count", payload);
+      } else {
+        io.to("role:CUSTOMER").emit("unread-count", payload);
+        io.to("role:SALE").emit("unread-count", payload);
+        io.to("role:MANAGER").emit("unread-count", payload);
+      }
 
       // ✅ แจ้งฝั่งส่งว่าข้อความถูกอ่านแล้ว (read receipt)
       io.to(roomId).emit("messages-read", {
         roomId,
-        readByRole: authUser.role, // "CUSTOMER" | "SALE"
+        readByRole: authUser.role, // "CUSTOMER" | "SALE" | "ADMIN"
       });
     } catch (e) {
       console.error("emit unread-count after mark-read error:", e);
@@ -313,6 +336,7 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
 
     return res.json({
       customerId,
+      roomId,
       role: authUser.role,
       customerUnread,
       saleUnread,

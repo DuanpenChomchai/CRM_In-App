@@ -9,6 +9,7 @@ import {
   assignSales,
   deleteCustomer,
   getMyAssignedSale,
+  getManagerChats,
 } from "../controller/customersController";
 
 import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
@@ -21,6 +22,14 @@ router.get(
   verifyToken,
   requireRoles("SALE", "MANAGER", "ADMIN"),
   getAllCustomers
+);
+
+/** ข้อมูลลูกค้าสำหรับผู้จัดการ (แชท) */
+router.get(
+  "/manager/chats",
+  verifyToken,
+  requireRoles("MANAGER", "ADMIN"),
+  getManagerChats
 );
 
 /** ลูกค้าใหม่ที่ยังไม่ assign */

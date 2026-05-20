@@ -63,7 +63,7 @@ router.get(
 router.post(
   "/mark-read",
   verifyToken,
-  requireRoles("CUSTOMER", "SALE"),
+  requireRoles("CUSTOMER", "SALE", "ADMIN", "MANAGER"),
   markRoomAsRead
 );
 
@@ -76,7 +76,7 @@ router.post(
 router.post(
   "/upload",
   verifyToken,
-  requireRoles("CUSTOMER", "SALE"),
+  requireRoles("CUSTOMER", "SALE", "ADMIN", "MANAGER"),
   upload.single("file"),
   uploadChatFile
 );
@@ -88,7 +88,7 @@ router.post(
 router.post(
   "/send",
   verifyToken,
-  requireRoles("CUSTOMER", "SALE"),
+  requireRoles("CUSTOMER", "SALE", "ADMIN", "MANAGER"),
   sendChatMessage
 );
 

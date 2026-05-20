@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.stagebase.frontendapp",
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for voice calls.",
@@ -16,6 +17,7 @@
       }
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -24,7 +26,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.duanpen.frontendapp",
+      "package": "com.stagebase.frontendapp",
       "permissions": [
         "RECORD_AUDIO",
         "CAMERA",
@@ -65,6 +67,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a52c15a5-ec2d-4949-b6e9-0a1013af5b32"
+      }
     }
   }
 }

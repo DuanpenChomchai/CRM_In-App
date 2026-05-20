@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "897990148548",
+    "project_id": "stagebase-crm",
+    "storage_bucket": "stagebase-crm.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:897990148548:android:7d9bc5502b2365a1572491",
+        "android_client_info": {
+          "package_name": "com.stagebase.frontendapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHKYpo4hWif4FIWRnloik_xT5sc5hneVI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

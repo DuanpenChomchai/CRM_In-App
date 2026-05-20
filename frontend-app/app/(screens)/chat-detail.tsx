@@ -352,7 +352,7 @@ export default function ChatDetailScreen() {
   }, [token, user?.role, isFocused]);
 
   const effectiveCustomerId = customerIdParam ?? (user?.role === "CUSTOMER" ? myCustomerId : null);
-  const effectiveRoomId = effectiveCustomerId ? `cust:${effectiveCustomerId}` : idParam ?? "general";
+  const effectiveRoomId = idParam ?? (effectiveCustomerId ? `cust:${effectiveCustomerId}` : "general");
 
   // =========================================================
   // socket
@@ -469,6 +469,10 @@ export default function ChatDetailScreen() {
   // =========================================================
   const [partner, setPartner] = useState<ChatPartner | null>(null);
 
+  // สำหรับ MANAGER ถือเสมือนเซลล์เป็น "Me"
+  const [targetSaleUserId, setTargetSaleUserId] = useState<number | null>(null);
+  const [targetSaleEmail, setTargetSaleEmail] = useState<string | null>(null);
+
   useEffect(() => {
     const fetchPartner = async () => {
       try {
@@ -480,13 +484,23 @@ export default function ChatDetailScreen() {
           });
           if (!res.ok) return;
           const data = await res.json();
-          if (data.sale) {
-            const avatarUrl = data.sale.id
-              ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
-              : null;
-            setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
+          if (effectiveRoomId.startsWith("admin:")) {
+            setPartner({
+              name: data.adminNames || "แอดมินส่วนกลาง",
+              avatarUrl: null,
+              userId: null,
+            });
+          } else {
+            if (data.sale) {
+              const avatarUrl = data.sale.id
+                ? `${API_BASE_URL}/users/profile-image/${data.sale.id}?t=${encodeURIComponent(token)}&b=${Date.now()}`
+                : null;
+              setPartner({ name: data.sale.name || "Sale", avatarUrl, userId: data.sale.id });
+            } else {
+              setPartner(null);
+            }
           }
-        } else if (user?.role === "SALE" && effectiveCustomerId) {
+        } else if ((user?.role === "SALE" || user?.role === "MANAGER" || user?.role === "ADMIN") && effectiveCustomerId) {
           const res = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
             headers: { Authorization: `Bearer ${token}` },
           });
@@ -497,6 +511,11 @@ export default function ChatDetailScreen() {
             ? `${API_BASE_URL}/users/profile-image/${userId}?t=${encodeURIComponent(token)}&b=${Date.now()}`
             : null;
           setPartner({ name: c.name || `Customer #${c.id}`, avatarUrl, userId });
+
+          if ((user?.role === "MANAGER" || user?.role === "ADMIN") && c.sale) {
+            setTargetSaleUserId(c.sale.id);
+            setTargetSaleEmail(c.sale.email);
+          }
         } else {
           setPartner(null);
         }
@@ -506,7 +525,7 @@ export default function ChatDetailScreen() {
     };
 
     if (isFocused) fetchPartner();
-  }, [token, user?.role, effectiveCustomerId, isFocused]);
+  }, [token, user?.role, effectiveCustomerId, effectiveRoomId, isFocused]);
 
   // =========================================================
   // history
@@ -524,14 +543,24 @@ export default function ChatDetailScreen() {
   }, [effectiveRoomId]);
 
   // ✅ ย้ายออกมาข้างนอกเพื่อให้ textMsgs เข้าถึงได้
-  const computeFromMe = (m: any) => {
+  const computeFromMe = (m: any, forcedSaleUserId?: number | null, forcedSaleEmail?: string | null) => {
     // 1) เช็คจาก ID (ถ้ามี)
     const senderId = m.senderId ?? m.userId ?? null;
-    if (senderId != null && myUserId != null) return Number(senderId) === Number(myUserId);
+    if (senderId != null) {
+      if (myUserId != null && Number(senderId) === Number(myUserId)) return true;
+      const chkSaleId = forcedSaleUserId ?? targetSaleUserId;
+      if (chkSaleId != null && Number(senderId) === Number(chkSaleId)) return true;
+    }
 
     // 2) เช็คจาก Email/Name (รองรับทั้ง Socket Payload และ DB Object)
     const senderEmail = normalizeEmail(m.user ?? m.senderName ?? m.senderEmail ?? m.sender ?? "");
-    return senderEmail && myEmail ? senderEmail === myEmail : false;
+    if (senderEmail) {
+      if (myEmail && senderEmail === myEmail) return true;
+      const chkSaleEmail = forcedSaleEmail ?? targetSaleEmail;
+      if (chkSaleEmail && senderEmail === normalizeEmail(chkSaleEmail)) return true;
+    }
+
+    return false;
   };
 
   useEffect(() => {
@@ -550,6 +579,27 @@ export default function ChatDetailScreen() {
         const json = await res.json();
         const arr = Array.isArray(json) ? json : Array.isArray(json.data) ? json.data : [];
 
+        // ถ้าเป็น MANAGER จำเป็นต้องรู้ตัวเซลล์ก่อนจึงจะคำนวณ isFromMe ของประวัติได้ถูก
+        let localSaleUserId = targetSaleUserId;
+        let localSaleEmail = targetSaleEmail;
+
+        if ((user?.role === "MANAGER" || user?.role === "ADMIN") && !localSaleUserId && effectiveCustomerId) {
+          try {
+            const cres = await fetch(`${API_BASE_URL}/customers/${effectiveCustomerId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (cres.ok) {
+              const cjson = await cres.json();
+              if (cjson.sale) {
+                localSaleUserId = cjson.sale.id;
+                localSaleEmail = cjson.sale.email;
+              }
+            }
+          } catch (e) {
+            console.warn("fetch customer for manager failed", e);
+          }
+        }
+
         const mappedBase: Msg[] = arr.map((m: any) => {
           const t = String(m.type || "TEXT").toUpperCase();
           const fileKey = m.fileKey ?? m.filekey ?? m.imgMessage ?? m.fileMessage ?? null;
@@ -557,7 +607,7 @@ export default function ChatDetailScreen() {
           const createdAt = new Date(m.createdAt || Date.now());
           const ts = createdAt.getTime();
 
-          const isFromMe = computeFromMe(m);
+          const isFromMe = computeFromMe(m, localSaleUserId, localSaleEmail);
 
           // ✅ ถ้าเราเป็น SALE → ดูว่า Customer อ่านหรือยัง (readByCustomerAt)
           // ✅ ถ้าเราเป็น CUSTOMER → ดูว่า Sale อ่านหรือยัง (readBySaleAt)
@@ -738,7 +788,7 @@ export default function ChatDetailScreen() {
           text: String(m.text ?? ""),
         } as Msg;
       }),
-    [socketMessages, myEmail, token, user?.role]
+    [socketMessages, myEmail, token, user?.role, targetSaleUserId, targetSaleEmail]
   );
 
   useEffect(() => {
@@ -765,7 +815,7 @@ export default function ChatDetailScreen() {
         await fetch(`${API_BASE_URL}/chat/mark-read`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ customerId: effectiveCustomerId }),
+          body: JSON.stringify({ customerId: effectiveCustomerId, roomId: effectiveRoomId }),
         });
       } catch (err) {
         console.error("[markRoomAsRead] error:", err);
@@ -773,7 +823,7 @@ export default function ChatDetailScreen() {
     };
 
     markRead();
-  }, [token, effectiveCustomerId, isFocused, mergedMessages.length]);
+  }, [token, effectiveCustomerId, effectiveRoomId, isFocused, mergedMessages.length]);
 
   const [input, setInput] = useState("");
 
@@ -1322,35 +1372,35 @@ export default function ChatDetailScreen() {
     );
   };
 
-  const ListHeader = useMemo(
-    () => (
-      <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Link href="/(screens)/all-chat" asChild>
-          <Pressable className="pr-3 -ml-2">
-            <Ionicons name="chevron-back" size={24} color="#111827" />
-          </Pressable>
-        </Link>
+  const ChatHeader = () => (
+    <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
+      <Link href="/(screens)/all-chat" asChild>
+        <Pressable className="pr-3 -ml-2">
+          <Ionicons name="chevron-back" size={24} color="#111827" />
+        </Pressable>
+      </Link>
 
-        <View className="flex-row flex-1 items-center">
-          {partner?.avatarUrl ? (
-            <Image source={{ uri: partner.avatarUrl }} className="w-9 h-9 rounded-full mr-3" />
-          ) : (
-            <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
-              <Ionicons name="person" size={20} color="#047857" />
-            </View>
-          )}
-
-          <View className="flex-1">
-            <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
-              {partner?.name ?? nameParam ?? "Chat"}
-            </Text>
-            <Text className="text-xs text-gray-500">
-              ID: {effectiveRoomId} · {connected ? "🟢 Online" : "🔴 Offline"}
-            </Text>
+      <View className="flex-row flex-1 items-center">
+        {partner?.avatarUrl ? (
+          <Image source={{ uri: partner.avatarUrl }} className="w-9 h-9 rounded-full mr-3" />
+        ) : (
+          <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
+            <Ionicons name="person" size={20} color="#047857" />
           </View>
-        </View>
+        )}
 
-        <View className="pl-3">
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-gray-900" numberOfLines={1}>
+            {partner?.name ?? nameParam ?? "Chat"}
+          </Text>
+          <Text className="text-xs text-gray-500">
+            ID: {effectiveRoomId} · {connected ? "🟢 Online" : "🔴 Offline"}
+          </Text>
+        </View>
+      </View>
+
+      <View className="pl-3">
+        {user?.role !== "MANAGER" && (
           <Pressable
             onPress={() => {
               const targetUserId = partner?.userId ? String(partner.userId) : "";
@@ -1372,10 +1422,9 @@ export default function ChatDetailScreen() {
           >
             <Ionicons name="call-outline" size={24} color="#047857" />
           </Pressable>
-        </View>
+        )}
       </View>
-    ),
-    [effectiveRoomId, nameParam, connected, partner, router]
+    </View>
   );
 
   return (
@@ -1385,7 +1434,7 @@ export default function ChatDetailScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
     >
       <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
-        {ListHeader}
+        <ChatHeader />
 
         <FlatList
           ref={listRef}
@@ -1415,43 +1464,45 @@ export default function ChatDetailScreen() {
           </View>
         )}
 
-        <View
-          className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
-          style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}
-        >
-          <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
-            <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
-          </Pressable>
-
-          <View className="flex-1 mx-2 rounded-2xl px-3 bg-gray-100">
-            <TextInput
-              className="py-2"
-              placeholder="Message"
-              placeholderTextColor="#9CA3AF"
-              value={input}
-              onChangeText={(v) => {
-                setInput(v);
-                if (v.trim().length > 0) startTyping();
-              }}
-              returnKeyType="send"
-              onSubmitEditing={onSend}
-            />
-          </View>
-
-          {input.trim().length > 0 ? (
-            <Pressable
-              className="px-3 py-2 rounded-2xl"
-              onPress={onSend}
-              style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
-            >
-              <Ionicons name="send" size={20} color="#047857" />
+        {user?.role !== "MANAGER" && (
+          <View
+            className="flex-row items-center px-3 py-2 border-t border-gray-200 bg-white"
+            style={{ paddingBottom: isKeyboardVisible ? 8 : insets.bottom > 0 ? insets.bottom : 8 }}
+          >
+            <Pressable className="px-2 py-2" onPress={() => setAttachOpen(true)}>
+              <Ionicons name="add-circle-outline" size={22} color="#6B7280" />
             </Pressable>
-          ) : (
-            <View className="px-3 py-2">
-              <Ionicons name="send" size={20} color="#D1D5DB" />
+
+            <View className="flex-1 mx-2 rounded-2xl px-3 bg-gray-100">
+              <TextInput
+                className="py-2"
+                placeholder="Message"
+                placeholderTextColor="#9CA3AF"
+                value={input}
+                onChangeText={(v) => {
+                  setInput(v);
+                  if (v.trim().length > 0) startTyping();
+                }}
+                returnKeyType="send"
+                onSubmitEditing={onSend}
+              />
             </View>
-          )}
-        </View>
+
+            {input.trim().length > 0 ? (
+              <Pressable
+                className="px-3 py-2 rounded-2xl"
+                onPress={onSend}
+                style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1 }]}
+              >
+                <Ionicons name="send" size={20} color="#047857" />
+              </Pressable>
+            ) : (
+              <View className="px-3 py-2">
+                <Ionicons name="send" size={20} color="#D1D5DB" />
+              </View>
+            )}
+          </View>
+        )}
       </SafeAreaView>
 
       <Modal transparent visible={attachOpen} animationType="fade" onRequestClose={() => setAttachOpen(false)}>

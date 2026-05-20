@@ -418,6 +418,18 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // ✅ ถ้า user เป็น CUSTOMER และมีการเปลี่ยนชื่อ → sync ชื่อไปยัง customers table ด้วย
+    if (name && req.user?.role === "CUSTOMER") {
+      try {
+        await prisma.customer.updateMany({
+          where: { userId },
+          data: { name: name.trim() },
+        });
+      } catch (syncErr) {
+        console.warn("[updateMe] sync customer name failed:", syncErr);
+      }
+    }
+
     return res.json({
       user: {
         ...updated,

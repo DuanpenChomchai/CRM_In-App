@@ -218,35 +218,38 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
         userId: true,
         tol: true,
       },
-  orderBy: { createdAt: "desc" },
-});
-
-const enriched = await Promise.all(
-  customers.map(async (c) => {
-    const unreadCount = await prisma.chatMessage.count({
-      where: {
-        customerId: c.id,
-        readBySaleAt: null,
-      },
-    });
-
-    // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา
-    const lastMsg = await prisma.chatMessage.findFirst({
-      where: { customerId: c.id },
       orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
     });
 
-    return {
-      id: c.id,
-      name: c.name,
-      email: c.email,
-      userId: c.userId,
-      tol: c.tol,
-      unreadCount,
-      lastMessageAt: lastMsg?.createdAt ?? null,
-    };
-  })
+    const enriched = await Promise.all(
+      customers.map(async (c) => {
+        const saleRoomId = `cust:${c.id}`;
+
+        const unreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: c.id,
+            roomId: saleRoomId,
+            readBySaleAt: null,
+          },
+        });
+
+        // ✅ หาข้อความล่าสุดเพื่อเรียงลำดับ + แสดงเวลา (เฉพาะห้อง Sale)
+        const lastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: c.id, roomId: saleRoomId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
+        return {
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          userId: c.userId,
+          tol: c.tol,
+          unreadCount,
+          lastMessageAt: lastMsg?.createdAt ?? null,
+        };
+      })
     );
     return res.json(enriched);
   } catch (err) {
@@ -564,25 +567,54 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
     }
 
-    const unreadCount = await prisma.chatMessage.count({
+    const saleRoomId = `cust:${customer.id}`;
+    const adminRoomId = `admin:cust:${customer.id}`;
+
+    // Sale Chat Stats
+    const saleUnreadCount = await prisma.chatMessage.count({
       where: {
         customerId: customer.id,
+        roomId: saleRoomId,
         readByCustomerAt: null,
       },
     });
 
-    const lastMsg = await prisma.chatMessage.findFirst({
-      where: { customerId: customer.id },
+    const saleLastMsg = await prisma.chatMessage.findFirst({
+      where: { customerId: customer.id, roomId: saleRoomId },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
+
+    // Admin Chat Stats
+    const adminUnreadCount = await prisma.chatMessage.count({
+      where: {
+        customerId: customer.id,
+        roomId: adminRoomId,
+        readByCustomerAt: null,
+      },
+    });
+
+    const adminLastMsg = await prisma.chatMessage.findFirst({
+      where: { customerId: customer.id, roomId: adminRoomId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+
+    const admins = await prisma.user.findMany({
+      where: { role: "ADMIN" },
+      select: { name: true },
+    });
+    const adminNames = admins.length > 0 ? admins.map((a) => a.name).join(", ") : "แอดมินส่วนกลาง";
 
     return res.json({
       customerId: customer.id,
       customerName: customer.name,
       sale: customer.sale,
-      unreadCount,
-      lastMessageAt: lastMsg?.createdAt ?? null,
+      unreadCount: saleUnreadCount,
+      lastMessageAt: saleLastMsg?.createdAt ?? null,
+      adminUnreadCount,
+      adminLastMessageAt: adminLastMsg?.createdAt ?? null,
+      adminNames,
     });
   } catch (error) {
     console.error("getMyAssignedSale error:", error);
@@ -591,3 +623,99 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
 };
 
 export const getCustomers = getAllCustomers;
+
+/**
+ * ดึงลูกค้าและแชทสำหรับผู้จัดการ (ดูเซลล์ในทีม)
+ * GET /api/customers/manager/chats
+ */
+export const getManagerChats = async (req: AuthRequest, res: Response) => {
+  try {
+    const role = (req.user?.role || "").toUpperCase();
+    const userId = req.user?.id;
+
+    if (!userId || (role !== "MANAGER" && role !== "ADMIN")) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
+    const scope = buildCustomerScope(req.user);
+    if (!scope) {
+      return res.status(403).json({ message: "ไม่มีสิทธิ์" });
+    }
+
+    const customers = await prisma.customer.findMany({
+      where: scope,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        userId: true,
+        tol: true,
+        sale: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            img: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const enriched = await Promise.all(
+      customers.map(async (c) => {
+        const saleRoomId = `cust:${c.id}`;
+        const adminRoomId = `admin:cust:${c.id}`;
+        
+        // For MANAGER/ADMIN, we need to show both if needed, but the endpoint currently returns one object per customer.
+        // We will return stats for both rooms so the frontend can split them.
+        
+        const saleUnreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: c.id,
+            roomId: saleRoomId,
+            readBySaleAt: null, 
+          },
+        });
+
+        const saleLastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: c.id, roomId: saleRoomId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
+        const adminUnreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: c.id,
+            roomId: adminRoomId,
+            readBySaleAt: null, 
+          },
+        });
+
+        const adminLastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: c.id, roomId: adminRoomId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
+        return {
+          id: c.id,
+          name: c.name,
+          email: c.email,
+          userId: c.userId,
+          tol: c.tol,
+          sale: c.sale,
+          unreadCount: saleUnreadCount,
+          lastMessageAt: saleLastMsg?.createdAt ?? null,
+          adminUnreadCount,
+          adminLastMessageAt: adminLastMsg?.createdAt ?? null,
+        };
+      })
+    );
+
+    return res.json(enriched);
+  } catch (err) {
+    console.error("getManagerChats error:", err);
+    return res.status(500).json({ message: "ดึงข้อมูลลูกค้าสำหรับผู้จัดการล้มเหลว" });
+  }
+};
