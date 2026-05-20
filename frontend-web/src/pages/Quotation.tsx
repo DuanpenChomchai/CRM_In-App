@@ -299,7 +299,7 @@ const Quotation = () => {
           body: JSON.stringify(payload),
         });
         toast.success(`อัปเดตใบเสนอราคา ${updated.quotationNumber} สำเร็จ`);
-        navigate("/quotationlist");
+        navigate("/quotationlist", { replace: true });
         return;
       }
 
@@ -309,7 +309,7 @@ const Quotation = () => {
       });
 
       toast.success(`สร้างใบเสนอราคา ${created.quotationNumber} สำเร็จ`);
-      navigate("/quotationlist");
+      navigate("/quotationlist", { replace: true });
     } catch (err: any) {
       toast.error(err?.message || "บันทึกไม่สำเร็จ");
     } finally {
@@ -333,7 +333,7 @@ const Quotation = () => {
           {isEditMode ? `แก้ไขใบเสนอราคา #${quotationNumber}` : "สร้างใบเสนอราคา"}
         </h1>
 
-        <Button variant="outline" onClick={() => navigate("/quotationlist")} className="w-full sm:w-auto">
+        <Button variant="outline" onClick={() => navigate("/quotationlist", { replace: true })} className="w-full sm:w-auto">
           <List className="w-4 h-4 mr-2" />
           ดูรายการทั้งหมด
         </Button>
@@ -536,7 +536,7 @@ const Quotation = () => {
       </Card>
 
       <div className="flex flex-col sm:flex-row gap-3 justify-end pb-10">
-        <Button variant="outline" onClick={() => navigate("/quotationlist")} disabled={loading} className="w-full sm:w-auto order-2 sm:order-1">
+        <Button variant="outline" onClick={() => navigate("/quotationlist", { replace: true })} disabled={loading} className="w-full sm:w-auto order-2 sm:order-1">
           {isLocked ? "กลับ" : "ยกเลิก"}
         </Button>
 

@@ -15,7 +15,7 @@ import {
   assignManager,
 } from "../controller/userController";
 
-import { authMiddleware, verifyAdmin, AuthRequest } from "../middlewares/authMiddleware";
+import { authMiddleware, verifyAdmin, requireRoles, AuthRequest } from "../middlewares/authMiddleware";
 import prisma from "../config/prismaclient";
 import { upload } from "../middlewares/uploadProfile";
 
@@ -119,7 +119,7 @@ router.get("/sales", authMiddleware, verifyAdmin, listSales);
 // ดึงรายชื่อเซลล์สำหรับ dropdown (ทุก role เข้าได้ แค่ login)
 router.get("/sales-list", authMiddleware, listSales);
 // จัดการทีม manager
-router.get("/managers-with-teams", authMiddleware, verifyAdmin, getManagersWithTeams);
+router.get("/managers-with-teams", authMiddleware, requireRoles("ADMIN", "MANAGER"), getManagersWithTeams);
 router.patch("/sales/:saleId/assign-manager", authMiddleware, verifyAdmin, assignManager);
 router.get("/", authMiddleware, verifyAdmin, listUsers);
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);

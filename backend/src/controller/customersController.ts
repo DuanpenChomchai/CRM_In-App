@@ -479,6 +479,36 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // ✅ ถ้าลูกค้าผูกกับ User (มีการลงทะเบียนแอพ) -> sync ข้อมูลกลับไปยัง User table ด้วย
+    if (updated.userId) {
+      try {
+        const userSyncData: any = {};
+        if (name !== undefined) userSyncData.name = name.trim();
+        if (email !== undefined) userSyncData.email = email.trim().toLowerCase();
+        if (phone !== undefined) userSyncData.tol = phone.trim();
+
+        if (Object.keys(userSyncData).length > 0) {
+          await prisma.user.update({
+            where: { id: updated.userId },
+            data: userSyncData,
+          });
+        }
+      } catch (userSyncErr) {
+        console.warn("[updateCustomer] sync user failed:", userSyncErr);
+      }
+    }
+
+    // ✅ Emit websocket event แจ้งเตือนหน้าเว็บ CRM ทุกบทบาทที่เกี่ยวข้อง
+    try {
+      const io = getIO();
+      io.to("role:ADMIN").emit("customer:updated", updated);
+      io.to("role:MANAGER").emit("customer:updated", updated);
+      io.to("role:SALE").emit("customer:updated", updated);
+      console.log("📢 Emit → customer:updated:", updated.id);
+    } catch (wsErr) {
+      console.warn("Socket.IO not initialized, skip emit:", wsErr);
+    }
+
     return res.json(updated);
   } catch (error) {
     console.error("updateCustomer error:", error);
