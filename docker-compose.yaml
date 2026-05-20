@@ -85,4 +85,4 @@ volumes:
   crm_minio_data:
     driver: local
   crm_uploads:
-    driver: local
+    driver: local
