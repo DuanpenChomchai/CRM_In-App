@@ -157,11 +157,19 @@ export default function CallScreen() {
   
   const startLocalRecording = async () => {
     try {
+      // ─── ถ้ามี recording ค้างอยู่ ให้หยุดก่อน ───
+      if (recordingRef.current) {
+        try { await recordingRef.current.stopAndUnloadAsync(); } catch (_) {}
+        recordingRef.current = null;
+        setIsRecording(false);
+      }
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
       });
+
       const { recording } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
@@ -191,22 +199,35 @@ export default function CallScreen() {
       const uri = await safelyStopRecording();
       if (!uri || !token) return null;
       console.log("✅ Stopped recording, uri:", uri);
-      
+
       const safeUri = Platform.OS === "ios" && uri.startsWith("file://") ? uri.replace("file://", "") : uri;
       const fileName = `call_record_${Date.now()}.m4a`;
       const mimeType = "audio/m4a";
-      
+
       const formData = new FormData();
       formData.append("file", { uri: safeUri, name: fileName, type: mimeType } as any);
-      
-      const res = await fetch(`${API_BASE_URL}/chat/upload`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-        body: formData,
-      });
-      
-      if (!res.ok) throw new Error("Upload failed");
-      return await res.json();
+
+      // ─── Timeout 10 วินาที กันค้างนาน ───
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/chat/upload`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+        const data = await res.json();
+        console.log("✅ Recording uploaded:", data.fileKey);
+        return data;
+      } catch (uploadErr) {
+        clearTimeout(timeout);
+        console.warn("⚠️ Upload failed, will send text-only call message:", uploadErr);
+        return null; // ─── ส่ง CALL_ENDED แบบ text เปล่าแทน ───
+      }
     } catch (e) {
       console.error("❌ stopAndUploadRecording error:", e);
       return null;
@@ -394,8 +415,7 @@ export default function CallScreen() {
         }
 
         setTimeout(() => {
-          if (router.canGoBack()) router.back();
-          else router.replace("/(screens)/all-chat");
+          router.replace("/(screens)/all-chat");
         }, 800);
       }
     };
@@ -513,8 +533,7 @@ export default function CallScreen() {
     }
 
     setTimeout(() => {
-      if (router.canGoBack()) router.back();
-      else router.replace("/(screens)/all-chat");
+      router.replace("/(screens)/all-chat");
     }, 600);
   };
 

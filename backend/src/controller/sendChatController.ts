@@ -134,15 +134,23 @@ export const sendChatMessage = async (req: AuthRequest, res: Response) => {
       if (customer?.id) customerId = customer.id;
     }
 
-    // ✅ 3) normalize roomId ให้เป็น cust:<customerId> หรือ admin:cust:<customerId> ถ้ามี customerId แล้ว
+    // ✅ 3) normalize roomId เฉพาะกรณีที่ roomId ยังไม่มีรูปแบบที่ถูกต้อง
     if (customerId != null) {
       const oldRoom = roomId;
-      if (!roomId.startsWith("admin:cust:")) {
-        roomId = `cust:${customerId}`;
-      } else {
+
+      // ─── ถ้าเป็น admin room ให้ normalize เป็น admin:cust:<id>
+      if (roomId.startsWith("admin:cust:")) {
         roomId = `admin:cust:${customerId}`;
       }
-      
+      // ─── ถ้าเป็น cust:<id>:sale:<saleId> ให้คง format ไว้ ห้ามเขียนทับ
+      else if (/^cust:\d+:sale:\d+$/.test(roomId)) {
+        // keep as-is
+      }
+      // ─── ถ้าเป็น cust:<id> ธรรมดาหรือรูปแบบอื่น → normalize เป็น cust:<id>
+      else {
+        roomId = `cust:${customerId}`;
+      }
+
       if (oldRoom !== roomId) {
         console.log(`[CHAT:SEND][${rid}] normalize roomId`, oldRoom, "->", roomId);
       }

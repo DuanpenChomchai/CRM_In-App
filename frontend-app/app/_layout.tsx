@@ -27,7 +27,7 @@ import { registerForPushNotificationsAsync } from "../utils/notifications";
 import * as Notifications from "expo-notifications";
 
 export const unstable_settings = {
-  anchor: "(auth)/login",
+  anchor: "(screens)/all-chat",
 };
 
 /**
