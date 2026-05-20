@@ -80,7 +80,9 @@ services:
 
 
 volumes:
-  crm_postgres_data: null
-  crm_minio_data: null
-  crm_uploads: null
-
+  crm_postgres_data:
+    driver: local
+  crm_minio_data:
+    driver: local
+  crm_uploads:
+    driver: local
