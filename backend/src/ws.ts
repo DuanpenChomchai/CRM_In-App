@@ -37,11 +37,11 @@ let io: Server | null = null;
 
 function parseCustomerId(roomId: string): number | null {
   const parts = String(roomId).split(":");
-  if (parts.length === 2 && parts[0] === "cust") {
+  if (parts.length >= 2 && parts[0] === "cust") {
     const n = Number(parts[1]);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
-  if (parts.length === 3 && parts[0] === "admin" && parts[1] === "cust") {
+  if (parts.length >= 3 && parts[0] === "admin" && parts[1] === "cust") {
     const n = Number(parts[2]);
     return Number.isFinite(n) && n > 0 ? n : null;
   }

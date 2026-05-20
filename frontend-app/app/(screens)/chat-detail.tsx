@@ -354,6 +354,8 @@ export default function ChatDetailScreen() {
   const effectiveCustomerId = customerIdParam ?? (user?.role === "CUSTOMER" ? myCustomerId : null);
   const effectiveRoomId = idParam ?? (effectiveCustomerId ? `cust:${effectiveCustomerId}` : "general");
 
+  const [avatarError, setAvatarError] = useState(false);
+
   // =========================================================
   // socket
   // =========================================================
@@ -430,7 +432,7 @@ export default function ChatDetailScreen() {
     customerId?: number | null;
     cid?: string | number | null;
     type: "TEXT" | "IMAGE" | "FILE";
-    text?: string | null;
+        text?: string | null;
     fileKey?: string | null;
     fileName?: string | null;
     fileMime?: string | null;
@@ -486,7 +488,7 @@ export default function ChatDetailScreen() {
           const data = await res.json();
           if (effectiveRoomId.startsWith("admin:")) {
             setPartner({
-              name: data.adminNames || "แอดมินส่วนกลาง",
+              name: "Admin",
               avatarUrl: null,
               userId: null,
             });
@@ -519,6 +521,7 @@ export default function ChatDetailScreen() {
         } else {
           setPartner(null);
         }
+        setAvatarError(false); // Reset error state on new fetch
       } catch (err) {
         console.error("[fetchPartner] error:", err);
       }
@@ -1374,18 +1377,29 @@ export default function ChatDetailScreen() {
 
   const ChatHeader = () => (
     <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-      <Link href="/(screens)/all-chat" asChild>
-        <Pressable className="pr-3 -ml-2">
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </Pressable>
-      </Link>
+      <Pressable 
+        className="pr-3 -ml-2"
+        onPress={() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/(screens)/all-chat");
+          }
+        }}
+      >
+        <Ionicons name="chevron-back" size={24} color="#111827" />
+      </Pressable>
 
       <View className="flex-row flex-1 items-center">
-        {partner?.avatarUrl ? (
-          <Image source={{ uri: partner.avatarUrl }} className="w-9 h-9 rounded-full mr-3" />
+        {partner?.avatarUrl && !avatarError ? (
+          <Image 
+            source={{ uri: partner.avatarUrl }} 
+            className="w-9 h-9 rounded-full mr-3" 
+            onError={() => setAvatarError(true)}
+          />
         ) : (
-          <View className="w-9 h-9 rounded-full bg-emerald-100 items-center justify-center mr-3">
-            <Ionicons name="person" size={20} color="#047857" />
+          <View className="w-9 h-9 rounded-full bg-emerald-200 items-center justify-center mr-3">
+            <Ionicons name="person" size={20} color="#0f5132" />
           </View>
         )}
 
@@ -1394,7 +1408,7 @@ export default function ChatDetailScreen() {
             {partner?.name ?? nameParam ?? "Chat"}
           </Text>
           <Text className="text-xs text-gray-500">
-            ID: {effectiveRoomId} · {connected ? "🟢 Online" : "🔴 Offline"}
+            {connected ? "🟢 Online" : "🔴 Offline"}
           </Text>
         </View>
       </View>
@@ -1415,6 +1429,7 @@ export default function ChatDetailScreen() {
                   avatarUrl: partner?.avatarUrl ?? "",
                   customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
                   targetUserId: targetUserId,
+                  roomId: effectiveRoomId,
                 },
               });
             }}

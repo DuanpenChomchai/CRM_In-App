@@ -132,6 +132,9 @@ export default function ProfileScreen() {
           onPress={async () => {
             try {
               await logout();
+              if (router.dismissAll) {
+                router.dismissAll();
+              }
               router.replace("/(auth)/login");
             } catch (e) {
               console.log("Logout error:", e);
@@ -144,12 +147,13 @@ export default function ProfileScreen() {
 
       {/* Bottom bar */}
       <View className="h-[68px] border-t border-gray-200 flex-row items-center justify-around w-full">
-        <Link href="/(screens)/all-chat" asChild>
-          <Pressable className="items-center">
-            <Ionicons name="chatbubble" size={22} color="#9CA3AF" />
-            <Text className="text-xs mt-1 text-gray-400">Chats</Text>
-          </Pressable>
-        </Link>
+        <Pressable 
+          className="items-center"
+          onPress={() => router.replace("/(screens)/all-chat" as any)}
+        >
+          <Ionicons name="chatbubble" size={22} color="#9CA3AF" />
+          <Text className="text-xs mt-1 text-gray-400">Chats</Text>
+        </Pressable>
 
         <View className="items-center">
           <Ionicons name="person-circle" size={22} color="#047857" />

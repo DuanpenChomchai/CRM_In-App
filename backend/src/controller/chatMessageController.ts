@@ -121,7 +121,7 @@ export const getMessagesByCustomer = async (req: Request, res: Response) => {
 
     if (!roomId && authUser) {
       if (authUser.role === "SALE") {
-        roomId = `cust:${customerId}`;
+        roomId = `cust:${customerId}:sale:${authUser.id}`;
       } else if (authUser.role === "ADMIN") {
         roomId = `admin:cust:${customerId}`;
       }
@@ -274,7 +274,16 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "customerId ไม่ถูกต้อง" });
     }
 
-    const roomId = req.body.roomId || `cust:${customerId}`;
+    let roomId = req.body.roomId;
+    if (!roomId) {
+      if (authUser.role === "SALE") {
+        roomId = `cust:${customerId}:sale:${authUser.id}`;
+      } else if (authUser.role === "ADMIN") {
+        roomId = `admin:cust:${customerId}`;
+      } else {
+        roomId = `cust:${customerId}:sale:${authUser.id}`; // Fallback for customer, though it should explicitly pass roomId now.
+      }
+    }
     const now = new Date();
 
     if (authUser.role === "CUSTOMER") {
@@ -286,7 +295,7 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
         },
         data: { readByCustomerAt: now },
       });
-    } else if (authUser.role === "SALE" || authUser.role === "ADMIN" || authUser.role === "MANAGER") {
+    } else if (authUser.role === "SALE") {
       await prisma.chatMessage.updateMany({
         where: {
           customerId,

@@ -87,7 +87,7 @@ export default function ChatsScreen() {
   const [query, setQuery] = useState("");
 
   // CUSTOMER: ห้องแชทกับเซลล์ที่ถูก assign ให้เรา
-  const [saleChat, setSaleChat] = useState<ChatItem | null>(null);
+  const [saleChats, setSaleChats] = useState<ChatItem[]>([]);
   const [adminChat, setAdminChat] = useState<ChatItem | null>(null);
   const [loadingSale, setLoadingSale] = useState(false);
 
@@ -131,7 +131,7 @@ export default function ChatsScreen() {
             setAdminChat({
               id: `admin:cust:${data.customerId}`,
               customerId: data.customerId,
-              name: data.adminNames || "ติดต่อแอดมิน",
+              name: "Admin",
               time: formatLastTime(data.adminLastMessageAt),
               lastMessageAt: data.adminLastMessageAt ?? null,
               isAdminChat: true,
@@ -139,10 +139,12 @@ export default function ChatsScreen() {
               profileUserId: null,
             });
 
-            // Sale Room (Only if assigned)
-            if (data.sale) {
-              setSaleChat({
-                id: `cust:${data.customerId}`,
+            // Sale Rooms (Active + Previous)
+            const newSaleChats: ChatItem[] = [];
+
+            if (data.sale && data.saleRoomId) {
+              newSaleChats.push({
+                id: data.saleRoomId,
                 customerId: data.customerId,
                 name: data.sale.name || "Sale",
                 time: formatLastTime(data.lastMessageAt),
@@ -151,9 +153,25 @@ export default function ChatsScreen() {
                 unreadCount: data.unreadCount ?? 0,
                 profileUserId: data.sale.id ?? null,
               });
-            } else {
-              setSaleChat(null);
             }
+
+            if (data.previousSales && data.previousSales.length > 0) {
+              data.previousSales.forEach((pSale: any) => {
+                newSaleChats.push({
+                  id: pSale.roomId,
+                  customerId: data.customerId,
+                  name: pSale.sale.name || "Sale (Old)",
+                  time: formatLastTime(pSale.lastMessageAt),
+                  lastMessageAt: pSale.lastMessageAt ?? null,
+                  isSaleChat: true, // It is a sale chat, maybe distinguish old later
+                  unreadCount: pSale.unreadCount ?? 0,
+                  profileUserId: pSale.sale.id ?? null,
+                  managerSubtext: "(เซลล์ดูแลคนเก่า)",
+                });
+              });
+            }
+
+            setSaleChats(newSaleChats);
           }
         } catch (err) {
           console.error("fetchSaleChat error:", err);
@@ -200,7 +218,7 @@ export default function ChatsScreen() {
           if (cancelled) return;
 
           const mapped: ChatItem[] = data.map((c: any) => ({
-            id: `cust:${c.id}`,
+            id: c.saleRoomId || `cust:${c.id}`, // use saleRoomId if available
             customerId: c.id,
             name: c.name || `Customer #${c.id}`,
             time: formatLastTime(c.lastMessageAt),
@@ -224,6 +242,9 @@ export default function ChatsScreen() {
       };
     }, [token, user?.role, user?.id])
   );
+
+  // ===== STATE ของ Avatar Error (กันรูปพัง) =====
+  const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({});
 
   // ===== MANAGER: ดึงลูกค้าทั้งหมดของทีมตัวเอง (รีเฟรชทุกครั้งที่หน้า focus) =====
   useFocusEffect(
@@ -267,8 +288,22 @@ export default function ChatsScreen() {
               });
             }
 
-            // Sale Room (Only for Manager, not Admin)
-            if (user?.role === "MANAGER") {
+            // Sale Room (Manager) - map through all sale chats
+            if (user?.role === "MANAGER" && c.allSaleChats) {
+              c.allSaleChats.forEach((chat: any) => {
+                rooms.push({
+                  id: chat.roomId,
+                  customerId: c.id,
+                  name: c.name || `Customer #${c.id}`,
+                  time: formatLastTime(chat.lastMessageAt),
+                  lastMessageAt: chat.lastMessageAt ?? null,
+                  unreadCount: chat.unreadCount ?? 0,
+                  profileUserId: c.userId ?? null,
+                  managerSubtext: chat.sale?.name ? `Sale: ${chat.sale.name}` : "ไม่มีเซลล์ดูแล",
+                  isSaleChat: false,
+                });
+              });
+            } else if (user?.role === "MANAGER") {
               rooms.push({
                 id: `cust:${c.id}`,
                 customerId: c.id,
@@ -314,11 +349,13 @@ export default function ChatsScreen() {
             return { ...prev, unreadCount: payload.customerUnread };
           });
         } else {
-          setSaleChat((prev) => {
-            if (!prev) return prev;
-            if (prev.id !== payload.roomId) return prev;
-            return { ...prev, unreadCount: payload.customerUnread };
-          });
+          setSaleChats((prev) =>
+            prev.map((room) =>
+              room.id === payload.roomId
+                ? { ...room, unreadCount: payload.customerUnread }
+                : room
+            )
+          );
         }
       } else if (user.role === "SALE") {
         setSaleRooms((prev) =>
@@ -351,7 +388,7 @@ export default function ChatsScreen() {
 
     if (user?.role === "CUSTOMER") {
       if (adminChat) rooms.push(adminChat);
-      if (saleChat) rooms.push(saleChat);
+      if (saleChats.length > 0) rooms.push(...saleChats);
     }
 
     if (user?.role === "SALE" && saleRooms.length > 0) {
@@ -378,7 +415,7 @@ export default function ChatsScreen() {
     });
 
     return rooms;
-  }, [user?.role, saleChat, adminChat, saleRooms, managerRooms]);
+  }, [user?.role, saleChats, adminChat, saleRooms, managerRooms]);
 
   const data = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -420,8 +457,10 @@ export default function ChatsScreen() {
           prev && prev.id === item.id ? { ...prev, unreadCount: 0 } : prev
         );
       } else {
-        setSaleChat((prev) =>
-          prev && prev.id === item.id ? { ...prev, unreadCount: 0 } : prev
+        setSaleChats((prev) =>
+          prev.map((room) =>
+            room.id === item.id ? { ...room, unreadCount: 0 } : room
+          )
         );
       }
     } else if (user?.role === "SALE") {
@@ -464,17 +503,18 @@ export default function ChatsScreen() {
       >
         <View className="flex-row items-center py-4">
           <View className="w-12 h-12 rounded-full bg-emerald-200 items-center justify-center mr-3 overflow-hidden">
-            {item.profileUserId && token ? (
+            {item.profileUserId && token && !avatarErrors[item.id] ? (
               <Image
                 source={{
                   uri: `${API_BASE_URL}/users/profile-image/${item.profileUserId}?t=${encodeURIComponent(token)}&b=${item.profileUserId}`,
                 }}
                 className="w-12 h-12"
                 resizeMode="cover"
+                onError={() => setAvatarErrors(prev => ({ ...prev, [item.id]: true }))}
               />
             ) : (
               <Ionicons
-                name={item.isSaleChat ? "person" : item.isAdminChat ? "shield-checkmark" : "people"}
+                name="person"
                 size={20}
                 color="#0f5132"
               />
@@ -490,7 +530,7 @@ export default function ChatsScreen() {
                 : item.name}
             </Text>
 
-            {item.isSaleChat && (
+            {item.isSaleChat && !item.managerSubtext && (
               <Text className="text-[11px] text-gray-500 mt-0.5">
                 Your assigned sale
               </Text>
@@ -502,7 +542,7 @@ export default function ChatsScreen() {
               </Text>
             )}
 
-            {item.managerSubtext && user?.role !== "CUSTOMER" && (
+            {item.managerSubtext && (
               <Text className="text-[11px] text-gray-500 mt-0.5">
                 {item.managerSubtext}
               </Text>
@@ -532,12 +572,11 @@ export default function ChatsScreen() {
     <View>
       {/* Title */}
       <View className="flex-row items-center px-4 bg-white pt-2">
-        <View className="flex-1 items-center -ml-6 py-2">
+        <View className="flex-1 items-center py-2">
           <Text className="text-lg font-semibold text-gray-900 text-center">
             Chats {connected ? "🟢" : "🔴"}
           </Text>
         </View>
-        <View className="w-6" />
       </View>
 
       {/* Search bar */}
@@ -564,7 +603,7 @@ export default function ChatsScreen() {
             </Text>
           </View>
         )}
-        {!loadingSale && user?.role === "CUSTOMER" && !saleChat && (
+        {!loadingSale && user?.role === "CUSTOMER" && saleChats.length === 0 && (
           <View className="mt-2">
             <Text className="text-[11px] text-gray-400">
               ยังไม่มีเซลล์ที่ถูกมอบหมายให้คุณ (รอเจ้าหน้าที่ติดต่อกลับ)
@@ -637,16 +676,17 @@ export default function ChatsScreen() {
           </Text>
         </View>
 
-        <Link href="/(screens)/profile" asChild>
-          <Pressable className="items-center">
-            <Ionicons
-              name="person-circle-outline"
-              size={22}
-              color="#9CA3AF"
-            />
-            <Text className="text-xs mt-1 text-gray-400">Profile</Text>
-          </Pressable>
-        </Link>
+        <Pressable 
+          className="items-center"
+          onPress={() => router.replace("/(screens)/profile" as any)}
+        >
+          <Ionicons
+            name="person-circle-outline"
+            size={22}
+            color="#9CA3AF"
+          />
+          <Text className="text-xs mt-1 text-gray-400">Profile</Text>
+        </Pressable>
       </View>
     </SafeAreaView>
   );

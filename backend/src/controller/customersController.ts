@@ -209,21 +209,38 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "ไม่มีสิทธิ์เข้าถึงข้อมูลเซลล์นี้" });
     }
 
-    const customers = await prisma.customer.findMany({
+    const chattedCustomers = await prisma.chatMessage.findMany({
+      where: { roomId: { endsWith: `:sale:${saleId}` } },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    });
+
+    const activeCustomers = await prisma.customer.findMany({
       where: { saleId },
+      select: { id: true },
+    });
+
+    const customerIdsSet = new Set([
+      ...chattedCustomers.map((c) => c.customerId).filter(Boolean) as number[],
+      ...activeCustomers.map((c) => c.id),
+    ]);
+
+    const customers = await prisma.customer.findMany({
+      where: { id: { in: Array.from(customerIdsSet) } },
       select: {
         id: true,
         name: true,
         email: true,
         userId: true,
         tol: true,
+        saleId: true,
       },
       orderBy: { createdAt: "desc" },
     });
 
     const enriched = await Promise.all(
       customers.map(async (c) => {
-        const saleRoomId = `cust:${c.id}`;
+        const saleRoomId = `cust:${c.id}:sale:${saleId}`;
 
         const unreadCount = await prisma.chatMessage.count({
           where: {
@@ -246,6 +263,8 @@ export const getCustomersBySale = async (req: AuthRequest, res: Response) => {
           email: c.email,
           userId: c.userId,
           tol: c.tol,
+          isActiveSale: c.saleId === saleId,
+          saleRoomId,
           unreadCount,
           lastMessageAt: lastMsg?.createdAt ?? null,
         };
@@ -597,23 +616,68 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบ Customer ที่ผูกกับ user นี้" });
     }
 
-    const saleRoomId = `cust:${customer.id}`;
+    // Retrieve all distinct sale chats for this customer
+    const distinctRooms = await prisma.chatMessage.findMany({
+      where: { customerId: customer.id, roomId: { startsWith: `cust:${customer.id}:sale:` } },
+      select: { roomId: true },
+      distinct: ["roomId"],
+    });
+
+    let previousSales: any[] = [];
+    const activeSaleId = customer.sale?.id;
+
+    for (const room of distinctRooms) {
+      const parts = room.roomId.split(":");
+      const sId = Number(parts[parts.length - 1]);
+      
+      // Skip the active sale (already in `customer.sale`)
+      if (sId === activeSaleId) continue;
+
+      const pSale = await prisma.user.findUnique({
+        where: { id: sId },
+        select: { id: true, name: true, img: true, email: true, tol: true },
+      });
+
+      if (pSale) {
+        const unreadCount = await prisma.chatMessage.count({
+          where: {
+            customerId: customer.id,
+            roomId: room.roomId,
+            readByCustomerAt: null,
+          },
+        });
+        
+        const lastMsg = await prisma.chatMessage.findFirst({
+          where: { customerId: customer.id, roomId: room.roomId },
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true },
+        });
+
+        previousSales.push({
+          sale: pSale,
+          roomId: room.roomId,
+          unreadCount,
+          lastMessageAt: lastMsg?.createdAt ?? null,
+        });
+      }
+    }
+
+    const saleRoomId = activeSaleId ? `cust:${customer.id}:sale:${activeSaleId}` : null;
     const adminRoomId = `admin:cust:${customer.id}`;
 
-    // Sale Chat Stats
-    const saleUnreadCount = await prisma.chatMessage.count({
+    const saleUnreadCount = saleRoomId ? await prisma.chatMessage.count({
       where: {
         customerId: customer.id,
         roomId: saleRoomId,
         readByCustomerAt: null,
       },
-    });
+    }) : 0;
 
-    const saleLastMsg = await prisma.chatMessage.findFirst({
+    const saleLastMsg = saleRoomId ? await prisma.chatMessage.findFirst({
       where: { customerId: customer.id, roomId: saleRoomId },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
-    });
+    }) : null;
 
     // Admin Chat Stats
     const adminUnreadCount = await prisma.chatMessage.count({
@@ -640,8 +704,10 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
       customerId: customer.id,
       customerName: customer.name,
       sale: customer.sale,
+      saleRoomId,
       unreadCount: saleUnreadCount,
       lastMessageAt: saleLastMsg?.createdAt ?? null,
+      previousSales,
       adminUnreadCount,
       adminLastMessageAt: adminLastMsg?.createdAt ?? null,
       adminNames,
@@ -694,25 +760,58 @@ export const getManagerChats = async (req: AuthRequest, res: Response) => {
 
     const enriched = await Promise.all(
       customers.map(async (c) => {
-        const saleRoomId = `cust:${c.id}`;
-        const adminRoomId = `admin:cust:${c.id}`;
-        
         // For MANAGER/ADMIN, we need to show both if needed, but the endpoint currently returns one object per customer.
         // We will return stats for both rooms so the frontend can split them.
         
-        const saleUnreadCount = await prisma.chatMessage.count({
-          where: {
-            customerId: c.id,
-            roomId: saleRoomId,
-            readBySaleAt: null, 
-          },
+        const distinctSaleRooms = await prisma.chatMessage.findMany({
+          where: { customerId: c.id, roomId: { startsWith: `cust:${c.id}:sale:` } },
+          select: { roomId: true },
+          distinct: ["roomId"],
         });
 
-        const saleLastMsg = await prisma.chatMessage.findFirst({
-          where: { customerId: c.id, roomId: saleRoomId },
-          orderBy: { createdAt: "desc" },
-          select: { createdAt: true },
-        });
+        const activeSaleId = c.sale?.id;
+        const activeSaleRoomId = activeSaleId ? `cust:${c.id}:sale:${activeSaleId}` : null;
+        
+        let allSaleChats = [];
+        const roomIdsToCheck = new Set(distinctSaleRooms.map(r => r.roomId));
+        if (activeSaleRoomId) roomIdsToCheck.add(activeSaleRoomId);
+
+        for (const roomId of Array.from(roomIdsToCheck)) {
+          const parts = roomId.split(":");
+          const sId = Number(parts[parts.length - 1]);
+          
+          let saleObj = c.sale?.id === sId ? c.sale : null;
+          if (!saleObj) {
+            saleObj = await prisma.user.findUnique({
+              where: { id: sId },
+              select: { id: true, name: true, email: true, img: true }
+            }) as any;
+          }
+
+          const saleUnreadCount = await prisma.chatMessage.count({
+            where: {
+              customerId: c.id,
+              roomId: roomId,
+              readBySaleAt: null, 
+            },
+          });
+
+          const saleLastMsg = await prisma.chatMessage.findFirst({
+            where: { customerId: c.id, roomId: roomId },
+            orderBy: { createdAt: "desc" },
+            select: { createdAt: true },
+          });
+
+          allSaleChats.push({
+            roomId,
+            sale: saleObj,
+            unreadCount: saleUnreadCount,
+            lastMessageAt: saleLastMsg?.createdAt ?? null,
+            isActive: sId === activeSaleId
+          });
+        }
+        
+        const adminRoomId = `admin:cust:${c.id}`;
 
         const adminUnreadCount = await prisma.chatMessage.count({
           where: {
@@ -734,9 +833,11 @@ export const getManagerChats = async (req: AuthRequest, res: Response) => {
           email: c.email,
           userId: c.userId,
           tol: c.tol,
-          sale: c.sale,
-          unreadCount: saleUnreadCount,
-          lastMessageAt: saleLastMsg?.createdAt ?? null,
+          sale: c.sale, // current active sale
+          allSaleChats, // array of sale chats
+          unreadCount: allSaleChats.find(x => x.isActive)?.unreadCount ?? 0, // Fallback for old apps
+          lastMessageAt: allSaleChats.find(x => x.isActive)?.lastMessageAt ?? null, // Fallback
+
           adminUnreadCount,
           adminLastMessageAt: adminLastMsg?.createdAt ?? null,
         };

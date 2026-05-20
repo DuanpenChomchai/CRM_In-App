@@ -24,7 +24,7 @@ type CallPhase = "ringing" | "active" | "ended";
 
 export default function CallScreen() {
   const router = useRouter();
-  const { name, avatarUrl, callerUserId, customerId, targetUserId, callId: paramCallId, isIncoming } = useLocalSearchParams<{
+  const { name, avatarUrl, callerUserId, customerId, targetUserId, callId: paramCallId, isIncoming, roomId } = useLocalSearchParams<{
     name?: string;
     avatarUrl?: string;
     callerUserId?: string;
@@ -32,6 +32,7 @@ export default function CallScreen() {
     targetUserId?: string;
     callId?: string;
     isIncoming?: string;
+    roomId?: string;
   }>();
 
   const { user, token } = useAuthStore();
@@ -358,7 +359,7 @@ export default function CallScreen() {
           messageSentRef.current = true;
           try {
             const finalDuration = payload.durationSec ?? seconds;
-            const effectiveRoomId = customerId ? `cust:${customerId}` : "general";
+            const effectiveRoomId = roomId ?? (customerId ? `cust:${customerId}` : "general");
             
             const chatText = finalDuration > 0
               ? `[CALL_ENDED]:${finalDuration}`
@@ -467,9 +468,9 @@ export default function CallScreen() {
         // Send chat message ONLY if Caller manually hung up first
         if (isIncoming !== "true" && !messageSentRef.current) {
           messageSentRef.current = true;
-          const effectiveRoomId = customerId 
+          const effectiveRoomId = roomId ?? (customerId 
             ? `cust:${customerId}` 
-            : "general";
+            : "general");
             
           const chatText = durationSec > 0
             ? `[CALL_ENDED]:${durationSec}`
