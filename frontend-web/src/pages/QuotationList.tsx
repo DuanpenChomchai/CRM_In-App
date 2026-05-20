@@ -145,8 +145,8 @@ const QuotationList = () => {
   const countSent = rows.filter((x) => x.status === "SENT").length;
   const countApproved = rows.filter((x) => x.status === "APPROVED").length;
 
-  const handleCreateNew = () => navigate("/quotation");
-  const handleEdit = (id: number) => navigate(`/quotation?edit=${id}`);
+  const handleCreateNew = () => navigate("/quotation", { replace: true });
+  const handleEdit = (id: number) => navigate(`/quotation?edit=${id}`, { replace: true });
   const handleView = (id: number) => {
     const token = localStorage.getItem("token");
     if (!token) return;

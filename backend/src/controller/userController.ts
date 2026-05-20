@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import prisma from "../config/prismaclient";
 import { AuthRequest } from "../middlewares/authMiddleware";
+import { getIO } from "../ws";
 
 // ✅ MinIO via AWS SDK v3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -418,15 +419,55 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // ✅ ถ้า user เป็น CUSTOMER และมีการเปลี่ยนชื่อ → sync ชื่อไปยัง customers table ด้วย
-    if (name && req.user?.role === "CUSTOMER") {
+    // ✅ ถ้า user เป็น CUSTOMER -> sync ข้อมูลไปยัง customers table ด้วย
+    if (req.user?.role === "CUSTOMER") {
       try {
-        await prisma.customer.updateMany({
-          where: { userId },
-          data: { name: name.trim() },
-        });
+        const syncData: any = {};
+        if (name !== undefined) syncData.name = name.trim();
+        if (email !== undefined) syncData.email = email.trim().toLowerCase();
+        if (tol !== undefined) syncData.tol = normalizePhoneTH(tol);
+
+        if (Object.keys(syncData).length > 0) {
+          const customers = await prisma.customer.findMany({
+            where: { userId },
+            select: { id: true }
+          });
+
+          if (customers.length > 0) {
+            await prisma.customer.updateMany({
+              where: { userId },
+              data: syncData,
+            });
+
+            // Emit socket updates for each updated customer
+            try {
+              const io = getIO();
+              for (const cust of customers) {
+                const fullUpdated = await prisma.customer.findUnique({
+                  where: { id: cust.id },
+                  include: {
+                    user: {
+                      select: { id: true, name: true, email: true, tol: true, img: true, role: true }
+                    },
+                    sale: {
+                      select: { id: true, name: true, email: true, tol: true, img: true, role: true }
+                    }
+                  }
+                });
+                if (fullUpdated) {
+                  io.to("role:ADMIN").emit("customer:updated", fullUpdated);
+                  io.to("role:MANAGER").emit("customer:updated", fullUpdated);
+                  io.to("role:SALE").emit("customer:updated", fullUpdated);
+                  console.log("📢 Emit (updateMe) → customer:updated:", fullUpdated.id);
+                }
+              }
+            } catch (wsErr) {
+              console.warn("Socket.IO emit failed during customer sync:", wsErr);
+            }
+          }
+        }
       } catch (syncErr) {
-        console.warn("[updateMe] sync customer name failed:", syncErr);
+        console.warn("[updateMe] sync customer failed:", syncErr);
       }
     }
 
@@ -540,6 +581,50 @@ export const uploadProfileImage = async (
         updatedAt: true,
       },
     });
+    // ✅ ถ้า user เป็น CUSTOMER -> sync รูปโปรไฟล์ไปยัง customers table ด้วย
+    if (req.user?.role === "CUSTOMER") {
+      try {
+        const customers = await prisma.customer.findMany({
+          where: { userId: req.user.id },
+          select: { id: true }
+        });
+
+        if (customers.length > 0) {
+          await prisma.customer.updateMany({
+            where: { userId: req.user.id },
+            data: { img: filename },
+          });
+
+          // Emit socket update for each updated customer
+          try {
+            const io = getIO();
+            for (const cust of customers) {
+              const fullUpdated = await prisma.customer.findUnique({
+                where: { id: cust.id },
+                include: {
+                  user: {
+                    select: { id: true, name: true, email: true, tol: true, img: true, role: true }
+                  },
+                  sale: {
+                    select: { id: true, name: true, email: true, tol: true, img: true, role: true }
+                  }
+                }
+              });
+              if (fullUpdated) {
+                io.to("role:ADMIN").emit("customer:updated", fullUpdated);
+                io.to("role:MANAGER").emit("customer:updated", fullUpdated);
+                io.to("role:SALE").emit("customer:updated", fullUpdated);
+                console.log("📢 Emit (uploadProfileImage) → customer:updated:", fullUpdated.id);
+              }
+            }
+          } catch (wsErr) {
+            console.warn("Socket.IO emit failed during customer image upload sync:", wsErr);
+          }
+        }
+      } catch (syncErr) {
+        console.warn("[uploadProfileImage] sync customer image failed:", syncErr);
+      }
+    }
 
     // ✅ ส่งออกเป็น URL เต็มให้ frontend
     return res.json({

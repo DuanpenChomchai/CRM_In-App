@@ -261,6 +261,17 @@ const Customer = () => {
       setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
     });
 
+    socket.on("customer:updated", (payload: any) => {
+      const mapped = mapApiCustomerToUi(payload);
+      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
+      setSelectedCustomer((prevSelected) => {
+        if (prevSelected && prevSelected.id === mapped.id) {
+          return mapped;
+        }
+        return prevSelected;
+      });
+    });
+
     return () => {
       socket.disconnect();
     };

@@ -34,7 +34,7 @@ const Navbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    navigate("/login");
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -89,15 +89,15 @@ const Navbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/profile")}>
+            <DropdownMenuItem onClick={() => navigate("/profile", { replace: true })}>
               <User className="mr-2 h-4 w-4" />
               โปรไฟล์
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/about")}>
+            <DropdownMenuItem onClick={() => navigate("/about", { replace: true })}>
               <Info className="mr-2 h-4 w-4" />
               เกี่ยวกับเรา
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/contact")}>
+            <DropdownMenuItem onClick={() => navigate("/contact", { replace: true })}>
               <PhoneCall className="mr-2 h-4 w-4" />
               ติดต่อเรา
             </DropdownMenuItem>
