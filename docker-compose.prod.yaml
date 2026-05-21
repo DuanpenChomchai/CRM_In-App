@@ -1,0 +1,33 @@
+name: stage_base_crm
+
+services:
+
+  db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    container_name: stage_base_crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    ports:
+      - "${DATABASE_PORT}:5432"
+    volumes:
+      - stage_base_crm_postgres_data:/var/lib/postgresql
+    networks:
+      - BadmintonNetwork
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+networks:
+  BadmintonNetwork:
+    driver: bridge
+
+volumes:
+  stage_base_crm_postgres_data:
