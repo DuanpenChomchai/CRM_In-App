@@ -1,47 +1,56 @@
-# ============================================================
-# Stage 1: Builder — compile TypeScript
-# ============================================================
-FROM node:22-alpine AS builder
+# ----------------------
+# 1. Build stage
+# ----------------------
+FROM node:20-alpine AS builder
+
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
-# Install deps first (better layer caching)
 COPY package*.json ./
+
+# ใช้ npm ci เพื่อความ deterministic
 RUN npm ci
 
-# Copy Prisma schema and generate client
+# copy prisma ก่อน (optimize cache)
 COPY prisma ./prisma
+
+# generate prisma client
 RUN npx prisma generate
 
-# Copy source and compile TypeScript
-COPY tsconfig.json ./
-COPY src ./src
-RUN npx tsc --project tsconfig.json
+# copy source
+COPY . .
 
-# ============================================================
-# Stage 2: Production — lean runtime image
-# ============================================================
-FROM node:22-alpine AS production
+# build app (เช่น NestJS / Next / TS)
+RUN npm run build
+
+
+# ----------------------
+# 2. Production stage
+# ----------------------
+FROM node:20-alpine AS production
+
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install only production dependencies
+# copy package.json อย่างเดียวพอ
 COPY package*.json ./
-RUN npm ci --omit=dev
 
-# Copy Prisma schema and re-generate client for production
-COPY prisma ./prisma
-RUN npx prisma generate
+# install เฉพาะ production deps
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy compiled JS from builder stage
+# copy build output
 COPY --from=builder /app/dist ./dist
 
-# Create uploads directory (used for temp file handling)
-RUN mkdir -p uploads
+# copy prisma client + schema
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/prisma ./prisma
 
-EXPOSE 3000
+EXPOSE 8000
 
-# Run Prisma migrations then start the server
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+# ใช้ node ตรง ๆ จะเบากว่า
+CMD ["node", "dist/src/server.js"]
