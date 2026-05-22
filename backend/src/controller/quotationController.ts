@@ -335,15 +335,30 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const PDFDocument = require("pdfkit");
     const path = require("path");
+    const fs = require("fs");
 
-    const fontRegular = path.join(__dirname, "../assets/fonts/Sarabun-Regular.ttf");
-    const fontBold = path.join(__dirname, "../assets/fonts/Sarabun-Bold.ttf");
+    // หา font path รองรับทั้ง dev (src/) และ production (dist/ + src/assets copy)
+    const possibleRoots = [
+      path.join(__dirname, "../assets/fonts"),          // dev: src/controller → src/assets/fonts
+      path.join(__dirname, "../../src/assets/fonts"),   // production: dist/controller → src/assets/fonts
+      path.join(process.cwd(), "src/assets/fonts"),     // fallback จาก working dir
+    ];
+
+    let fontsDir = possibleRoots.find((p) => fs.existsSync(path.join(p, "Sarabun-Regular.ttf")));
+    const fontRegular = fontsDir ? path.join(fontsDir, "Sarabun-Regular.ttf") : null;
+    const fontBold    = fontsDir ? path.join(fontsDir, "Sarabun-Bold.ttf")    : null;
 
     const doc = new PDFDocument({ size: "A4", margin: 50 });
 
-    // Register Thai fonts
-    doc.registerFont("Regular", fontRegular);
-    doc.registerFont("Bold", fontBold);
+    // Register Thai fonts (ถ้ามี) หรือใช้ default
+    if (fontRegular && fontBold) {
+      doc.registerFont("Regular", fontRegular);
+      doc.registerFont("Bold", fontBold);
+    } else {
+      console.warn("[PDF] Thai fonts not found, falling back to Helvetica");
+      doc.registerFont("Regular", "Helvetica");
+      doc.registerFont("Bold", "Helvetica-Bold");
+    }
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(

@@ -45,6 +45,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 # copy build output
 COPY --from=builder /app/dist ./dist
 
+# copy assets (fonts ที่ pdfkit ต้องการ)
+COPY --from=builder /app/src/assets ./src/assets
+
 # copy prisma client + schema
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
