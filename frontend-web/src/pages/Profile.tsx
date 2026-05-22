@@ -25,10 +25,7 @@ interface UserProfile {
 }
 
 export default function Profile() {
-  const API_HOST =
-    (import.meta as any)?.env?.VITE_API_HOST 
-    (import.meta as any)?.env?.VITE_API_BASE_URL 
-    
+  const API_HOST = (import.meta as any)?.env?.VITE_API_BASE;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
