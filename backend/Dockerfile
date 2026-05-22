@@ -56,4 +56,4 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 8000
 
 # ใช้ node ตรง ๆ จะเบากว่า
-CMD ["sh", "-c", "npx prisma migrate resolve --applied 20260224021214_update_schema && npx prisma migrate resolve --applied 20260519170712_add_push_tokens && npx prisma migrate resolve --applied 20260522215411_add_app_setting && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy || true && node dist/index.js"]
