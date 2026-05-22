@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Shield,
   Users,
@@ -26,6 +26,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 // ─── ข้อมูลระบบ ───────────────────────────────────────
 const APP_NAME = "Stage-based CRM & In-app communication";
@@ -143,17 +145,22 @@ export default function About() {
   );
 
   // ─── การจัดการข้อมูลทีมผู้พัฒนาและที่ปรึกษาโครงงาน ──────────────────────
-  const [team, setTeam] = useState(() => {
-    const stored = localStorage.getItem("crm_inapp_team_about");
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return DEFAULT_TEAM;
-  });
+  const [team, setTeam] = useState(DEFAULT_TEAM);
+  const [teamLoading, setTeamLoading] = useState(true);
+
+  // ดึงข้อมูลทีมจาก API
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    fetch(`${API_BASE}/api/settings/about-team`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.data) setTeam(res.data);
+      })
+      .catch(() => { /* ใช้ DEFAULT_TEAM ต่อ */ })
+      .finally(() => setTeamLoading(false));
+  }, []);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [tempTeam, setTempTeam] = useState(team);
@@ -180,18 +187,48 @@ export default function About() {
     }
   };
 
-  const handleSaveTeam = () => {
-    setTeam(tempTeam);
-    localStorage.setItem("crm_inapp_team_about", JSON.stringify(tempTeam));
-    setIsEditModalOpen(false);
-    toast.success("บันทึกข้อมูลคณะผู้พัฒนาและที่ปรึกษาสำเร็จ! 🎉");
+  const handleSaveTeam = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/about-team`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(tempTeam),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        throw new Error(d?.message || `บันทึกไม่สำเร็จ (${res.status})`);
+      }
+      const data = await res.json();
+      setTeam(data.data ?? tempTeam);
+      setIsEditModalOpen(false);
+      toast.success("บันทึกข้อมูลคณะผู้พัฒนาและที่ปรึกษาสำเร็จ! 🎉");
+    } catch (err: any) {
+      toast.error(err?.message || "บันทึกไม่สำเร็จ");
+    }
   };
 
-  const handleResetAll = () => {
-    setTempTeam(DEFAULT_TEAM);
-    setTeam(DEFAULT_TEAM);
-    localStorage.removeItem("crm_inapp_team_about");
-    toast.success("คืนค่าข้อมูลเป็นค่าเริ่มต้นทั้งหมดสำเร็จ! 🔄");
+  const handleResetAll = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/about-team`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(DEFAULT_TEAM),
+      });
+      if (!res.ok) throw new Error();
+      setTempTeam(DEFAULT_TEAM);
+      setTeam(DEFAULT_TEAM);
+      toast.success("คืนค่าข้อมูลเป็นค่าเริ่มต้นทั้งหมดสำเร็จ! 🔄");
+    } catch {
+      toast.error("คืนค่าไม่สำเร็จ");
+    }
   };
 
   return (

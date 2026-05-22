@@ -520,3 +520,13 @@ model PushToken {
   @@index([userId])
   @@index([customerId])
 }
+
+// ===========================================================
+// APP SETTING (เก็บ config ของระบบ เช่น ข้อมูลทีมพัฒนา)
+// ===========================================================
+model AppSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique  // เช่น "about_team"
+  value     String   @db.Text // JSON string
+  updatedAt DateTime @updatedAt
+}

@@ -17,6 +17,7 @@ import propertiesRoutes from "./routes/Properties.route";
 import callRoutes from "./routes/call.route";
 import dashboardRoutes from "./routes/dashboard.route";
 import notificationRoutes from "./routes/notification.route";
+import settingRoutes from "./routes/setting.route";
 
 import { initWs } from "./ws";
 import { getProfile } from "./controller/userController";
@@ -104,6 +105,8 @@ async function main() {
   app.use("/api/dashboard", dashboardRoutes);
   // ✅ Notifications
   app.use("/api/notifications", notificationRoutes);
+  // ✅ Settings (AppSetting)
+  app.use("/api/settings", settingRoutes);
 
   // ✅ profile route
   app.get("/api/myprofile/:id", getProfile);
