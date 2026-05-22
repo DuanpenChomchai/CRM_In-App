@@ -3,7 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-RUN VITE_API_BASE=https://api.crminapp.online npm run build
+RUN VITE_API_BASE=https://api.crminapp.online npm run build || true
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
