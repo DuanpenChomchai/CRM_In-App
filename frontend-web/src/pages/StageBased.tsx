@@ -30,10 +30,28 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { CalendarIcon, Upload, User, Phone, Home, DollarSign, RefreshCw, CheckCircle, Star, Search, FileText, Trash2, X } from "lucide-react";
+import {
+  CalendarIcon,
+  Upload,
+  User,
+  Phone,
+  Home,
+  DollarSign,
+  RefreshCw,
+  CheckCircle,
+  Star,
+  Search,
+  FileText,
+  Trash2,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -76,7 +94,7 @@ interface Deal {
 
 type ApiStage = "CONTACTED" | "NEGOTIATING" | "QUOTATION" | "CLOSED";
 
-const API_BASE = import.meta.env.VITE_API_BASE 
+const API_BASE = import.meta.env.VITE_API_BASE;
 
 const getToken = () => localStorage.getItem("token") || "";
 
@@ -101,10 +119,17 @@ const StageBased = () => {
     e.stopPropagation();
     const token = getToken();
     if (!token) return;
-    window.open(`${API_BASE}/api/quotations/${qId}/pdf?t=${encodeURIComponent(token)}`, "_blank");
+    window.open(
+      `${API_BASE}/api/quotations/${qId}/pdf?t=${encodeURIComponent(token)}`,
+      "_blank",
+    );
   };
 
-  const handleDeleteQuotation = async (qId: number, quotationNumber: string, e: React.MouseEvent) => {
+  const handleDeleteQuotation = async (
+    qId: number,
+    quotationNumber: string,
+    e: React.MouseEvent,
+  ) => {
     e.stopPropagation();
     if (!window.confirm(`ยืนยันการลบใบเสนอราคา ${quotationNumber}?`)) return;
 
@@ -133,11 +158,13 @@ const StageBased = () => {
       activationConstraint: {
         distance: 8,
       },
-    })
+    }),
   );
 
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [salesList, setSalesList] = useState<{ id: number; name: string }[]>([]);
+  const [salesList, setSalesList] = useState<{ id: number; name: string }[]>(
+    [],
+  );
 
   const storedUser = localStorage.getItem("user");
   const userObj = storedUser ? JSON.parse(storedUser) : null;
@@ -174,14 +201,27 @@ const StageBased = () => {
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
             startDate: c.updatedAt ? new Date(c.updatedAt) : undefined,
-            quotationNumbers: (c.quotations || []).map((q: any) => q.quotationNumber).filter(Boolean),
+            quotationNumbers: (c.quotations || [])
+              .map((q: any) => q.quotationNumber)
+              .filter(Boolean),
             quotations: c.quotations || [],
-            priceOffered: latestQ ? Number(latestQ.totalAmount || 0) : undefined,
+            priceOffered: latestQ
+              ? Number(latestQ.totalAmount || 0)
+              : undefined,
             terms: latestQ?.terms,
-            finalValue: latestClosed?.finalValue ? Number(latestClosed.finalValue) : undefined,
-            closingDate: latestClosed?.closingDate ? new Date(latestClosed.closingDate) : undefined,
-            dealStatus: rawResult === "WON" ? "won" : rawResult === "LOST" ? "lost" : undefined,
-            purchaseCount: (c._count?.closedDeals ?? 0), // จำนวนครั้งที่ซื้อสำเร็จแล้ว (WON+LOST)
+            finalValue: latestClosed?.finalValue
+              ? Number(latestClosed.finalValue)
+              : undefined,
+            closingDate: latestClosed?.closingDate
+              ? new Date(latestClosed.closingDate)
+              : undefined,
+            dealStatus:
+              rawResult === "WON"
+                ? "won"
+                : rawResult === "LOST"
+                  ? "lost"
+                  : undefined,
+            purchaseCount: c._count?.closedDeals ?? 0, // จำนวนครั้งที่ซื้อสำเร็จแล้ว (WON+LOST)
             isHistorical: c.isHistorical,
             roundNumber: c.roundNumber,
           });
@@ -194,7 +234,7 @@ const StageBased = () => {
       pushCol("CLOSED", data.columns.CLOSED || []);
 
       // โหลด quotationFiles จาก localStorage
-      const withFiles = mapped.map(d => {
+      const withFiles = mapped.map((d) => {
         const saved = localStorage.getItem(`quotationFiles_${d.customerId}`);
         return saved ? { ...d, quotationFiles: JSON.parse(saved) } : d;
       });
@@ -207,16 +247,18 @@ const StageBased = () => {
     }
   };
 
-  useEffect(() => { fetchBoard(); }, []);
+  useEffect(() => {
+    fetchBoard();
+  }, []);
 
   // ─── fetch sales staff ──────────────────────────────────────────────────────
   useEffect(() => {
     fetch(`${API_BASE}/api/users/sales-list`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
-      .then(r => r.json())
-      .then(d => setSalesList(d.data || []))
-      .catch(() => { });
+      .then((r) => r.json())
+      .then((d) => setSalesList(d.data || []))
+      .catch(() => {});
   }, []);
   // ─── repeat purchase ───────────────────────────────────────────────────────
   const handleRepeatPurchase = (deal: Deal, e: React.MouseEvent) => {
@@ -230,7 +272,10 @@ const StageBased = () => {
     try {
       const res = await fetch(`${API_BASE}/api/pipeline/repeat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
         body: JSON.stringify({ customerId: repeatTargetDeal.customerId }),
       });
       if (!res.ok) {
@@ -238,7 +283,9 @@ const StageBased = () => {
         toast.error(err?.message || "เริ่มดีลใหม่ไม่สำเร็จ");
         return;
       }
-      toast.success(`เริ่ม Pipeline ใหม่สำหรับ ${repeatTargetDeal.customerName} แล้ว`);
+      toast.success(
+        `เริ่ม Pipeline ใหม่สำหรับ ${repeatTargetDeal.customerName} แล้ว`,
+      );
       fetchBoard();
     } catch {
       toast.error("เริ่มดีลใหม่ไม่สำเร็จ");
@@ -256,40 +303,47 @@ const StageBased = () => {
   ];
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('th-TH', {
-      style: 'currency',
-      currency: 'THB',
+    return new Intl.NumberFormat("th-TH", {
+      style: "currency",
+      currency: "THB",
       minimumFractionDigits: 0,
     }).format(value);
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-
     setSelectedDeal({ ...deal });
     setCurrentStage(stage);
     setIsDialogOpen(true);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
-    const deal = deals.find(d => d.id === Number(event.active.id));
+    const deal = deals.find((d) => d.id === Number(event.active.id));
     setActiveDeal(deal || null);
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
-    if (!over) { setActiveDeal(null); return; }
-
-    const dealId = Number(active.id);
-    const newStage = over.id as Deal["stage"];
-
-    if (!["contacted", "negotiation", "quotation", "closed"].includes(newStage)) {
+    if (!over) {
       setActiveDeal(null);
       return;
     }
 
-    const moving = deals.find(d => d.id === dealId);
-    if (!moving || moving.stage === newStage) { setActiveDeal(null); return; }
+    const dealId = Number(active.id);
+    const newStage = over.id as Deal["stage"];
+
+    if (
+      !["contacted", "negotiation", "quotation", "closed"].includes(newStage)
+    ) {
+      setActiveDeal(null);
+      return;
+    }
+
+    const moving = deals.find((d) => d.id === dealId);
+    if (!moving || moving.stage === newStage) {
+      setActiveDeal(null);
+      return;
+    }
 
     // ✅ ย้ายได้เฉพาะไปข้างหน้าเท่านั้น
     const stageOrder = ["contacted", "negotiation", "quotation", "closed"];
@@ -303,15 +357,29 @@ const StageBased = () => {
 
     // optimistic update
     const prev = deals;
-    setDeals(p => p.map(d => d.id === dealId ? { ...d, stage: newStage } : d));
-    toast.success(`ย้ายดีลไปยัง ${stages.find(s => s.id === newStage)?.title} เรียบร้อย`);
+    setDeals((p) =>
+      p.map((d) => (d.id === dealId ? { ...d, stage: newStage } : d)),
+    );
+    if (newStage === "closed") {
+      handleOpenDialog(moving, newStage);
+    } else {
+      toast.success(
+        `ย้ายดีลไปยัง ${stages.find((s) => s.id === newStage)?.title} เรียบร้อย`,
+      );
+    }
     setActiveDeal(null);
 
     try {
       const res = await fetch(`${API_BASE}/api/pipeline/move`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ customerId: moving.customerId, toStatus: uiToApi(newStage) }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          customerId: moving.customerId,
+          toStatus: uiToApi(newStage),
+        }),
       });
       if (!res.ok) throw new Error("Move failed");
       await fetchBoard();
@@ -322,39 +390,49 @@ const StageBased = () => {
   };
 
   // ✅ Filter deals based on search
-  const filteredDeals = deals.filter(d =>
-    d.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    d.phone.includes(searchQuery)
+  const filteredDeals = deals.filter(
+    (d) =>
+      d.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.phone.includes(searchQuery),
   );
 
   // ✅ Calculate Stats per Column
   const getStageStats = (stageId: string) => {
-    const stageDeals = filteredDeals.filter(d => d.stage === stageId);
+    const stageDeals = filteredDeals.filter((d) => d.stage === stageId);
     const totalCount = stageDeals.length;
     const totalValue = stageDeals.reduce((sum, d) => sum + (d.budget || 0), 0);
     return { totalCount, totalValue };
   };
-
 
   const handleSaveChanges = async () => {
     if (!selectedDeal) return;
 
     // บันทึก quotationFiles ลง localStorage
     if (selectedDeal.quotationFiles) {
-      localStorage.setItem(`quotationFiles_${selectedDeal.customerId}`, JSON.stringify(selectedDeal.quotationFiles));
+      localStorage.setItem(
+        `quotationFiles_${selectedDeal.customerId}`,
+        JSON.stringify(selectedDeal.quotationFiles),
+      );
     } else {
       localStorage.removeItem(`quotationFiles_${selectedDeal.customerId}`);
     }
 
     // อัปเดต local state ทันที
-    setDeals(p => p.map(d => d.id === selectedDeal.id ? selectedDeal : d));
+    setDeals((p) =>
+      p.map((d) => (d.id === selectedDeal.id ? selectedDeal : d)),
+    );
 
     try {
       // 1. อัปเดตข้อมูลลูกค้า (ชื่อ, เบอร์, อสังหา, งบประมาณ, เซลล์)
-      const saleObj = salesList.find(s => s.name === selectedDeal.assignedSales);
+      const saleObj = salesList.find(
+        (s) => s.name === selectedDeal.assignedSales,
+      );
       await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
         body: JSON.stringify({
           name: selectedDeal.customerName,
           phone: selectedDeal.phone,
@@ -372,14 +450,18 @@ const StageBased = () => {
 
       // เพิ่ม details ตาม stage
       if (currentStage === "closed") {
-        movePayload.closedResult = selectedDeal.dealStatus === "won" ? "WON" : "LOST";
+        movePayload.closedResult =
+          selectedDeal.dealStatus === "won" ? "WON" : "LOST";
         movePayload.finalValue = selectedDeal.finalValue;
         // remark: Note is not saved properly in original UI, using fallback or empty
       }
 
       const res = await fetch(`${API_BASE}/api/pipeline/move`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
         body: JSON.stringify(movePayload),
       });
 
@@ -395,27 +477,29 @@ const StageBased = () => {
     setIsDialogOpen(false);
   };
 
-
   const DealCard = ({ deal }: { deal: Deal }) => {
     const [isStatusOpen, setIsStatusOpen] = useState(false);
 
     // ✅ แปลง enum ภาษาอังกฤษจาก backend เป็นภาษาไทย
-    const statusToThai = (status: string | undefined, stage: string): string => {
+    const statusToThai = (
+      status: string | undefined,
+      stage: string,
+    ): string => {
       const map: Record<string, string> = {
         // Contacted
-        "FOLLOWING_UP": "กำลังติดตาม",
-        "WAITING_REPLY": "รอลูกค้าตอบกลับ",
-        "APPOINTED": "นัดพบแล้ว",
-        "NOT_INTERESTED": "ลูกค้าไม่สนใจ",
+        FOLLOWING_UP: "กำลังติดตาม",
+        WAITING_REPLY: "รอลูกค้าตอบกลับ",
+        APPOINTED: "นัดพบแล้ว",
+        NOT_INTERESTED: "ลูกค้าไม่สนใจ",
         // Negotiation
-        "NEGOTIATING": "อยู่ระหว่างเจรจา",
-        "WAITING_CONFIRM": "รอลูกค้ายืนยัน",
-        "COUNTER_OFFER": "ลูกค้าต่อราคา",
-        "PAUSED": "ชะลอการเจรจา",
+        NEGOTIATING: "อยู่ระหว่างเจรจา",
+        WAITING_CONFIRM: "รอลูกค้ายืนยัน",
+        COUNTER_OFFER: "ลูกค้าต่อราคา",
+        PAUSED: "ชะลอการเจรจา",
         // Closed
-        "WON": "ปิดการขายสำเร็จ",
-        "LOST": "ปิดการขายไม่สำเร็จ",
-        "CLOSED": "ปิดการขายแล้ว",
+        WON: "ปิดการขายสำเร็จ",
+        LOST: "ปิดการขายไม่สำเร็จ",
+        CLOSED: "ปิดการขายแล้ว",
       };
       if (status && map[status]) return map[status];
       // ถ้า status เป็นภาษาไทยอยู่แล้ว (จาก dropdown)
@@ -429,17 +513,32 @@ const StageBased = () => {
     };
 
     const statusOptions = {
-      contacted: ["กำลังติดตาม", "รอลูกค้าตอบกลับ", "นัดพบแล้ว", "ลูกค้าไม่สนใจ"],
-      negotiation: ["อยู่ระหว่างเจรจา", "รอลูกค้ายืนยัน", "ลูกค้าต่อราคา", "ชะลอการเจรจา"],
-      quotation: ["ส่งใบเสนอราคาแล้ว", "ลูกค้ากำลังพิจารณา", "ลูกค้าขอปรับราคา", "รอผู้จัดการอนุมัติ"],
-      closed: ["ปิดการขายสำเร็จ", "ปิดการขายไม่สำเร็จ"]
+      contacted: [
+        "กำลังติดตาม",
+        "รอลูกค้าตอบกลับ",
+        "นัดพบแล้ว",
+        "ลูกค้าไม่สนใจ",
+      ],
+      negotiation: [
+        "อยู่ระหว่างเจรจา",
+        "รอลูกค้ายืนยัน",
+        "ลูกค้าต่อราคา",
+        "ชะลอการเจรจา",
+      ],
+      quotation: [
+        "ส่งใบเสนอราคาแล้ว",
+        "ลูกค้ากำลังพิจารณา",
+        "ลูกค้าขอปรับราคา",
+        "รอผู้จัดการอนุมัติ",
+      ],
+      closed: ["ปิดการขายสำเร็จ", "ปิดการขายไม่สำเร็จ"],
     };
 
     const handleStatusChange = (newStatus: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      setDeals(deals.map(d =>
-        d.id === deal.id ? { ...d, status: newStatus } : d
-      ));
+      setDeals(
+        deals.map((d) => (d.id === deal.id ? { ...d, status: newStatus } : d)),
+      );
       setIsStatusOpen(false);
       toast.success(`เปลี่ยนสถานะเป็น "${newStatus}" เรียบร้อยแล้ว`);
     };
@@ -465,10 +564,12 @@ const StageBased = () => {
       return (
         <Popover open={isStatusOpen} onOpenChange={setIsStatusOpen}>
           <PopoverTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <button className={cn(
-              "px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer",
-              getStatusColor()
-            )}>
+            <button
+              className={cn(
+                "px-3 py-1 text-xs font-medium rounded-full transition-all cursor-pointer",
+                getStatusColor(),
+              )}
+            >
               {currentStatus}
             </button>
           </PopoverTrigger>
@@ -488,7 +589,8 @@ const StageBased = () => {
                   className={cn(
                     "w-full text-left px-3 py-2 text-sm rounded-md transition-colors",
                     "hover:bg-accent hover:text-accent-foreground",
-                    deal.status === status && "bg-accent text-accent-foreground font-medium"
+                    deal.status === status &&
+                      "bg-accent text-accent-foreground font-medium",
                   )}
                 >
                   {status}
@@ -506,7 +608,7 @@ const StageBased = () => {
           "group p-4 bg-gradient-to-br rounded-xl border shadow-sm transition-all duration-300 cursor-pointer backdrop-blur-sm",
           deal.isHistorical
             ? "from-slate-50 to-slate-100/40 border-slate-200/80 hover:border-slate-300 hover:shadow-md opacity-95 dark:from-slate-900/80 dark:to-slate-900/40"
-            : "from-card to-card/80 border-border/50 hover:shadow-lg hover:border-primary/30"
+            : "from-card to-card/80 border-border/50 hover:shadow-lg hover:border-primary/30",
         )}
         onClick={() => handleOpenDialog(deal, deal.stage)}
       >
@@ -554,7 +656,9 @@ const StageBased = () => {
             </div>
             <div className="flex items-center gap-2 font-semibold text-primary">
               <DollarSign className="w-3.5 h-3.5" />
-              <span className="text-muted-foreground font-normal">งบประมาณ:</span>
+              <span className="text-muted-foreground font-normal">
+                งบประมาณ:
+              </span>
               <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
             </div>
           </div>
@@ -562,17 +666,25 @@ const StageBased = () => {
           {/* Start Date - Common to Dialog */}
           {deal.startDate && (
             <div className="text-xs text-muted-foreground pt-2 border-t border-border/50">
-              วันที่เริ่มต้น: {format(deal.startDate, "dd MMM yyyy", { locale: th })}
+              วันที่เริ่มต้น:{" "}
+              {format(deal.startDate, "dd MMM yyyy", { locale: th })}
             </div>
           )}
 
           {/* Assigned Sales - Only Negotiation+ (Match Dialog visibility) */}
-          {(deal.stage === "negotiation" || deal.stage === "quotation" || deal.stage === "closed") && deal.assignedSales && (
-            <div className="text-xs">
-              <span className="text-muted-foreground">พนักงานขายที่ดูแล:</span>{" "}
-              <span className="font-medium text-foreground">{deal.assignedSales}</span>
-            </div>
-          )}
+          {(deal.stage === "negotiation" ||
+            deal.stage === "quotation" ||
+            deal.stage === "closed") &&
+            deal.assignedSales && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">
+                  พนักงานขายที่ดูแล:
+                </span>{" "}
+                <span className="font-medium text-foreground">
+                  {deal.assignedSales}
+                </span>
+              </div>
+            )}
 
           {/* Quotation Stage Details (Match Dialog visibility) */}
           {deal.stage === "quotation" && (
@@ -580,14 +692,19 @@ const StageBased = () => {
               {deal.priceOffered ? (
                 <div className="text-xs">
                   <span className="text-muted-foreground">ราคาที่เสนอ:</span>{" "}
-                  <span className="font-semibold text-primary">{formatCurrency(deal.priceOffered)}</span>
+                  <span className="font-semibold text-primary">
+                    {formatCurrency(deal.priceOffered)}
+                  </span>
                 </div>
               ) : null}
               {deal.quotations && deal.quotations.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {deal.quotations.map((q: any) => (
-                    <div key={q.id} className="inline-flex items-center group/quote">
-                      <button 
+                    <div
+                      key={q.id}
+                      className="inline-flex items-center group/quote"
+                    >
+                      <button
                         onClick={(e) => handleViewQuotation(q.id, e)}
                         className="text-[10px] font-bold text-amber-600 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/30 dark:text-amber-400 px-2 py-1 rounded-l-md border border-amber-200/50 flex items-center gap-1 transition-colors"
                         title="คลิกเพื่อดูใบเสนอราคา"
@@ -596,7 +713,9 @@ const StageBased = () => {
                         {q.quotationNumber}
                       </button>
                       <button
-                        onClick={(e) => handleDeleteQuotation(q.id, q.quotationNumber, e)}
+                        onClick={(e) =>
+                          handleDeleteQuotation(q.id, q.quotationNumber, e)
+                        }
                         className="text-[10px] text-amber-600 bg-amber-50 hover:bg-red-100 hover:text-red-600 dark:bg-amber-950/30 dark:text-amber-400 border border-l-0 border-amber-200/50 p-1 rounded-r-md transition-colors"
                         title="ลบใบเสนอราคา"
                       >
@@ -606,13 +725,15 @@ const StageBased = () => {
                   ))}
                 </div>
               )}
-              
-
 
               {deal.terms && (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">เงื่อนไขเพิ่มเติม:</span>{" "}
-                  <span className="text-foreground line-clamp-1">{deal.terms}</span>
+                  <span className="text-muted-foreground">
+                    เงื่อนไขเพิ่มเติม:
+                  </span>{" "}
+                  <span className="text-foreground line-clamp-1">
+                    {deal.terms}
+                  </span>
                 </div>
               )}
             </div>
@@ -624,28 +745,38 @@ const StageBased = () => {
               {deal.finalValue && (
                 <div className="text-xs">
                   <span className="text-muted-foreground">มูลค่าสุดท้าย:</span>{" "}
-                  <span className="font-bold text-primary">{formatCurrency(deal.finalValue)}</span>
+                  <span className="font-bold text-primary">
+                    {formatCurrency(deal.finalValue)}
+                  </span>
                 </div>
               )}
               {deal.dealStatus && (
                 <div className="text-xs">
                   <span className="text-muted-foreground">สถานะดีล:</span>{" "}
-                  <span className={cn(
-                    "font-semibold",
-                    deal.dealStatus === "won" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
-                  )}>
+                  <span
+                    className={cn(
+                      "font-semibold",
+                      deal.dealStatus === "won"
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-red-600 dark:text-red-400",
+                    )}
+                  >
                     {deal.dealStatus === "won" ? "สำเร็จ" : "ไม่สำเร็จ"}
                   </span>
                 </div>
               )}
               {deal.closingDate && (
                 <div className="text-xs">
-                  <span className="text-muted-foreground">วันที่ปิดการขาย:</span>{" "}
-                  <span className="font-medium text-foreground">{format(deal.closingDate, "dd MMM yyyy", { locale: th })}</span>
+                  <span className="text-muted-foreground">
+                    วันที่ปิดการขาย:
+                  </span>{" "}
+                  <span className="font-medium text-foreground">
+                    {format(deal.closingDate, "dd MMM yyyy", { locale: th })}
+                  </span>
                 </div>
               )}
               {/* ✅ ปุ่มซื้อซ้ำ — ทุก role กดได้ แต่แสดงเฉพาะรายการล่าสุด */}
-              {!deal.isHistorical && (
+              {!deal.isHistorical && deal.dealStatus && (
                 <div className="pt-2">
                   <button
                     onClick={(e) => handleRepeatPurchase(deal, e)}
@@ -675,7 +806,9 @@ const StageBased = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">Pipeline</h1>
-              <p className="text-sm text-muted-foreground mt-1">บริหารจัดการขั้นตอนการขายของคุณแบบเรียลไทม์</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                บริหารจัดการขั้นตอนการขายของคุณแบบเรียลไทม์
+              </p>
             </div>
             <div className="relative w-full md:w-80">
               <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground">
@@ -697,7 +830,9 @@ const StageBased = () => {
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-muted-foreground font-medium">กำลังโหลดบอร์ดของคุณ...</p>
+                <p className="text-muted-foreground font-medium">
+                  กำลังโหลดบอร์ดของคุณ...
+                </p>
               </div>
             </div>
           ) : (
@@ -705,29 +840,49 @@ const StageBased = () => {
               {stages.map((stage) => {
                 const { totalCount, totalValue } = getStageStats(stage.id);
                 return (
-                  <div 
-                    key={stage.id} 
+                  <div
+                    key={stage.id}
                     className={cn(
                       "flex-shrink-0 w-[280px] md:w-80 h-full flex flex-col rounded-[2rem] border transition-all duration-300 overflow-hidden",
-                      stage.color === "bg-blue-500" ? "bg-blue-50/30 border-blue-100 dark:bg-blue-950/10 dark:border-blue-900/20" :
-                      stage.color === "bg-yellow-500" ? "bg-amber-50/30 border-amber-100 dark:bg-amber-950/10 dark:border-amber-900/20" :
-                      stage.color === "bg-purple-500" ? "bg-purple-50/30 border-purple-100 dark:bg-purple-950/10 dark:border-purple-900/20" :
-                      "bg-emerald-50/30 border-emerald-100 dark:bg-emerald-950/10 dark:border-emerald-900/20"
+                      stage.color === "bg-blue-500"
+                        ? "bg-blue-50/30 border-blue-100 dark:bg-blue-950/10 dark:border-blue-900/20"
+                        : stage.color === "bg-yellow-500"
+                          ? "bg-amber-50/30 border-amber-100 dark:bg-amber-950/10 dark:border-amber-900/20"
+                          : stage.color === "bg-purple-500"
+                            ? "bg-purple-50/30 border-purple-100 dark:bg-purple-950/10 dark:border-purple-900/20"
+                            : "bg-emerald-50/30 border-emerald-100 dark:bg-emerald-950/10 dark:border-emerald-900/20",
                     )}
                   >
                     {/* Integrated Header */}
                     <div className="p-5 flex items-center justify-between shrink-0">
                       <div className="flex items-center gap-3">
-                        <div className={cn("p-2.5 rounded-2xl text-white shadow-lg shadow-current/20", stage.color)}>
-                          {stage.id === "contacted" && <Phone className="w-4 h-4" />}
-                          {stage.id === "negotiation" && <RefreshCw className="w-4 h-4" />}
-                          {stage.id === "quotation" && <Upload className="w-4 h-4" />}
-                          {stage.id === "closed" && <CheckCircle className="w-4 h-4" />}
+                        <div
+                          className={cn(
+                            "p-2.5 rounded-2xl text-white shadow-lg shadow-current/20",
+                            stage.color,
+                          )}
+                        >
+                          {stage.id === "contacted" && (
+                            <Phone className="w-4 h-4" />
+                          )}
+                          {stage.id === "negotiation" && (
+                            <RefreshCw className="w-4 h-4" />
+                          )}
+                          {stage.id === "quotation" && (
+                            <Upload className="w-4 h-4" />
+                          )}
+                          {stage.id === "closed" && (
+                            <CheckCircle className="w-4 h-4" />
+                          )}
                         </div>
-                        <h3 className="font-black text-base tracking-tight">{stage.title}</h3>
+                        <h3 className="font-black text-base tracking-tight">
+                          {stage.title}
+                        </h3>
                       </div>
                       <div className="px-3 py-1 rounded-full bg-white/80 dark:bg-stone-900/40 border border-current/10 shadow-sm">
-                        <span className="text-xs font-black tabular-nums">{totalCount}</span>
+                        <span className="text-xs font-black tabular-nums">
+                          {totalCount}
+                        </span>
                       </div>
                     </div>
 
@@ -741,10 +896,13 @@ const StageBased = () => {
                               <DealCard deal={deal} />
                             </DraggableDealCard>
                           ))}
-                        {filteredDeals.filter((d) => d.stage === stage.id).length === 0 && (
+                        {filteredDeals.filter((d) => d.stage === stage.id)
+                          .length === 0 && (
                           <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-stone-200/50 dark:border-stone-800/50 rounded-[2rem] opacity-30 select-none">
                             <p className="text-xs font-bold uppercase tracking-widest text-center px-4">
-                              ไม่มีดีลใน<br/>{stage.title}
+                              ไม่มีดีลใน
+                              <br />
+                              {stage.title}
                             </p>
                           </div>
                         )}
@@ -761,11 +919,13 @@ const StageBased = () => {
           {activeDeal ? <DealCard deal={activeDeal} /> : null}
         </DragOverlay>
 
-
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>รายละเอียดขั้นตอน: {stages.find(s => s.id === currentStage)?.title}</DialogTitle>
+              <DialogTitle>
+                รายละเอียดขั้นตอน:{" "}
+                {stages.find((s) => s.id === currentStage)?.title}
+              </DialogTitle>
               <DialogDescription>
                 {selectedDeal?.customerName}
               </DialogDescription>
@@ -780,37 +940,57 @@ const StageBased = () => {
                   { id: "quotation", label: "เสนอราคา", step: 3 },
                   { id: "closed", label: "ปิดการขาย", step: 4 },
                 ].map((s, idx, arr) => {
-                  const stageOrder = ["contacted", "negotiation", "quotation", "closed"];
+                  const stageOrder = [
+                    "contacted",
+                    "negotiation",
+                    "quotation",
+                    "closed",
+                  ];
                   const currentIdx = stageOrder.indexOf(currentStage);
                   const thisIdx = stageOrder.indexOf(s.id);
                   const isDone = thisIdx < currentIdx;
                   const isActive = thisIdx === currentIdx;
 
                   return (
-                    <div key={s.id} className="flex items-center flex-1 min-w-0">
+                    <div
+                      key={s.id}
+                      className="flex items-center flex-1 min-w-0"
+                    >
                       {/* Step circle + label */}
                       <div className="flex flex-col items-center flex-shrink-0">
-                        <div className={cn(
-                          "w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs md:text-sm font-bold border-2 transition-all",
-                          isDone ? "bg-primary border-primary text-white" :
-                            isActive ? "bg-primary/20 border-primary text-primary" :
-                              "bg-muted border-border text-muted-foreground"
-                        )}>
+                        <div
+                          className={cn(
+                            "w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs md:text-sm font-bold border-2 transition-all",
+                            isDone
+                              ? "bg-primary border-primary text-white"
+                              : isActive
+                                ? "bg-primary/20 border-primary text-primary"
+                                : "bg-muted border-border text-muted-foreground",
+                          )}
+                        >
                           {isDone ? "✓" : s.step}
                         </div>
-                        <span className={cn(
-                          "text-[9px] md:text-[10px] mt-1 font-medium text-center leading-tight",
-                          isActive ? "text-primary" : isDone ? "text-primary/70" : "text-muted-foreground"
-                        )}>
+                        <span
+                          className={cn(
+                            "text-[9px] md:text-[10px] mt-1 font-medium text-center leading-tight",
+                            isActive
+                              ? "text-primary"
+                              : isDone
+                                ? "text-primary/70"
+                                : "text-muted-foreground",
+                          )}
+                        >
                           {s.label}
                         </span>
                       </div>
                       {/* Connector line */}
                       {idx < arr.length - 1 && (
-                        <div className={cn(
-                          "h-0.5 flex-1 mx-1 rounded transition-all",
-                          thisIdx < currentIdx ? "bg-primary" : "bg-border"
-                        )} />
+                        <div
+                          className={cn(
+                            "h-0.5 flex-1 mx-1 rounded transition-all",
+                            thisIdx < currentIdx ? "bg-primary" : "bg-border",
+                          )}
+                        />
                       )}
                     </div>
                   );
@@ -819,14 +999,17 @@ const StageBased = () => {
             </div>
 
             <div className="space-y-4 py-4">
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>ชื่อลูกค้า</Label>
                   <Input
                     value={selectedDeal?.customerName || ""}
                     onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, customerName: e.target.value });
+                      if (selectedDeal)
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          customerName: e.target.value,
+                        });
                     }}
                   />
                 </div>
@@ -835,7 +1018,11 @@ const StageBased = () => {
                   <Input
                     value={selectedDeal?.phone || ""}
                     onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, phone: e.target.value });
+                      if (selectedDeal)
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          phone: e.target.value,
+                        });
                     }}
                   />
                 </div>
@@ -844,7 +1031,11 @@ const StageBased = () => {
                   <Input
                     value={selectedDeal?.propertyType || ""}
                     onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, propertyType: e.target.value });
+                      if (selectedDeal)
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          propertyType: e.target.value,
+                        });
                     }}
                   />
                 </div>
@@ -854,7 +1045,11 @@ const StageBased = () => {
                     type="number"
                     value={selectedDeal?.budget || ""}
                     onChange={(e) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, budget: Number(e.target.value) });
+                      if (selectedDeal)
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          budget: Number(e.target.value),
+                        });
                     }}
                   />
                 </div>
@@ -866,9 +1061,18 @@ const StageBased = () => {
                   <Label>วันที่เริ่มต้น</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                        )}
+                      >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDeal?.startDate ? format(selectedDeal.startDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                        {selectedDeal?.startDate
+                          ? format(selectedDeal.startDate, "PPP", {
+                              locale: th,
+                            })
+                          : "เลือกวันที่"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -877,13 +1081,15 @@ const StageBased = () => {
                         selected={selectedDeal?.startDate}
                         onSelect={(date) => {
                           if (selectedDeal && date) {
-                            setSelectedDeal({ ...selectedDeal, startDate: date });
+                            setSelectedDeal({
+                              ...selectedDeal,
+                              startDate: date,
+                            });
                           }
                         }}
                         locale={th}
                         className="pointer-events-auto"
                       />
-
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -891,9 +1097,16 @@ const StageBased = () => {
                   <Label>วันที่สิ้นสุด</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                        )}
+                      >
                         <CalendarIcon className="mr-2 h-4 w-4" />
-                        {selectedDeal?.endDate ? format(selectedDeal.endDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                        {selectedDeal?.endDate
+                          ? format(selectedDeal.endDate, "PPP", { locale: th })
+                          : "เลือกวันที่"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
@@ -914,14 +1127,20 @@ const StageBased = () => {
               </div>
 
               {/* Negotiation Stage */}
-              {(currentStage === "negotiation" || currentStage === "quotation" || currentStage === "closed") && (
+              {(currentStage === "negotiation" ||
+                currentStage === "quotation" ||
+                currentStage === "closed") && (
                 <div>
                   <Label>พนักงานขายที่ดูแล</Label>
                   <Select
                     disabled={role === "SALE"}
                     value={selectedDeal?.assignedSales}
                     onValueChange={(value) => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, assignedSales: value });
+                      if (selectedDeal)
+                        setSelectedDeal({
+                          ...selectedDeal,
+                          assignedSales: value,
+                        });
                     }}
                   >
                     <SelectTrigger>
@@ -929,51 +1148,63 @@ const StageBased = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {salesList.length > 0 ? (
-                        salesList.map(s => (
-                          <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                        salesList.map((s) => (
+                          <SelectItem key={s.id} value={s.name}>
+                            {s.name}
+                          </SelectItem>
                         ))
                       ) : (
-                        <SelectItem value="_none" disabled>ไม่พบข้อมูลเซลล์</SelectItem>
+                        <SelectItem value="_none" disabled>
+                          ไม่พบข้อมูลเซลล์
+                        </SelectItem>
                       )}
                     </SelectContent>
                   </Select>
                 </div>
               )}
 
-
               {/* Quotation Stage */}
               {(currentStage === "quotation" || currentStage === "closed") && (
                 <div className="space-y-4 pt-2 border-t border-border/50">
                   {/* System Quotations (From DB) */}
-                  {selectedDeal?.quotations && selectedDeal.quotations.length > 0 && (
-                    <div className="space-y-2">
-                       <Label className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        ใบเสนอราคาในระบบ
-                      </Label>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedDeal.quotations.map((q: any) => (
-                          <div key={q.id} className="inline-flex items-center group/quote shadow-sm overflow-hidden rounded-xl border border-amber-200">
-                            <button 
-                              onClick={(e) => handleViewQuotation(q.id, e)}
-                              className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/50 dark:text-amber-300 px-3 py-2 flex items-center gap-2 transition-all"
+                  {selectedDeal?.quotations &&
+                    selectedDeal.quotations.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          ใบเสนอราคาในระบบ
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedDeal.quotations.map((q: any) => (
+                            <div
+                              key={q.id}
+                              className="inline-flex items-center group/quote shadow-sm overflow-hidden rounded-xl border border-amber-200"
                             >
-                              <FileText className="w-3.5 h-3.5" />
-                              {q.quotationNumber}
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteQuotation(q.id, q.quotationNumber, e)}
-                              className="bg-amber-100 hover:bg-red-100 text-amber-700 hover:text-red-700 dark:bg-amber-950/50 p-2 border-l border-amber-200 transition-all"
-                              title="ลบใบเสนอราคา"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
+                              <button
+                                onClick={(e) => handleViewQuotation(q.id, e)}
+                                className="text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/50 dark:text-amber-300 px-3 py-2 flex items-center gap-2 transition-all"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                {q.quotationNumber}
+                              </button>
+                              <button
+                                onClick={(e) =>
+                                  handleDeleteQuotation(
+                                    q.id,
+                                    q.quotationNumber,
+                                    e,
+                                  )
+                                }
+                                className="bg-amber-100 hover:bg-red-100 text-amber-700 hover:text-red-700 dark:bg-amber-950/50 p-2 border-l border-amber-200 transition-all"
+                                title="ลบใบเสนอราคา"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
-
+                    )}
 
                   <div>
                     <Label>ราคาที่เสนอ (บาท)</Label>
@@ -981,7 +1212,11 @@ const StageBased = () => {
                       type="number"
                       value={selectedDeal?.priceOffered || ""}
                       onChange={(e) => {
-                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, priceOffered: Number(e.target.value) });
+                        if (selectedDeal)
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            priceOffered: Number(e.target.value),
+                          });
                       }}
                       placeholder="0"
                     />
@@ -991,7 +1226,11 @@ const StageBased = () => {
                     <Textarea
                       value={selectedDeal?.terms || ""}
                       onChange={(e) => {
-                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, terms: e.target.value });
+                        if (selectedDeal)
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            terms: e.target.value,
+                          });
                       }}
                       placeholder="ระบุเงื่อนไขการชำระเงิน..."
                     />
@@ -1008,23 +1247,33 @@ const StageBased = () => {
                       type="number"
                       value={selectedDeal?.finalValue || ""}
                       onChange={(e) => {
-                        if (selectedDeal) setSelectedDeal({ ...selectedDeal, finalValue: Number(e.target.value) });
+                        if (selectedDeal)
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            finalValue: Number(e.target.value),
+                          });
                       }}
                       placeholder="0"
                     />
                   </div>
                   <div>
                     <Label>สถานะดีล (Deal Status)</Label>
-                    <Select value={selectedDeal?.dealStatus} onValueChange={(value: "won" | "lost") => {
-                      if (selectedDeal) setSelectedDeal({ ...selectedDeal, dealStatus: value });
-                    }}>
+                    <Select
+                      value={selectedDeal?.dealStatus}
+                      onValueChange={(value: "won" | "lost") => {
+                        if (selectedDeal)
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            dealStatus: value,
+                          });
+                      }}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="เลือกสถานะ" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="won">ปิดการขายสำเร็จ</SelectItem>
                         <SelectItem value="lost">ไม่สำเร็จ</SelectItem>
-
                       </SelectContent>
                     </Select>
                   </div>
@@ -1032,9 +1281,18 @@ const StageBased = () => {
                     <Label>วันที่ปิดการขาย (Closing Date)</Label>
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline" className={cn("w-full justify-start text-left font-normal")}>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                          )}
+                        >
                           <CalendarIcon className="mr-2 h-4 w-4" />
-                          {selectedDeal?.closingDate ? format(selectedDeal.closingDate, "PPP", { locale: th }) : "เลือกวันที่"}
+                          {selectedDeal?.closingDate
+                            ? format(selectedDeal.closingDate, "PPP", {
+                                locale: th,
+                              })
+                            : "เลือกวันที่"}
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
@@ -1043,7 +1301,10 @@ const StageBased = () => {
                           selected={selectedDeal?.closingDate}
                           onSelect={(date) => {
                             if (selectedDeal && date) {
-                              setSelectedDeal({ ...selectedDeal, closingDate: date });
+                              setSelectedDeal({
+                                ...selectedDeal,
+                                closingDate: date,
+                              });
                             }
                           }}
                           locale={th}
@@ -1063,24 +1324,47 @@ const StageBased = () => {
                     <div className="space-y-1">
                       {selectedDeal.files.map((f, idx) => {
                         const ext = f.split(".").pop()?.toLowerCase() || "";
-                        const icon =
-                          ["mp3", "wav", "m4a", "aac", "ogg"].includes(ext) ? "🎧" :
-                            ["mp4", "mov", "avi", "mkv"].includes(ext) ? "🎥" :
-                              ["jpg", "jpeg", "png", "gif"].includes(ext) ? "🖼️" :
-                                ["pdf"].includes(ext) ? "📄" :
-                                  ["doc", "docx"].includes(ext) ? "📝" :
-                                    ["xls", "xlsx"].includes(ext) ? "📊" :
-                                      ["zip", "rar"].includes(ext) ? "🗂️" : "📁";
+                        const icon = [
+                          "mp3",
+                          "wav",
+                          "m4a",
+                          "aac",
+                          "ogg",
+                        ].includes(ext)
+                          ? "🎧"
+                          : ["mp4", "mov", "avi", "mkv"].includes(ext)
+                            ? "🎥"
+                            : ["jpg", "jpeg", "png", "gif"].includes(ext)
+                              ? "🖼️"
+                              : ["pdf"].includes(ext)
+                                ? "📄"
+                                : ["doc", "docx"].includes(ext)
+                                  ? "📝"
+                                  : ["xls", "xlsx"].includes(ext)
+                                    ? "📊"
+                                    : ["zip", "rar"].includes(ext)
+                                      ? "🗂️"
+                                      : "📁";
                         return (
-                          <div key={idx} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm"
+                          >
                             <span className="flex items-center gap-2 truncate">
                               <span>{icon}</span>
-                              <span className="truncate text-foreground">{f}</span>
+                              <span className="truncate text-foreground">
+                                {f}
+                              </span>
                             </span>
                             <button
                               onClick={() => {
                                 if (selectedDeal) {
-                                  setSelectedDeal({ ...selectedDeal, files: selectedDeal.files?.filter((_, i) => i !== idx) });
+                                  setSelectedDeal({
+                                    ...selectedDeal,
+                                    files: selectedDeal.files?.filter(
+                                      (_, i) => i !== idx,
+                                    ),
+                                  });
                                 }
                               }}
                               className="ml-2 text-muted-foreground hover:text-destructive flex-shrink-0"
@@ -1099,13 +1383,19 @@ const StageBased = () => {
                       const input = document.createElement("input");
                       input.type = "file";
                       input.multiple = true;
-                      input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.avi,.mkv,.txt,.zip,.rar";
+                      input.accept =
+                        ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.mp3,.wav,.m4a,.aac,.ogg,.mp4,.mov,.avi,.mkv,.txt,.zip,.rar";
                       input.onchange = (e) => {
-                        const picked = Array.from((e.target as HTMLInputElement).files || []);
+                        const picked = Array.from(
+                          (e.target as HTMLInputElement).files || [],
+                        );
                         if (selectedDeal) {
                           setSelectedDeal({
                             ...selectedDeal,
-                            files: [...(selectedDeal.files || []), ...picked.map(f => f.name)],
+                            files: [
+                              ...(selectedDeal.files || []),
+                              ...picked.map((f) => f.name),
+                            ],
                           });
                         }
                       };
@@ -1120,14 +1410,24 @@ const StageBased = () => {
             </div>
 
             <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>ยกเลิก</Button>
-              <Button onClick={handleSaveChanges} className="gradient-primary text-white">บันทึกการเปลี่ยนแปลง</Button>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={handleSaveChanges}
+                className="gradient-primary text-white"
+              >
+                บันทึกการเปลี่ยนแปลง
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* ✅ Confirmation Dialog for Repeat Purchase - Premium Style */}
-        <AlertDialog open={isRepeatConfirmOpen} onOpenChange={setIsRepeatConfirmOpen}>
+        <AlertDialog
+          open={isRepeatConfirmOpen}
+          onOpenChange={setIsRepeatConfirmOpen}
+        >
           <AlertDialogContent className="rounded-2xl border-stone-200 dark:border-stone-800 shadow-2xl">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-xl font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
@@ -1137,15 +1437,23 @@ const StageBased = () => {
                 ยืนยันเริ่มรอบการขายใหม่
               </AlertDialogTitle>
               <AlertDialogDescription className="text-base pt-2">
-                คุณแน่ใจหรือไม่ว่าต้องการเริ่มดีลใหม่ให้แก่ลูกค้า <span className="font-bold text-foreground">"{repeatTargetDeal?.customerName}"</span>?
+                คุณแน่ใจหรือไม่ว่าต้องการเริ่มดีลใหม่ให้แก่ลูกค้า{" "}
+                <span className="font-bold text-foreground">
+                  "{repeatTargetDeal?.customerName}"
+                </span>
+                ?
                 <br />
                 <span className="text-sm text-muted-foreground mt-2 block bg-amber-50 dark:bg-amber-900/10 p-3 rounded-lg border border-amber-100 dark:border-amber-900/30">
-                  ⚠️ ลูกค้าคนนี้จะถูกปลดจากการดูแลของคุณ และย้ายกลับไปเป็นลูกค้าใหม่ (NEW) เพื่อให้แอดมินพิจารณามอบหมายงานให้อีกครั้ง
+                  ⚠️ ลูกค้าคนนี้จะถูกปลดจากการดูแลของคุณ
+                  และย้ายกลับไปเป็นลูกค้าใหม่ (NEW)
+                  เพื่อให้แอดมินพิจารณามอบหมายงานให้อีกครั้ง
                 </span>
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="mt-4">
-              <AlertDialogCancel className="rounded-xl border-stone-200 hover:bg-stone-100">ยกเลิก</AlertDialogCancel>
+              <AlertDialogCancel className="rounded-xl border-stone-200 hover:bg-stone-100">
+                ยกเลิก
+              </AlertDialogCancel>
               <AlertDialogAction
                 onClick={confirmRepeatPurchase}
                 className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
