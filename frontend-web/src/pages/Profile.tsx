@@ -28,7 +28,7 @@ export default function Profile() {
   const API_HOST =
     (import.meta as any)?.env?.VITE_API_HOST ||
     (import.meta as any)?.env?.VITE_API_BASE_URL ||
-    "http://localhost:3000";
+    ;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

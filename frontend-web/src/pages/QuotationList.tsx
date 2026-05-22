@@ -25,7 +25,7 @@ import { FileText, Search, Edit, Download, Plus, CheckCircle } from "lucide-reac
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE || ;
 
 type QuotationStatus = "DRAFT" | "WAIT_APPROVAL" | "SENT" | "APPROVED" | "REJECTED";
 

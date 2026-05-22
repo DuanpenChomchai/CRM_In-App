@@ -10,7 +10,7 @@ import { Plus, Trash2, FileText, List, Save, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE || ;
 
 type QuotationStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED";
 
