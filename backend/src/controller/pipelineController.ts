@@ -280,7 +280,7 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
           await (tx as any).closedDeal.create({
             data: {
               customerId: id,
-              result: closedResult || "LOST",
+              result: closedResult || "PENDING",
               note: note || null,
               finalValue: req.body.finalValue || null,
               userId: me.role === "SALE" ? me.id : null,
