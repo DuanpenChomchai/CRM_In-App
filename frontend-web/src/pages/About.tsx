@@ -119,14 +119,14 @@ const FEATURES = [
     desc: "ระบบจัดการขั้นตอนการขายที่ชัดเจน ตั้งแต่การเริ่มต้นติดต่อ การเสนอราคา การเจรจา ไปจนถึงการปิดการขาย ช่วยให้ทีมงานติดตามสถานะลูกค้าได้อย่างแม่นยำ" 
   },
   { 
-    icon: Building2, 
-    title: "Comprehensive Sales & Catalog Management", 
-    desc: "ระบบศูนย์กลางบนเว็บแอปพลิเคชันที่เน้นการลงรายละเอียดข้อมูล โครงการอสังหาริมทรัพย์ และข้อมูลลูกค้าอย่างครบถ้วน ช่วยให้ทีมงานจัดการดีล บันทึกความสนใจ และติดตามประวัติการขายในเชิงลึกได้อย่างเป็นระบบและโปร่งใส" 
+    icon: LayoutDashboard, 
+    title: "แดชบอร์ดและการวิเคราะห์ยอดขาย", 
+    desc: "แดชบอร์ดแสดงสถิติยอดขายและภาพรวมการทำงานของทีมแบบเรียลไทม์ ผู้จัดการและแอดมินสามารถติดตามประสิทธิภาพ วิเคราะห์แนวโน้ม และตัดสินใจได้อย่างรวดเร็วจากข้อมูลจริง" 
   },
   { 
-    icon: LayoutDashboard, 
-    title: "Managerial Insights & Document Control", 
-    desc: "แดชบอร์ดวิเคราะห์ยอดขายเชิงลึกสำหรับผู้จัดการและผู้บริหารบนเว็บแอปพลิเคชัน ช่วยควบคุมระบบใบเสนอราคา (Quotation) อนุมัติเอกสารและโครงการได้อย่างรวดเร็ว พร้อมติดตามและประเมินผลการทำงานของพนักงานขายได้เรียลไทม์" 
+    icon: FileText, 
+    title: "ใบเสนอราคาและการอนุมัติเอกสาร", 
+    desc: "พนักงานขายสร้างและส่งใบเสนอราคาให้ลูกค้าได้ทันที ผู้จัดการและแอดมินสามารถตรวจสอบและอนุมัติเอกสารได้บนระบบเว็บ พร้อมดาวน์โหลดเป็น PDF ได้โดยตรง" 
   },
 ];
 
@@ -345,11 +345,11 @@ export default function About() {
                   <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center flex-shrink-0 group-hover:bg-gradient-to-br group-hover:from-pink-400 group-hover:to-green-400 transition-all duration-300">
                     <f.icon className="w-5 h-5 text-pink-500 group-hover:text-white transition-colors duration-300" />
                   </div>
-                  <h3 className="font-black text-[15px] sm:text-base group-hover:text-pink-600 transition-colors duration-300 leading-tight">
+                  <h3 className="font-black text-base sm:text-lg group-hover:text-pink-600 transition-colors duration-300 leading-tight">
                     {f.title}
                   </h3>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed font-semibold">{f.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed font-medium">{f.desc}</p>
               </div>
             </div>
           ))}
