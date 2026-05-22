@@ -54,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const API_BASE = import.meta.env.VITE_API_BASE || ;
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 interface Customer {
   id: number;

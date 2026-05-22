@@ -24,7 +24,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_BASE || ;
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 /* -----------------------------------------------------
    INTERFACES

@@ -13,7 +13,7 @@ import {
 import { Mail, Lock, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_BASE || ;
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 declare global {
   interface Window {
