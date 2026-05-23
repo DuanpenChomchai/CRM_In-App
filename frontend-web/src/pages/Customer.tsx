@@ -361,8 +361,7 @@ const Customer = () => {
         return;
       }
       const updated = await res.json();
-      const mapped = mapApiCustomerToUi(updated);
-      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
+      await fetchCustomers(); // fetch ใหม่ทันทีหลังบันทึก
       toast.success("อัปเดทข้อมูลลูกค้าสำเร็จ");
       setIsEditDialogOpen(false);
       setEditCustomer(null);
