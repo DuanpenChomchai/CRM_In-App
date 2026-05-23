@@ -45,11 +45,6 @@ export async function ensureDatabaseConnection(): Promise<void> {
   await connectWithRetry();
 }
 
-// ✅ Reconnect อัตโนมัติเมื่อ connection หลุด
-prisma.$on("beforeExit" as never, async () => {
-  await prisma.$disconnect();
-});
-
 // ✅ Keep-alive query ทุก 30 วินาที ป้องกัน connection timeout
 if (!isTest) {
   setInterval(async () => {
