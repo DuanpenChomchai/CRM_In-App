@@ -152,6 +152,7 @@ const StageBased = () => {
   const [isRepeatConfirmOpen, setIsRepeatConfirmOpen] = useState(false);
   const [repeatTargetDeal, setRepeatTargetDeal] = useState<Deal | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -407,16 +408,6 @@ const StageBased = () => {
   const handleSaveChanges = async () => {
     if (!selectedDeal) return;
 
-    // บันทึก quotationFiles ลง localStorage
-    if (selectedDeal.quotationFiles) {
-      localStorage.setItem(
-        `quotationFiles_${selectedDeal.customerId}`,
-        JSON.stringify(selectedDeal.quotationFiles),
-      );
-    } else {
-      localStorage.removeItem(`quotationFiles_${selectedDeal.customerId}`);
-    }
-
     // อัปเดต local state ทันที
     setDeals((p) =>
       p.map((d) => (d.id === selectedDeal.id ? selectedDeal : d)),
@@ -442,17 +433,32 @@ const StageBased = () => {
         }),
       });
 
-      // 2. sync stage กับ backend พร้อมรายละเอียด (ปิดดีล, etc.)
- const movePayload: any = {
-  customerId: selectedDeal.customerId,
-  toStatus: uiToApi(currentStage),
-  closedResult: currentStage === "closed" && selectedDeal.dealStatus
-    ? selectedDeal.dealStatus === "won" ? "WON" : "LOST"
-    : undefined,
-  finalValue: selectedDeal.finalValue,
-};
-
-      
+      // 2. sync stage กับ backend พร้อมรายละเอียดทุก field
+      const movePayload: any = {
+        customerId: selectedDeal.customerId,
+        toStatus: uiToApi(currentStage),
+        endDate: selectedDeal.endDate?.toISOString(),
+        // CONTACTED
+        contactedStatus:
+          currentStage === "contacted" ? selectedDeal.status : undefined,
+        // NEGOTIATING
+        negotiationStatus:
+          currentStage === "negotiation" ? selectedDeal.status : undefined,
+        note: selectedDeal.terms || undefined,
+        // QUOTATION
+        quotationPrice:
+          currentStage === "quotation" ? selectedDeal.priceOffered : undefined,
+        terms: currentStage === "quotation" ? selectedDeal.terms : undefined,
+        // CLOSED
+        closedResult:
+          currentStage === "closed" && selectedDeal.dealStatus
+            ? selectedDeal.dealStatus === "won"
+              ? "WON"
+              : "LOST"
+            : undefined,
+        finalValue: selectedDeal.finalValue,
+        closingDate: selectedDeal.closingDate?.toISOString(),
+      };
 
       const res = await fetch(`${API_BASE}/api/pipeline/move`, {
         method: "PATCH",
@@ -465,14 +471,65 @@ const StageBased = () => {
 
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
 
+      // 3. อัปโหลดไฟล์จริงเข้า MinIO (เฉพาะ quotation stage)
+      if (currentStage === "quotation" && pendingFiles.length > 0) {
+        // โหลด board ใหม่เพื่อหา quotationId ล่าสุด
+        const boardRes = await fetch(`${API_BASE}/api/pipeline/board`, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        const boardData = await boardRes.json();
+        const custInBoard = (boardData.columns?.QUOTATION || []).find(
+          (c: any) => c.id === selectedDeal.customerId,
+        );
+        const quotationId = custInBoard?.quotations?.[0]?.id;
+
+        if (quotationId) {
+          for (const file of pendingFiles) {
+            const fd = new FormData();
+            fd.append("file", file);
+            await fetch(`${API_BASE}/api/quotations/${quotationId}/files`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${getToken()}` },
+              body: fd,
+            });
+          }
+          setPendingFiles([]);
+        }
+      }
+
       toast.success("บันทึกข้อมูลสำเร็จ");
-      fetchBoard(); // Reload board to get exact dates and values
+      fetchBoard();
     } catch (e: any) {
       console.error(e);
-      toast.error("บันทึกไม่สำเร็จ");
+      toast.error(e?.message || "บันทึกไม่สำเร็จ");
     }
 
     setIsDialogOpen(false);
+  };
+
+  const handleDownloadFile = async (
+    quotationId: number,
+    fileId: number,
+    fileName: string,
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/quotations/${quotationId}/files/${fileId}/download`,
+        { headers: { Authorization: `Bearer ${getToken()}` } },
+      );
+      if (!res.ok) { toast.error("ดาวน์โหลดไม่สำเร็จ"); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("ดาวน์โหลดไม่สำเร็จ");
+    }
   };
 
   const DealCard = ({ deal }: { deal: Deal }) => {
@@ -1387,11 +1444,15 @@ const StageBased = () => {
                         const picked = Array.from(
                           (e.target as HTMLInputElement).files || [],
                         );
+                        if (picked.length === 0) return;
+                        // เก็บ File object จริงสำหรับ upload
+                        setPendingFiles((prev) => [...prev, ...picked]);
+                        // เก็บชื่อไว้แสดงใน UI
                         if (selectedDeal) {
                           setSelectedDeal({
                             ...selectedDeal,
-                            files: [
-                              ...(selectedDeal.files || []),
+                            quotationFiles: [
+                              ...(selectedDeal.quotationFiles || []),
                               ...picked.map((f) => f.name),
                             ],
                           });

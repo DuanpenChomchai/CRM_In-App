@@ -1,6 +1,15 @@
 import { Response } from "express";
 import prisma from "../config/prismaclient";
 import { AuthRequest } from "../middlewares/authMiddleware";
+import { randomUUID } from "crypto";
+import s3Client, { BUCKET_NAME } from "../config/minioclient";
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import multer from "multer";
+
+export const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+});
 
 // กันพังเวลามี decimal/string
 const toNumber = (v: any) => {
@@ -549,5 +558,96 @@ export const deleteQuotation = async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error("deleteQuotation error:", err);
     return res.status(500).json({ message: "ลบใบเสนอราคาล้มเหลว" });
+  }
+};
+
+/** POST /api/quotations/:id/files */
+export const uploadQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) return res.status(400).json({ message: "ไม่พบไฟล์" });
+
+    const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+    const key = `quotations/${id}/${randomUUID()}.${ext}`;
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET_NAME as string,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    const saved = await (prisma as any).quotationFile.create({
+      data: {
+        quotationId: id,
+        fileName: file.originalname,
+        fileKey: key,
+        fileMime: file.mimetype,
+        fileSize: file.size,
+      },
+    });
+
+    return res.status(201).json(saved);
+  } catch (err) {
+    console.error("uploadQuotationFile error:", err);
+    return res.status(500).json({ message: "อัปโหลดไฟล์ไม่สำเร็จ" });
+  }
+};
+
+/** DELETE /api/quotations/:id/files/:fileId */
+export const deleteQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const fileId = Number(req.params.fileId);
+
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = await (prisma as any).quotationFile.findUnique({ where: { id: fileId } });
+    if (!file) return res.status(404).json({ message: "ไม่พบไฟล์" });
+
+    await s3Client.send(
+      new DeleteObjectCommand({ Bucket: BUCKET_NAME as string, Key: file.fileKey }),
+    );
+    await (prisma as any).quotationFile.delete({ where: { id: fileId } });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("deleteQuotationFile error:", err);
+    return res.status(500).json({ message: "ลบไฟล์ไม่สำเร็จ" });
+  }
+};
+
+/** GET /api/quotations/:id/files/:fileId/download */
+export const downloadQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const fileId = Number(req.params.fileId);
+
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = await (prisma as any).quotationFile.findUnique({ where: { id: fileId } });
+    if (!file) return res.status(404).json({ message: "ไม่พบไฟล์" });
+
+    const obj = await s3Client.send(
+      new GetObjectCommand({ Bucket: BUCKET_NAME as string, Key: file.fileKey }),
+    );
+
+    res.setHeader("Content-Type", file.fileMime || "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${encodeURIComponent(file.fileName)}"`,
+    );
+    (obj.Body as any).pipe(res);
+  } catch (err) {
+    console.error("downloadQuotationFile error:", err);
+    return res.status(500).json({ message: "ดาวน์โหลดไฟล์ไม่สำเร็จ" });
   }
 };
