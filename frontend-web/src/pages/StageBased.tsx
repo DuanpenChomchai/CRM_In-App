@@ -531,13 +531,15 @@ const StageBased = () => {
       }
 
       toast.success("บันทึกข้อมูลสำเร็จ");
-      fetchBoard();
+      await fetchBoard();
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || "บันทึกไม่สำเร็จ");
     }
 
     setIsDialogOpen(false);
+    // fetch อีกครั้งหลังปิด dialog เพื่อให้ข้อมูลล่าสุด
+    setTimeout(() => fetchBoard(), 500);
   };
 
   const handleDownloadFile = async (

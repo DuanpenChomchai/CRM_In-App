@@ -332,6 +332,26 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
                 status: "DRAFT",
               },
             });
+          } else {
+            // ถ้าไม่มี interestedProperty ให้หา property แรกที่มีใน DB มาใช้แทน
+            const firstProperty = await (tx as any).property.findFirst({
+              select: { id: true },
+            });
+            if (firstProperty) {
+              await (tx as any).quotation.create({
+                data: {
+                  quotationNumber,
+                  customerId: id,
+                  propertyId: firstProperty.id,
+                  createdById: me.id,
+                  totalAmount: Number(quotationPrice) || 0,
+                  terms: terms || null,
+                  endDate: endDate ? new Date(endDate) : null,
+                  note: note || null,
+                  status: "DRAFT",
+                },
+              });
+            }
           }
         }
       }
