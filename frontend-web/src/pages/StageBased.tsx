@@ -444,9 +444,14 @@ const StageBased = () => {
 
       // 2. sync stage กับ backend พร้อมรายละเอียด (ปิดดีล, etc.)
       const movePayload: any = {
-        customerId: selectedDeal.customerId,
-        toStatus: uiToApi(currentStage),
-      };
+  customerId: selectedDeal.customerId,
+  toStatus: uiToApi(currentStage),
+  contactedStatus: currentStage === "contacted" ? selectedDeal.status : undefined,
+  negotiationStatus: currentStage === "negotiation" ? selectedDeal.status : undefined,
+  closedResult: currentStage === "closed" ? (selectedDeal.dealStatus === "won" ? "WON" : selectedDeal.dealStatus === "lost" ? "LOST" : undefined) : undefined,
+  finalValue: selectedDeal.finalValue,
+  note: selectedDeal.terms,
+};
 
       // เพิ่ม details ตาม stage
       if (currentStage === "closed") {
