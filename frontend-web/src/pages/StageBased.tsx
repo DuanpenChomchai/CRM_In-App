@@ -192,7 +192,7 @@ const StageBased = () => {
           const rawResult = (latestClosed?.result ?? "").toUpperCase();
 
           mapped.push({
-            id: c.dummyId || c.id, // ใช้ dummyId เป็น id หลักใน dnd
+            id: c.dummyId || c.id,
             customerId: c.id,
             customerName: c.name || "-",
             phone: c.tel ?? c.tol ?? "-",
@@ -202,6 +202,12 @@ const StageBased = () => {
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
             startDate: c.updatedAt ? new Date(c.updatedAt) : undefined,
+            // endDate — ดึงจาก negotiation หรือ quotation
+            endDate: latestNego?.endDate
+              ? new Date(latestNego.endDate)
+              : latestQ?.endDate
+                ? new Date(latestQ.endDate)
+                : undefined,
             quotationNumbers: (c.quotations || [])
               .map((q: any) => q.quotationNumber)
               .filter(Boolean),
@@ -209,7 +215,7 @@ const StageBased = () => {
             priceOffered: latestQ
               ? Number(latestQ.totalAmount || 0)
               : undefined,
-            terms: latestQ?.terms,
+            terms: latestQ?.terms ?? latestNego?.note ?? undefined,
             finalValue: latestClosed?.finalValue
               ? Number(latestClosed.finalValue)
               : undefined,
@@ -222,7 +228,7 @@ const StageBased = () => {
                 : rawResult === "LOST"
                   ? "lost"
                   : undefined,
-            purchaseCount: c._count?.closedDeals ?? 0, // จำนวนครั้งที่ซื้อสำเร็จแล้ว (WON+LOST)
+            purchaseCount: c._count?.closedDeals ?? 0,
             isHistorical: c.isHistorical,
             roundNumber: c.roundNumber,
           });
