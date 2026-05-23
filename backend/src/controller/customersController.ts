@@ -449,7 +449,7 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
         .json({ message: "ไม่พบลูกค้าหรือไม่มีสิทธิ์แก้ไข" });
     }
 
-    const { name, phone, email, img, productType, budget, saleId } = req.body;
+    const { name, phone, email, img, productType, budget, saleId, interestedPropertyId } = req.body;
 
     const data: any = {
       ...(name !== undefined ? { name } : {}),
@@ -457,6 +457,9 @@ export const updateCustomer = async (req: AuthRequest, res: Response) => {
       ...(email !== undefined ? { email } : {}),
       ...(img !== undefined ? { img } : {}),
       ...(productType !== undefined ? { productType } : {}),
+      ...(interestedPropertyId !== undefined
+        ? { interestedPropertyId: interestedPropertyId ? Number(interestedPropertyId) : null }
+        : {}),
       ...(budget !== undefined
         ? {
             priceBudget:
@@ -569,8 +572,27 @@ export const deleteCustomer = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: "ไม่พบลูกค้าหรือไม่มีสิทธิ์ลบ" });
     }
 
-    await prisma.customer.delete({
-      where: { id },
+    // ลบ relation ทั้งหมดก่อน แล้วค่อยลบ customer
+    await prisma.$transaction(async (tx) => {
+      await tx.chatMessage.deleteMany({ where: { customerId: id } });
+      await tx.communications.deleteMany({ where: { customerId: id } });
+      await tx.contacted.deleteMany({ where: { customerId: id } });
+      await tx.negotiation.deleteMany({ where: { customerId: id } });
+      await tx.closedDeal.deleteMany({ where: { customerId: id } });
+      await tx.pushToken.deleteMany({ where: { customerId: id } });
+
+      // ลบ quotation items และ files ก่อน quotation
+      const quotations = await tx.quotation.findMany({
+        where: { customerId: id },
+        select: { id: true },
+      });
+      for (const q of quotations) {
+        await (tx as any).quotationFile.deleteMany({ where: { quotationId: q.id } });
+        await tx.quotationItem.deleteMany({ where: { quotationId: q.id } });
+      }
+      await tx.quotation.deleteMany({ where: { customerId: id } });
+
+      await tx.customer.delete({ where: { id } });
     });
 
     return res.json({ message: "ลบลูกค้าสำเร็จ" });
