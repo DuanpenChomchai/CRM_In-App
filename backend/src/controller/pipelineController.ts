@@ -238,29 +238,33 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       const isSameStage = currentCustomer.mainStatus === toStatus;
 
       if (toStatus === "CONTACTED") {
+        const validContactedStatuses = ["FOLLOWING_UP", "WAITING_REPLY", "APPOINTED", "NOT_INTERESTED"];
+        const safeContactedStatus = validContactedStatuses.includes(contactedStatus) ? contactedStatus : "FOLLOWING_UP";
         const existing = isSameStage ? await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).contacted.update({
             where: { id: existing.id },
-            data: { status: contactedStatus || existing.status, note: note !== undefined ? note : existing.note },
+            data: { status: validContactedStatuses.includes(contactedStatus) ? contactedStatus : existing.status, note: note !== undefined ? note : existing.note },
           });
         } else {
           await (tx as any).contacted.create({
-            data: { customerId: id, status: contactedStatus || "FOLLOWING_UP", note: note || null },
+            data: { customerId: id, status: safeContactedStatus, note: note || null },
           });
         }
       }
 
       if (toStatus === "NEGOTIATING") {
+        const validNegotiationStatuses = ["NEGOTIATING", "WAITING_CONFIRM", "COUNTER_OFFER", "PAUSED"];
+        const safeNegotiationStatus = validNegotiationStatuses.includes(negotiationStatus) ? negotiationStatus : "NEGOTIATING";
         const existing = isSameStage ? await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).negotiation.update({
             where: { id: existing.id },
-            data: { status: negotiationStatus || existing.status, note: note !== undefined ? note : existing.note },
+            data: { status: validNegotiationStatuses.includes(negotiationStatus) ? negotiationStatus : existing.status, note: note !== undefined ? note : existing.note },
           });
         } else {
           await (tx as any).negotiation.create({
-            data: { customerId: id, status: negotiationStatus || "NEGOTIATING", note: note || null },
+            data: { customerId: id, status: safeNegotiationStatus, note: note || null },
           });
         }
       }
@@ -323,25 +327,30 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       }
 
       if (toStatus === "CLOSED") {
+        const validDealResults = ["WON", "LOST"];
+        const safeResult = validDealResults.includes(closedResult) ? closedResult : "WON";
         const existing = isSameStage ? await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).closedDeal.update({
             where: { id: existing.id },
             data: {
-              result: closedResult || existing.result,
+              result: validDealResults.includes(closedResult) ? closedResult : existing.result,
               note: note !== undefined ? note : existing.note,
-              finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue
+              finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue,
+              closingDate: req.body.closingDate ? new Date(req.body.closingDate) : existing.closingDate,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : existing.endDate,
             },
           });
         } else {
           await (tx as any).closedDeal.create({
             data: {
               customerId: id,
-              result: closedResult || "WON",
+              result: safeResult,
               note: note || null,
               finalValue: req.body.finalValue || null,
               userId: me.role === "SALE" ? me.id : null,
-              closingDate: new Date(),
+              closingDate: req.body.closingDate ? new Date(req.body.closingDate) : new Date(),
+              endDate: req.body.endDate ? new Date(req.body.endDate) : null,
             },
           });
         }

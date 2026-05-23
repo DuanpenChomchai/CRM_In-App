@@ -408,6 +408,28 @@ const StageBased = () => {
   const handleSaveChanges = async () => {
     if (!selectedDeal) return;
 
+    // แปลง status ภาษาไทย → enum ภาษาอังกฤษ
+    const contactedStatusMap: Record<string, string> = {
+      "กำลังติดตาม": "FOLLOWING_UP",
+      "รอลูกค้าตอบกลับ": "WAITING_REPLY",
+      "นัดพบแล้ว": "APPOINTED",
+      "ลูกค้าไม่สนใจ": "NOT_INTERESTED",
+      "FOLLOWING_UP": "FOLLOWING_UP",
+      "WAITING_REPLY": "WAITING_REPLY",
+      "APPOINTED": "APPOINTED",
+      "NOT_INTERESTED": "NOT_INTERESTED",
+    };
+    const negotiationStatusMap: Record<string, string> = {
+      "อยู่ระหว่างเจรจา": "NEGOTIATING",
+      "รอลูกค้ายืนยัน": "WAITING_CONFIRM",
+      "ลูกค้าต่อราคา": "COUNTER_OFFER",
+      "ชะลอการเจรจา": "PAUSED",
+      "NEGOTIATING": "NEGOTIATING",
+      "WAITING_CONFIRM": "WAITING_CONFIRM",
+      "COUNTER_OFFER": "COUNTER_OFFER",
+      "PAUSED": "PAUSED",
+    };
+
     // อัปเดต local state ทันที
     setDeals((p) =>
       p.map((d) => (d.id === selectedDeal.id ? selectedDeal : d)),
@@ -438,23 +460,22 @@ const StageBased = () => {
         customerId: selectedDeal.customerId,
         toStatus: uiToApi(currentStage),
         endDate: selectedDeal.endDate?.toISOString(),
-        // CONTACTED
-        contactedStatus:
-          currentStage === "contacted" ? selectedDeal.status : undefined,
-        // NEGOTIATING
-        negotiationStatus:
-          currentStage === "negotiation" ? selectedDeal.status : undefined,
+        // CONTACTED — แปลงเป็น enum
+        contactedStatus: currentStage === "contacted"
+          ? (contactedStatusMap[selectedDeal.status || ""] || "FOLLOWING_UP")
+          : undefined,
+        // NEGOTIATING — แปลงเป็น enum
+        negotiationStatus: currentStage === "negotiation"
+          ? (negotiationStatusMap[selectedDeal.status || ""] || "NEGOTIATING")
+          : undefined,
         note: selectedDeal.terms || undefined,
         // QUOTATION
-        quotationPrice:
-          currentStage === "quotation" ? selectedDeal.priceOffered : undefined,
+        quotationPrice: currentStage === "quotation" ? selectedDeal.priceOffered : undefined,
         terms: currentStage === "quotation" ? selectedDeal.terms : undefined,
         // CLOSED
         closedResult:
           currentStage === "closed" && selectedDeal.dealStatus
-            ? selectedDeal.dealStatus === "won"
-              ? "WON"
-              : "LOST"
+            ? selectedDeal.dealStatus === "won" ? "WON" : "LOST"
             : undefined,
         finalValue: selectedDeal.finalValue,
         closingDate: selectedDeal.closingDate?.toISOString(),
@@ -471,14 +492,20 @@ const StageBased = () => {
 
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
 
-      // 3. อัปโหลดไฟล์จริงเข้า MinIO (เฉพาะ quotation stage)
-      if (currentStage === "quotation" && pendingFiles.length > 0) {
+      // 3. อัปโหลดไฟล์จริงเข้า MinIO (ทุก stage ที่มี quotation)
+      if (pendingFiles.length > 0) {
         // โหลด board ใหม่เพื่อหา quotationId ล่าสุด
         const boardRes = await fetch(`${API_BASE}/api/pipeline/board`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
         const boardData = await boardRes.json();
-        const custInBoard = (boardData.columns?.QUOTATION || []).find(
+        const allColumns = [
+          ...(boardData.columns?.CONTACTED || []),
+          ...(boardData.columns?.NEGOTIATING || []),
+          ...(boardData.columns?.QUOTATION || []),
+          ...(boardData.columns?.CLOSED || []),
+        ];
+        const custInBoard = allColumns.find(
           (c: any) => c.id === selectedDeal.customerId,
         );
         const quotationId = custInBoard?.quotations?.[0]?.id;
@@ -493,8 +520,8 @@ const StageBased = () => {
               body: fd,
             });
           }
-          setPendingFiles([]);
         }
+        setPendingFiles([]);
       }
 
       toast.success("บันทึกข้อมูลสำเร็จ");
@@ -1445,14 +1472,14 @@ const StageBased = () => {
                           (e.target as HTMLInputElement).files || [],
                         );
                         if (picked.length === 0) return;
-                        // เก็บ File object จริงสำหรับ upload
+                        // เก็บ File object จริงสำหรับ upload ทุก stage
                         setPendingFiles((prev) => [...prev, ...picked]);
                         // เก็บชื่อไว้แสดงใน UI
                         if (selectedDeal) {
                           setSelectedDeal({
                             ...selectedDeal,
-                            quotationFiles: [
-                              ...(selectedDeal.quotationFiles || []),
+                            files: [
+                              ...(selectedDeal.files || []),
                               ...picked.map((f) => f.name),
                             ],
                           });
