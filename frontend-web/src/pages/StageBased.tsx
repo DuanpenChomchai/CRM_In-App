@@ -443,23 +443,16 @@ const StageBased = () => {
       });
 
       // 2. sync stage กับ backend พร้อมรายละเอียด (ปิดดีล, etc.)
-      const movePayload: any = {
+ const movePayload: any = {
   customerId: selectedDeal.customerId,
   toStatus: uiToApi(currentStage),
-  contactedStatus: currentStage === "contacted" ? selectedDeal.status : undefined,
-  negotiationStatus: currentStage === "negotiation" ? selectedDeal.status : undefined,
-  closedResult: currentStage === "closed" ? (selectedDeal.dealStatus === "won" ? "WON" : selectedDeal.dealStatus === "lost" ? "LOST" : undefined) : undefined,
+  closedResult: currentStage === "closed" && selectedDeal.dealStatus
+    ? selectedDeal.dealStatus === "won" ? "WON" : "LOST"
+    : undefined,
   finalValue: selectedDeal.finalValue,
-  note: selectedDeal.terms,
 };
 
-      // เพิ่ม details ตาม stage
-      if (currentStage === "closed") {
-        movePayload.closedResult =
-          selectedDeal.dealStatus === "won" ? "WON" : "LOST";
-        movePayload.finalValue = selectedDeal.finalValue;
-        // remark: Note is not saved properly in original UI, using fallback or empty
-      }
+      
 
       const res = await fetch(`${API_BASE}/api/pipeline/move`, {
         method: "PATCH",
