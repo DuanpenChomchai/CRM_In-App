@@ -58,6 +58,10 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
               endDate: true,
               status: true,
               createdAt: true,
+              files: {
+                select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
+                orderBy: { uploadedAt: "desc" },
+              },
             },
             orderBy: { createdAt: "desc" },
             take: 5,
@@ -83,7 +87,7 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
 
           // ✅ schema ใหม่: ใช้ contactedLogs เท่านั้น (เป็น array)
           contactedLogs: {
-            select: { id: true, status: true, stateDate: true, createdAt: true } as any,
+            select: { id: true, status: true, stateDate: true, endDate: true, note: true, createdAt: true } as any,
             orderBy: { createdAt: "desc" },
             take: 1,
           } as any,
@@ -245,11 +249,20 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
         if (existing) {
           await (tx as any).contacted.update({
             where: { id: existing.id },
-            data: { status: validContactedStatuses.includes(contactedStatus) ? contactedStatus : existing.status, note: note !== undefined ? note : existing.note },
+            data: {
+              status: validContactedStatuses.includes(contactedStatus) ? contactedStatus : existing.status,
+              note: note !== undefined ? note : existing.note,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : existing.endDate,
+            },
           });
         } else {
           await (tx as any).contacted.create({
-            data: { customerId: id, status: safeContactedStatus, note: note || null },
+            data: {
+              customerId: id,
+              status: safeContactedStatus,
+              note: note || null,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+            },
           });
         }
       }

@@ -84,6 +84,7 @@ interface Deal {
   terms?: string;
   quotationNumbers?: string[];
   quotations?: any[];
+  _dbFiles?: any[]; // ไฟล์จาก DB
   finalValue?: number;
   dealStatus?: "won" | "lost";
   closingDate?: Date;
@@ -202,12 +203,14 @@ const StageBased = () => {
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
             startDate: c.updatedAt ? new Date(c.updatedAt) : undefined,
-            // endDate — ดึงจาก negotiation หรือ quotation
-            endDate: latestNego?.endDate
-              ? new Date(latestNego.endDate)
-              : latestQ?.endDate
-                ? new Date(latestQ.endDate)
-                : undefined,
+            // endDate — ดึงจาก contactedLogs, negotiation หรือ quotation
+            endDate: latestLog?.endDate
+              ? new Date(latestLog.endDate)
+              : latestNego?.endDate
+                ? new Date(latestNego.endDate)
+                : latestQ?.endDate
+                  ? new Date(latestQ.endDate)
+                  : undefined,
             quotationNumbers: (c.quotations || [])
               .map((q: any) => q.quotationNumber)
               .filter(Boolean),
@@ -240,10 +243,12 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      // โหลด quotationFiles จาก localStorage
+      // โหลด files จาก DB (quotations[0].files) แทน localStorage
       const withFiles = mapped.map((d) => {
-        const saved = localStorage.getItem(`quotationFiles_${d.customerId}`);
-        return saved ? { ...d, quotationFiles: JSON.parse(saved) } : d;
+        const allFiles = (d.quotations || []).flatMap((q: any) => q.files || []);
+        return allFiles.length > 0
+          ? { ...d, quotationFiles: allFiles.map((f: any) => f.fileName), _dbFiles: allFiles }
+          : d;
       });
       setDeals(withFiles);
     } catch (e: any) {
@@ -498,9 +503,8 @@ const StageBased = () => {
 
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
 
-      // 3. อัปโหลดไฟล์จริงเข้า MinIO (ทุก stage ที่มี quotation)
+      // 3. อัปโหลดไฟล์จริงเข้า MinIO (ทุก stage)
       if (pendingFiles.length > 0) {
-        // โหลด board ใหม่เพื่อหา quotationId ล่าสุด
         const boardRes = await fetch(`${API_BASE}/api/pipeline/board`, {
           headers: { Authorization: `Bearer ${getToken()}` },
         });
@@ -514,7 +518,37 @@ const StageBased = () => {
         const custInBoard = allColumns.find(
           (c: any) => c.id === selectedDeal.customerId,
         );
-        const quotationId = custInBoard?.quotations?.[0]?.id;
+        let quotationId = custInBoard?.quotations?.[0]?.id;
+
+        // ถ้ายังไม่มี quotation ให้สร้างใหม่อัตโนมัติ
+        if (!quotationId) {
+          const createRes = await fetch(`${API_BASE}/api/pipeline/move`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${getToken()}`,
+            },
+            body: JSON.stringify({
+              customerId: selectedDeal.customerId,
+              toStatus: uiToApi(currentStage),
+              quotationPrice: 0,
+            }),
+          });
+          if (createRes.ok) {
+            const boardRes2 = await fetch(`${API_BASE}/api/pipeline/board`, {
+              headers: { Authorization: `Bearer ${getToken()}` },
+            });
+            const boardData2 = await boardRes2.json();
+            const allCols2 = [
+              ...(boardData2.columns?.CONTACTED || []),
+              ...(boardData2.columns?.NEGOTIATING || []),
+              ...(boardData2.columns?.QUOTATION || []),
+              ...(boardData2.columns?.CLOSED || []),
+            ];
+            const cust2 = allCols2.find((c: any) => c.id === selectedDeal.customerId);
+            quotationId = cust2?.quotations?.[0]?.id;
+          }
+        }
 
         if (quotationId) {
           for (const file of pendingFiles) {
@@ -528,6 +562,8 @@ const StageBased = () => {
           }
         }
         setPendingFiles([]);
+        // clear pending files UI
+        setSelectedDeal((prev) => prev ? { ...prev, files: [] } : prev);
       }
 
       toast.success("บันทึกข้อมูลสำเร็จ");
@@ -1410,60 +1446,77 @@ const StageBased = () => {
               <div>
                 <Label>แนบไฟล์</Label>
                 <div className="space-y-2">
-                  {selectedDeal?.files && selectedDeal.files.length > 0 && (
+                  {/* ไฟล์จาก DB */}
+                  {selectedDeal?._dbFiles && selectedDeal._dbFiles.length > 0 && (
                     <div className="space-y-1">
-                      {selectedDeal.files.map((f, idx) => {
-                        const ext = f.split(".").pop()?.toLowerCase() || "";
-                        const icon = [
-                          "mp3",
-                          "wav",
-                          "m4a",
-                          "aac",
-                          "ogg",
-                        ].includes(ext)
-                          ? "🎧"
-                          : ["mp4", "mov", "avi", "mkv"].includes(ext)
-                            ? "🎥"
-                            : ["jpg", "jpeg", "png", "gif"].includes(ext)
-                              ? "🖼️"
-                              : ["pdf"].includes(ext)
-                                ? "📄"
-                                : ["doc", "docx"].includes(ext)
-                                  ? "📝"
-                                  : ["xls", "xlsx"].includes(ext)
-                                    ? "📊"
-                                    : ["zip", "rar"].includes(ext)
-                                      ? "🗂️"
-                                      : "📁";
+                      {selectedDeal._dbFiles.map((f: any) => {
+                        const ext = f.fileName?.split(".").pop()?.toLowerCase() || "";
+                        const icon = ["mp3","wav","m4a","aac","ogg"].includes(ext) ? "🎧"
+                          : ["mp4","mov","avi","mkv"].includes(ext) ? "🎥"
+                          : ["jpg","jpeg","png","gif"].includes(ext) ? "🖼️"
+                          : ["pdf"].includes(ext) ? "📄"
+                          : ["doc","docx"].includes(ext) ? "📝"
+                          : ["xls","xlsx"].includes(ext) ? "📊"
+                          : ["zip","rar"].includes(ext) ? "🗂️" : "📁";
+                        const quotationId = selectedDeal.quotations?.[0]?.id;
                         return (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm"
-                          >
+                          <div key={f.id} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
                             <span className="flex items-center gap-2 truncate">
                               <span>{icon}</span>
-                              <span className="truncate text-foreground">
-                                {f}
-                              </span>
+                              <span className="truncate text-foreground">{f.fileName}</span>
                             </span>
-                            <button
-                              onClick={() => {
-                                if (selectedDeal) {
+                            <div className="flex gap-1 ml-2 flex-shrink-0">
+                              {quotationId && (
+                                <button
+                                  onClick={(e) => handleDownloadFile(quotationId, f.id, f.fileName, e)}
+                                  className="text-blue-500 hover:text-blue-700 text-xs px-1"
+                                  title="ดาวน์โหลด"
+                                >⬇</button>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  if (!quotationId) return;
+                                  await fetch(`${API_BASE}/api/quotations/${quotationId}/files/${f.id}`, {
+                                    method: "DELETE",
+                                    headers: { Authorization: `Bearer ${getToken()}` },
+                                  });
                                   setSelectedDeal({
                                     ...selectedDeal,
-                                    files: selectedDeal.files?.filter(
-                                      (_, i) => i !== idx,
-                                    ),
+                                    _dbFiles: selectedDeal._dbFiles?.filter((x: any) => x.id !== f.id),
                                   });
-                                }
-                              }}
-                              className="ml-2 text-muted-foreground hover:text-destructive flex-shrink-0"
-                            >
-                              ×
-                            </button>
+                                }}
+                                className="text-muted-foreground hover:text-destructive"
+                              >×</button>
+                            </div>
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+                  {/* ไฟล์ที่เพิ่งเลือก (pending) */}
+                  {selectedDeal?.files && selectedDeal.files.length > 0 && (
+                    <div className="space-y-1">
+                      {selectedDeal.files.map((f, idx) => (
+                        <div key={idx} className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-md text-sm border border-blue-200">
+                          <span className="flex items-center gap-2 truncate">
+                            <span>📎</span>
+                            <span className="truncate text-foreground">{f} <span className="text-blue-500 text-xs">(รอบันทึก)</span></span>
+                          </span>
+                          <button
+                            onClick={() => {
+                              if (selectedDeal) {
+                                const idx2 = selectedDeal.files?.indexOf(f) ?? -1;
+                                setPendingFiles((prev) => prev.filter((_, i) => i !== idx2));
+                                setSelectedDeal({
+                                  ...selectedDeal,
+                                  files: selectedDeal.files?.filter((_, i) => i !== idx),
+                                });
+                              }
+                            }}
+                            className="ml-2 text-muted-foreground hover:text-destructive flex-shrink-0"
+                          >×</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                   <Button
@@ -1480,9 +1533,7 @@ const StageBased = () => {
                           (e.target as HTMLInputElement).files || [],
                         );
                         if (picked.length === 0) return;
-                        // เก็บ File object จริงสำหรับ upload ทุก stage
                         setPendingFiles((prev) => [...prev, ...picked]);
-                        // เก็บชื่อไว้แสดงใน UI
                         if (selectedDeal) {
                           setSelectedDeal({
                             ...selectedDeal,
