@@ -577,15 +577,13 @@ const StageBased = () => {
       }
 
       toast.success("บันทึกข้อมูลสำเร็จ");
-      await fetchBoard();
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || "บันทึกไม่สำเร็จ");
     }
 
     setIsDialogOpen(false);
-    // fetch อีกครั้งหลังปิด dialog เพื่อให้ข้อมูลล่าสุด
-    setTimeout(() => fetchBoard(), 500);
+    await fetchBoard();
   };
 
   const handleDownloadFile = async (
@@ -804,6 +802,29 @@ const StageBased = () => {
             <div className="text-xs text-muted-foreground pt-2 border-t border-border/50">
               วันที่เริ่มต้น:{" "}
               {format(deal.startDate, "dd MMM yyyy", { locale: th })}
+            </div>
+          )}
+
+          {/* ✅ แสดงไฟล์แนบสำหรับ contacted และ negotiation */}
+          {(deal.stage === "contacted" || deal.stage === "negotiation") &&
+            deal._dbFiles && deal._dbFiles.length > 0 && (
+            <div className="pt-2 border-t border-border/50 space-y-1">
+              {deal._dbFiles.slice(0, 3).map((f: any) => {
+                const ext = f.fileName?.split(".").pop()?.toLowerCase() || "";
+                const icon = ["jpg","jpeg","png","gif"].includes(ext) ? "🖼️"
+                  : ["pdf"].includes(ext) ? "📄"
+                  : ["doc","docx"].includes(ext) ? "📝"
+                  : "📁";
+                return (
+                  <div key={f.id} className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
+                    <span>{icon}</span>
+                    <span className="truncate">{f.fileName}</span>
+                  </div>
+                );
+              })}
+              {deal._dbFiles.length > 3 && (
+                <div className="text-xs text-muted-foreground">+{deal._dbFiles.length - 3} ไฟล์</div>
+              )}
             </div>
           )}
 
