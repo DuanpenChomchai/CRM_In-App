@@ -249,13 +249,22 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      // โหลด files จาก DB และล้างข้อมูลรอบเก่าออกสำหรับ contacted ซื้อซ้ำ
+      // โหลด files จาก DB และกรองเฉพาะ quotations ของรอบปัจจุบัน
       const withFiles = mapped.map((d) => {
-        // ✅ contacted รอบซื้อซ้ำ (purchaseCount > 0) → ล้าง quotations/ไฟล์/ราคาของรอบเก่าออก
-        const isRepeatContacted = d.stage === "contacted" && (d.purchaseCount ?? 0) > 0;
-        if (isRepeatContacted) {
-          return { ...d, quotations: [], quotationFiles: [], _dbFiles: [], priceOffered: undefined, terms: undefined };
+        // ✅ contacted รอบซื้อซ้ำ → เช็คว่า quotation ล่าสุดเป็นของรอบใหม่หรือเก่า
+        // ถ้า quotation ถูกสร้างก่อน closedDeal ล่าสุด = ของรอบเก่า → ล้างออก
+        if (d.stage === "contacted" && (d.purchaseCount ?? 0) > 0) {
+          const raw = (data.columns.CONTACTED || []).find((c: any) => c.id === d.customerId);
+          const latestQDate = raw?.quotations?.[0]?.createdAt ? new Date(raw.quotations[0].createdAt) : null;
+          const latestClosedDate = raw?.closedDeals?.[0]?.createdAt ? new Date(raw.closedDeals[0].createdAt) : null;
+
+          // ถ้าไม่มี quotation เลย หรือ quotation เก่ากว่า closedDeal → ล้าง (รอบใหม่ยังไม่มีข้อมูล)
+          const isOldRoundData = !latestQDate || (latestClosedDate && latestQDate <= latestClosedDate);
+          if (isOldRoundData) {
+            return { ...d, quotations: [], quotationFiles: [], _dbFiles: [], priceOffered: undefined, terms: undefined };
+          }
         }
+        // ปกติ — ดึงไฟล์จาก quotations ของรอบปัจจุบัน
         const allFiles = (d.quotations || []).flatMap((q: any) => q.files || []);
         return allFiles.length > 0
           ? { ...d, quotationFiles: allFiles.map((f: any) => f.fileName), _dbFiles: allFiles }
@@ -334,10 +343,11 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    // ✅ contacted รอบซื้อซ้ำ — ข้อมูลถูกล้างมาแล้วตั้งแต่ fetchBoard ไม่ต้องล้างซ้ำ
+    // ✅ ล้างข้อมูลรอบเก่าเฉพาะตอนที่ยังไม่มี quotations ของรอบใหม่
+    // (ถ้า deal.quotations ว่าง แปลว่าถูกล้างมาจาก fetchBoard แล้ว = รอบเก่า)
     const isRepeatRound = stage === "contacted"
       && (deal.purchaseCount ?? 0) > 0
-      && (!deal.propertyType || deal.propertyType === "-" || deal.propertyType.trim() === "");
+      && (!deal.quotations || deal.quotations.length === 0);
     setSelectedDeal({
       ...deal,
       propertyType: isRepeatRound ? "" : deal.propertyType,
