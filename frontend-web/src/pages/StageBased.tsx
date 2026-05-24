@@ -148,6 +148,20 @@ const StageBased = () => {
       });
       if (!res.ok) throw new Error("Delete failed");
       toast.success("ลบใบเสนอราคาเรียบร้อยแล้ว");
+
+      if (selectedDeal) {
+        const updatedQuotations = (selectedDeal.quotations || []).filter(
+          (q: any) => q.id !== deleteTargetQuotation.id
+        );
+        const newLatestQ = updatedQuotations[0];
+        setSelectedDeal({
+          ...selectedDeal,
+          quotations: updatedQuotations,
+          priceOffered: newLatestQ ? Number(newLatestQ.totalAmount || 0) : undefined,
+          terms: newLatestQ ? newLatestQ.terms : undefined,
+        });
+      }
+
       fetchBoard();
     } catch {
       toast.error("ลบใบเสนอราคาล้มเหลว");
