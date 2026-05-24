@@ -467,15 +467,17 @@ export const repeatPurchase = async (req: AuthRequest, res: Response) => {
       // ลบไฟล์แนบทั่วไปของรอบเก่าออก
       await (tx as any).customerFile.deleteMany({ where: { customerId: id } });
 
-      // Reset status + ล้างประเภท/งบ
-      await tx.customer.update({
-        where: { id },
-        data: {
-          mainStatus: "NEW",
-          productType: null,
-          priceBudget: null,
-        } as any,
-      });
+        // Reset status + ล้างประเภท/งบ/อสังหาเดิม + ล้างพนักงานขายเพื่อให้ต้องมอบหมายใหม่
+        await tx.customer.update({
+          where: { id },
+          data: {
+            mainStatus: "NEW",
+            productType: null,
+            priceBudget: null,
+            interestedPropertyId: null,
+            saleId: null,
+          } as any,
+        });
     });
 
     return res.json({ ok: true, message: "เตรียมการซื้อซ้ำเรียบร้อย สินค้ารอการจัดสรรเซลล์ใหม่ที่เมนูลูกค้า" });

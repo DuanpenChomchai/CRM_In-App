@@ -222,7 +222,7 @@ const StageBased = () => {
             customerId: c.id,
             customerName: c.name || "-",
             phone: c.tel ?? c.tol ?? "-",
-            propertyType: c.productType ?? c.interestedProperty?.type ?? "-",
+            propertyType: c.productType ?? c.interestedProperty?.type ?? "",
             budget: Number(c.priceBudget || 0),
             stage: apiToUi(apiStage),
             assignedSales: c.sale?.name,
