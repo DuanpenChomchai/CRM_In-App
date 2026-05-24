@@ -126,16 +126,23 @@ const StageBased = () => {
     );
   };
 
-  const handleDeleteQuotation = async (
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteTargetQuotation, setDeleteTargetQuotation] = useState<{ id: number; num: string } | null>(null);
+
+  const handleDeleteQuotation = (
     qId: number,
     quotationNumber: string,
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
-    if (!window.confirm(`ยืนยันการลบใบเสนอราคา ${quotationNumber}?`)) return;
+    setDeleteTargetQuotation({ id: qId, num: quotationNumber });
+    setIsDeleteConfirmOpen(true);
+  };
 
+  const confirmDeleteQuotation = async () => {
+    if (!deleteTargetQuotation) return;
     try {
-      const res = await fetch(`${API_BASE}/api/quotations/${qId}`, {
+      const res = await fetch(`${API_BASE}/api/quotations/${deleteTargetQuotation.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${getToken()}` },
       });
@@ -144,8 +151,12 @@ const StageBased = () => {
       fetchBoard();
     } catch {
       toast.error("ลบใบเสนอราคาล้มเหลว");
+    } finally {
+      setIsDeleteConfirmOpen(false);
+      setDeleteTargetQuotation(null);
     }
   };
+
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentStage, setCurrentStage] = useState<Deal["stage"]>("contacted");
@@ -1597,6 +1608,52 @@ const StageBased = () => {
                 className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
               >
                 ยืนยันเริ่มรอบใหม่
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* ✅ Confirmation Dialog for Deleting Quotation - Premium Style */}
+        <AlertDialog
+          open={isDeleteConfirmOpen}
+          onOpenChange={setIsDeleteConfirmOpen}
+        >
+          <AlertDialogContent className="rounded-2xl border-stone-200 dark:border-stone-800 shadow-2xl">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-xl font-bold flex items-center gap-2 text-red-600">
+                <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-full">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                ยืนยันการลบใบเสนอราคา
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-base pt-2">
+                คุณแน่ใจหรือไม่ว่าต้องการลบใบเสนอราคาหมายเลข{" "}
+                <span className="font-bold text-foreground">
+                  "{deleteTargetQuotation?.num}"
+                </span>
+                ?
+                <br />
+                <span className="text-sm text-red-500 mt-2 block bg-red-50 dark:bg-red-950/10 p-3 rounded-lg border border-red-100 dark:border-red-900/10">
+                  ⚠️ การดำเนินการนี้ไม่สามารถเรียกคืนได้
+                  และไฟล์แนบที่ผูกอยู่ทั้งหมดจะถูกลบออกจากระบบอย่างถาวร
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-4">
+              <AlertDialogCancel 
+                onClick={() => {
+                  setIsDeleteConfirmOpen(false);
+                  setDeleteTargetQuotation(null);
+                }}
+                className="rounded-xl border-stone-200 hover:bg-stone-100"
+              >
+                ยกเลิก
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDeleteQuotation}
+                className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-500/20 border-none"
+              >
+                ยืนยันการลบ
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
