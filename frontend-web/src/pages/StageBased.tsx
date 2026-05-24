@@ -328,7 +328,19 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    setSelectedDeal({ ...deal });
+    // ✅ ถ้าเป็น contacted รอบซื้อซ้ำ (purchaseCount > 0) → ล้างข้อมูลสินค้า/ราคา/ไฟล์ เพราะเริ่มใหม่
+    const isRepeatRound = stage === "contacted" && (deal.purchaseCount ?? 0) > 0;
+    setSelectedDeal({
+      ...deal,
+      propertyType: isRepeatRound ? "" : deal.propertyType,
+      budget: isRepeatRound ? 0 : deal.budget,
+      priceOffered: isRepeatRound ? undefined : deal.priceOffered,
+      terms: isRepeatRound ? undefined : deal.terms,
+      endDate: isRepeatRound ? undefined : deal.endDate,
+      _dbFiles: isRepeatRound ? [] : deal._dbFiles,
+      files: isRepeatRound ? [] : deal.files,
+      quotations: isRepeatRound ? [] : deal.quotations,
+    });
     setCurrentStage(stage);
     setIsDialogOpen(true);
   };
@@ -780,18 +792,23 @@ const StageBased = () => {
               <Phone className="w-3.5 h-3.5" />
               <span>{deal.phone}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <Home className="w-3.5 h-3.5 text-primary" />
-              <span className="text-muted-foreground">ประเภทอสังหา:</span>
-              <span className="font-medium">{deal.propertyType}</span>
-            </div>
-            <div className="flex items-center gap-2 font-semibold text-primary">
-              <DollarSign className="w-3.5 h-3.5" />
-              <span className="text-muted-foreground font-normal">
-                งบประมาณ:
-              </span>
-              <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
-            </div>
+            {/* ✅ ซื้อซ้ำ (contacted + purchaseCount > 0) → ไม่แสดงประเภท/งบ เพราะยังไม่ได้กรอกรอบใหม่ */}
+            {!(deal.stage === "contacted" && (deal.purchaseCount ?? 0) > 0) && (
+              <>
+                <div className="flex items-center gap-2">
+                  <Home className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-muted-foreground">ประเภทอสังหา:</span>
+                  <span className="font-medium">{deal.propertyType}</span>
+                </div>
+                <div className="flex items-center gap-2 font-semibold text-primary">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  <span className="text-muted-foreground font-normal">
+                    งบประมาณ:
+                  </span>
+                  <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Start Date - Common to Dialog */}
@@ -1263,34 +1280,42 @@ const StageBased = () => {
                 currentStage === "closed") && (
                 <div>
                   <Label>พนักงานขายที่ดูแล</Label>
-                  <Select
-                    disabled={role === "SALE"}
-                    value={selectedDeal?.assignedSales}
-                    onValueChange={(value) => {
-                      if (selectedDeal)
-                        setSelectedDeal({
-                          ...selectedDeal,
-                          assignedSales: value,
-                        });
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="เลือกพนักงานขาย" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {salesList.length > 0 ? (
-                        salesList.map((s) => (
-                          <SelectItem key={s.id} value={s.name}>
-                            {s.name}
+                  {/* ✅ SALE เห็นแค่ชื่อตัวเอง (แก้ไม่ได้), MANAGER/ADMIN เลือกได้ */}
+                  {role === "SALE" ? (
+                    <Input
+                      value={selectedDeal?.assignedSales || "-"}
+                      disabled
+                      className="bg-muted text-muted-foreground"
+                    />
+                  ) : (
+                    <Select
+                      value={selectedDeal?.assignedSales}
+                      onValueChange={(value) => {
+                        if (selectedDeal)
+                          setSelectedDeal({
+                            ...selectedDeal,
+                            assignedSales: value,
+                          });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกพนักงานขาย" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {salesList.length > 0 ? (
+                          salesList.map((s) => (
+                            <SelectItem key={s.id} value={s.name}>
+                              {s.name}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="_none" disabled>
+                            ไม่พบข้อมูลเซลล์
                           </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="_none" disabled>
-                          ไม่พบข้อมูลเซลล์
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               )}
 

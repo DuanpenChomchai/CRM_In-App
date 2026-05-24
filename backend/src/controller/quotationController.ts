@@ -574,6 +574,15 @@ export const uploadQuotationFile = async (req: AuthRequest, res: Response) => {
     const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
     const key = `quotations/${id}/${randomUUID()}.${ext}`;
 
+    // ✅ decode originalname เผื่อ multer encode มาแล้ว แล้ว normalize เป็น UTF-8
+    let safeOriginalName = file.originalname;
+    try {
+      // multer บางครั้ง encode ชื่อมาเป็น latin1 ต้อง decode กลับ
+      safeOriginalName = Buffer.from(file.originalname, "latin1").toString("utf8");
+    } catch {
+      safeOriginalName = file.originalname;
+    }
+
     await s3Client.send(
       new PutObjectCommand({
         Bucket: BUCKET_NAME as string,
@@ -586,7 +595,7 @@ export const uploadQuotationFile = async (req: AuthRequest, res: Response) => {
     const saved = await (prisma as any).quotationFile.create({
       data: {
         quotationId: id,
-        fileName: file.originalname,
+        fileName: safeOriginalName, // ✅ ชื่อภาษาไทยถูกต้อง
         fileKey: key,
         fileMime: file.mimetype,
         fileSize: file.size,
@@ -641,9 +650,11 @@ export const downloadQuotationFile = async (req: AuthRequest, res: Response) => 
     );
 
     res.setHeader("Content-Type", file.fileMime || "application/octet-stream");
+    // ✅ RFC 5987 — รองรับชื่อไฟล์ภาษาไทย/ภาษาอังกฤษ/อักขระพิเศษทุกชนิด
+    const encodedName = encodeURIComponent(file.fileName).replace(/'/g, "%27");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${encodeURIComponent(file.fileName)}"`,
+      `attachment; filename="${file.fileName.replace(/[^\x20-\x7E]/g, "_")}"; filename*=UTF-8''${encodedName}`,
     );
     (obj.Body as any).pipe(res);
   } catch (err) {
