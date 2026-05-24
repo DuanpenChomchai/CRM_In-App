@@ -10,6 +10,16 @@
     "preview": {
       "distribution": "internal"
     },
+    "apk": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_HOST_IOS": "https://api.crminapp.online",
+        "EXPO_PUBLIC_API_HOST_ANDROID": "https://api.crminapp.online",
+        "EXPO_PUBLIC_API_HOST_DEVICE": "https://api.crminapp.online"
+      }
+    },
     "production": {}
   },
   "submit": {
