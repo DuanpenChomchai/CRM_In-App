@@ -313,77 +313,23 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       if (toStatus === "QUOTATION") {
         const { quotationPrice, terms, endDate } = req.body;
 
-        const existing = isSameStage
-          ? await (tx as any).quotation.findFirst({
-              where: { customerId: id },
-              orderBy: { createdAt: "desc" },
-            })
-          : null;
+        // ✅ อัปเดต quotation ที่มีอยู่แล้วเท่านั้น ไม่สร้างอัตโนมัติ
+        // การสร้างใบเสนอราคาให้ทำผ่านหน้า "รายการใบเสนอราคา" เอง
+        const existing = await (tx as any).quotation.findFirst({
+          where: { customerId: id },
+          orderBy: { createdAt: "desc" },
+        });
 
         if (existing) {
           await (tx as any).quotation.update({
             where: { id: existing.id },
             data: {
-              totalAmount:
-                quotationPrice !== undefined
-                  ? Number(quotationPrice)
-                  : existing.totalAmount,
+              totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : existing.totalAmount,
               terms: terms !== undefined ? terms : existing.terms,
               endDate: endDate ? new Date(endDate) : existing.endDate,
               note: note !== undefined ? note : existing.note,
             },
           });
-        } else {
-          const cust = await (tx as any).customer.findUnique({
-            where: { id },
-            select: { interestedPropertyId: true },
-          });
-
-          const now = new Date();
-          const y = now.getFullYear();
-          const mo = String(now.getMonth() + 1).padStart(2, "0");
-          const d = String(now.getDate()).padStart(2, "0");
-          const prefix = `QUE-${y}${mo}${d}`;
-          const countToday = await (tx as any).quotation.count({
-            where: { quotationNumber: { startsWith: prefix } },
-          });
-          const quotationNumber = `${prefix}-${String(countToday + 1).padStart(3, "0")}`;
-
-          if (cust?.interestedPropertyId) {
-            await (tx as any).quotation.create({
-              data: {
-                quotationNumber,
-                customerId: id,
-                propertyId: cust.interestedPropertyId,
-                createdById: me.id,
-                totalAmount: Number(quotationPrice) || 0,
-                terms: terms || null,
-                endDate: endDate ? new Date(endDate) : null,
-                note: note || null,
-                status: "DRAFT",
-              },
-            });
-          } else {
-            // ถ้าไม่มี interestedProperty ให้หา property แรกที่มีใน DB มาใช้แทน
-            const firstProperty = await (tx as any).property.findFirst({
-              select: { id: true },
-            });
-            if (firstProperty) {
-              await (tx as any).quotation.create({
-                data: {
-                  quotationNumber,
-                  customerId: id,
-                  propertyId: firstProperty.id,
-                  createdById: me.id,
-                  totalAmount: Number(quotationPrice) || 0,
-                  terms: terms || null,
-                  endDate: endDate ? new Date(endDate) : null,
-                  note: note || null,
-                  status: "DRAFT",
-                },
-              });
-            }
-          }
         }
       }
 
