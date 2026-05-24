@@ -50,6 +50,7 @@ export default function CallScreen() {
 
   const [phase, setPhase] = useState<CallPhase>("ringing");
   const [seconds, setSeconds] = useState(0);
+  const secondsRef = useRef(0); // ─── เก็บ seconds ล่าสุดให้ socket listener อ่านได้เสมอ
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
 
@@ -379,8 +380,8 @@ export default function CallScreen() {
         if (isIncoming !== "true" && !messageSentRef.current) {
           messageSentRef.current = true;
           try {
-            const finalDuration = payload.durationSec ?? seconds;
-            const effectiveRoomId = roomId ?? (customerId ? `cust:${customerId}` : "general");
+            const finalDuration = payload.durationSec ?? secondsRef.current;
+            const effectiveRoomId = roomId || (customerId ? `cust:${customerId}` : "general");
             
             const chatText = finalDuration > 0
               ? `[CALL_ENDED]:${finalDuration}`
@@ -432,7 +433,11 @@ export default function CallScreen() {
   // ─── call timer ───
   useEffect(() => {
     if (phase !== "active") return;
-    const iv = setInterval(() => setSeconds((s) => s + 1), 1000);
+    const iv = setInterval(() => setSeconds((s) => {
+      const next = s + 1;
+      secondsRef.current = next; // sync ref ให้ล่าสุดเสมอ
+      return next;
+    }), 1000);
     return () => clearInterval(iv);
   }, [phase]);
 
