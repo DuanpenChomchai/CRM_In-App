@@ -164,11 +164,23 @@ export const createQuotation = async (req: AuthRequest, res: Response) => {
     const d = String(now.getDate()).padStart(2, "0");
     const prefix = `QUE-${y}${m}${d}`;
 
-    const countToday = await prisma.quotation.count({
+    // หาลำดับใบเสนอราคาล่าสุดของวันนี้ โดยดึงตัวที่มีเลขท้ายสุดมาบวกหนึ่ง
+    const latestQuotationToday = await prisma.quotation.findFirst({
       where: { quotationNumber: { startsWith: prefix } },
+      orderBy: { quotationNumber: 'desc' },
     });
 
-    const quotationNumber = `${prefix}-${String(countToday + 1).padStart(3, "0")}`;
+    let nextSeq = 1;
+    if (latestQuotationToday) {
+      const parts = latestQuotationToday.quotationNumber.split("-");
+      const lastPart = parts[parts.length - 1];
+      const currentSeq = parseInt(lastPart, 10);
+      if (!isNaN(currentSeq)) {
+        nextSeq = currentSeq + 1;
+      }
+    }
+
+    const quotationNumber = `${prefix}-${String(nextSeq).padStart(3, "0")}`;
 
     const created = await prisma.quotation.create({
       data: {
