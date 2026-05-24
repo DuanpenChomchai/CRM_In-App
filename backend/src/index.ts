@@ -40,8 +40,8 @@ async function main() {
   // =========================
   // Body parsers
   // =========================
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
   // =========================
   // ✅ Request logger (ช่วย debug)

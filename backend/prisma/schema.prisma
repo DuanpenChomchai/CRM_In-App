@@ -241,6 +241,8 @@ model Customer {
 
   pushTokens PushToken[]
 
+   customerFiles CustomerFile[] 
+
   mainStatus CustomerStatus @default(NEW)
 
   createdAt DateTime @default(now())
@@ -517,6 +519,7 @@ model PushToken {
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  
 
   @@index([userId])
   @@index([customerId])
@@ -543,4 +546,20 @@ model QuotationFile {
   uploadedAt  DateTime  @default(now())
 
   @@index([quotationId])
+}
+
+// ===========================================================
+// CUSTOMER FILE (ไฟล์แนบทั่วไปของลูกค้า ไม่เกี่ยวกับใบเสนอราคา)
+// ===========================================================
+model CustomerFile {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fileName   String
+  fileKey    String
+  fileMime   String?
+  fileSize   Int?
+  uploadedAt DateTime @default(now())
+
+  @@index([customerId])
 }

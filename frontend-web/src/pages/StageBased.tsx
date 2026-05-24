@@ -249,11 +249,17 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      // โหลด files จาก DB (quotations[x].files)
+      // โหลด customerFiles (ไฟล์แนบทั่วไป ไม่เกี่ยวกับ quotation)
       const withFiles = mapped.map((d) => {
-        const allFiles = (d.quotations || []).flatMap((q: any) => q.files || []);
-        return allFiles.length > 0
-          ? { ...d, quotationFiles: allFiles.map((f: any) => f.fileName), _dbFiles: allFiles }
+        const raw = [
+          ...(data.columns.CONTACTED || []),
+          ...(data.columns.NEGOTIATING || []),
+          ...(data.columns.QUOTATION || []),
+          ...(data.columns.CLOSED || []),
+        ].find((c: any) => (c.dummyId || c.id) === d.id || c.id === d.customerId);
+        const customerFiles = (raw as any)?.customerFiles || [];
+        return customerFiles.length > 0
+          ? { ...d, _dbFiles: customerFiles }
           : d;
       });
       setDeals(withFiles);
@@ -513,52 +519,16 @@ const StageBased = () => {
 
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
 
-      // 3. อัปโหลดไฟล์จริงเข้า MinIO
+      // 3. อัปโหลดไฟล์แนบทั่วไป (ไม่เกี่ยวกับ quotation)
       if (pendingFiles.length > 0) {
-        // ✅ ใช้ quotationId จาก selectedDeal ที่มีอยู่แล้ว ไม่ต้อง fetch board ซ้ำ
-        let quotationId = selectedDeal.quotations?.[0]?.id;
-
-        // ถ้ายังไม่มี quotation ให้สร้างใหม่ผ่าน move endpoint
-        if (!quotationId) {
-          const createRes = await fetch(`${API_BASE}/api/pipeline/move`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${getToken()}`,
-            },
-            body: JSON.stringify({
-              customerId: selectedDeal.customerId,
-              toStatus: uiToApi(currentStage),
-              quotationPrice: 0,
-            }),
+        for (const file of pendingFiles) {
+          const fd = new FormData();
+          fd.append("file", file);
+          await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}/files`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${getToken()}` },
+            body: fd,
           });
-          if (createRes.ok) {
-            // fetch เฉพาะ customer นี้เพื่อหา quotationId ใหม่
-            const boardRes2 = await fetch(`${API_BASE}/api/pipeline/board`, {
-              headers: { Authorization: `Bearer ${getToken()}` },
-            });
-            const boardData2 = await boardRes2.json();
-            const allCols2 = [
-              ...(boardData2.columns?.CONTACTED || []),
-              ...(boardData2.columns?.NEGOTIATING || []),
-              ...(boardData2.columns?.QUOTATION || []),
-              ...(boardData2.columns?.CLOSED || []),
-            ];
-            const cust2 = allCols2.find((c: any) => c.id === selectedDeal.customerId);
-            quotationId = cust2?.quotations?.[0]?.id;
-          }
-        }
-
-        if (quotationId) {
-          for (const file of pendingFiles) {
-            const fd = new FormData();
-            fd.append("file", file);
-            await fetch(`${API_BASE}/api/quotations/${quotationId}/files`, {
-              method: "POST",
-              headers: { Authorization: `Bearer ${getToken()}` },
-              body: fd,
-            });
-          }
         }
         setPendingFiles([]);
         setSelectedDeal((prev) => prev ? { ...prev, files: [] } : prev);
@@ -575,7 +545,7 @@ const StageBased = () => {
   };
 
   const handleDownloadFile = async (
-    quotationId: number,
+    customerId: number,
     fileId: number,
     fileName: string,
     e: React.MouseEvent,
@@ -583,7 +553,7 @@ const StageBased = () => {
     e.stopPropagation();
     try {
       const res = await fetch(
-        `${API_BASE}/api/quotations/${quotationId}/files/${fileId}/download`,
+        `${API_BASE}/api/customers/${customerId}/files/${fileId}/download`,
         { headers: { Authorization: `Bearer ${getToken()}` } },
       );
       if (!res.ok) { toast.error("ดาวน์โหลดไม่สำเร็จ"); return; }
@@ -1485,7 +1455,6 @@ const StageBased = () => {
                           : ["doc","docx"].includes(ext) ? "📝"
                           : ["xls","xlsx"].includes(ext) ? "📊"
                           : ["zip","rar"].includes(ext) ? "🗂️" : "📁";
-                        const quotationId = selectedDeal.quotations?.[0]?.id;
                         return (
                           <div key={f.id} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
                             <span className="flex items-center gap-2 truncate">
@@ -1493,17 +1462,14 @@ const StageBased = () => {
                               <span className="truncate text-foreground">{f.fileName}</span>
                             </span>
                             <div className="flex gap-1 ml-2 flex-shrink-0">
-                              {quotationId && (
-                                <button
-                                  onClick={(e) => handleDownloadFile(quotationId, f.id, f.fileName, e)}
-                                  className="text-blue-500 hover:text-blue-700 text-xs px-1"
-                                  title="ดาวน์โหลด"
-                                >⬇</button>
-                              )}
+                              <button
+                                onClick={(e) => handleDownloadFile(selectedDeal.customerId, f.id, f.fileName, e)}
+                                className="text-blue-500 hover:text-blue-700 text-xs px-1"
+                                title="ดาวน์โหลด"
+                              >⬇</button>
                               <button
                                 onClick={async () => {
-                                  if (!quotationId) return;
-                                  await fetch(`${API_BASE}/api/quotations/${quotationId}/files/${f.id}`, {
+                                  await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}/files/${f.id}`, {
                                     method: "DELETE",
                                     headers: { Authorization: `Bearer ${getToken()}` },
                                   });

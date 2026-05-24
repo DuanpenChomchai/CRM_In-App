@@ -12,6 +12,13 @@ import {
   getManagerChats,
 } from "../controller/customersController";
 
+import {
+  uploadCustomerFile,
+  downloadCustomerFile,
+  deleteCustomerFile,
+  upload,
+} from "../controller/CustomerfileController ";
+
 import { verifyToken, requireRoles } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -94,6 +101,31 @@ router.delete(
   verifyToken,
   requireRoles("MANAGER", "ADMIN"),
   deleteCustomer
+);
+
+/** ✅ อัปโหลดไฟล์แนบทั่วไปของลูกค้า */
+router.post(
+  "/:customerId/files",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  upload.single("file"),
+  uploadCustomerFile
+);
+
+/** ✅ ดาวน์โหลดไฟล์แนบทั่วไปของลูกค้า */
+router.get(
+  "/:customerId/files/:fileId/download",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  downloadCustomerFile
+);
+
+/** ✅ ลบไฟล์แนบทั่วไปของลูกค้า */
+router.delete(
+  "/:customerId/files/:fileId",
+  verifyToken,
+  requireRoles("SALE", "MANAGER", "ADMIN"),
+  deleteCustomerFile
 );
 
 export default router;

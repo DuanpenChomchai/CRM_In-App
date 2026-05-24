@@ -29,8 +29,8 @@ export const upsertAboutTeam = async (req: AuthRequest, res: Response) => {
     const body = req.body;
 
     // Validate โครงสร้างคร่าวๆ
-    if (!body?.dev1 || !body?.dev2 || !body?.advisor) {
-      return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน (dev1, dev2, advisor)" });
+    if (!body?.dev1?.name || !body?.dev2?.name || !body?.advisor?.name) {
+      return res.status(400).json({ message: "ข้อมูลไม่ครบถ้วน (dev1.name, dev2.name, advisor.name)" });
     }
 
     const setting = await prisma.appSetting.upsert({

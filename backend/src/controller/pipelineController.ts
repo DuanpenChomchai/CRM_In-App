@@ -94,6 +94,12 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
             take: 1,
           } as any,
 
+          // ✅ ไฟล์แนบทั่วไปของลูกค้า (ไม่เกี่ยวกับ quotation)
+          customerFiles: {
+            select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
+            orderBy: { uploadedAt: "desc" },
+          } as any,
+
           // ✅ นับจำนวน closedDeals เพื่อให้ frontend รู้ว่าลูกค้าเคยซื้อกี่รอบ (purchaseCount)
           _count: {
             select: { closedDeals: true } as any,
