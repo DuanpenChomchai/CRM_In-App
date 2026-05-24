@@ -50,20 +50,25 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           interestedProperty: { select: { id: true, name: true, type: true } } as any,
 
           quotations: {
-            where: { status: "APPROVED" },
             select: {
               id: true,
               quotationNumber: true,
               totalAmount: true,
+              terms: true,
+              endDate: true,
               status: true,
               createdAt: true,
+              files: {
+                select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
+                orderBy: { uploadedAt: "desc" },
+              },
             },
             orderBy: { createdAt: "desc" },
-            take: 5,
+            // ✅ ไม่จำกัด take เพื่อให้ card ซื้อซ้ำเห็นประวัติ quotation ครบทุกรอบ
           },
 
           negotiations: {
-            select: { id: true, status: true, stateDate: true, createdAt: true },
+            select: { id: true, status: true, stateDate: true, endDate: true, note: true, createdAt: true },
             orderBy: { createdAt: "desc" },
             take: 1,
           },
@@ -80,11 +85,24 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
             take: 50,
           },
 
+
+
           // ✅ schema ใหม่: ใช้ contactedLogs เท่านั้น (เป็น array)
           contactedLogs: {
-            select: { id: true, status: true, stateDate: true, createdAt: true } as any,
+            select: { id: true, status: true, stateDate: true, endDate: true, note: true, createdAt: true } as any,
             orderBy: { createdAt: "desc" },
             take: 1,
+          } as any,
+
+          // ✅ ไฟล์แนบทั่วไปของลูกค้า (ไม่เกี่ยวกับ quotation)
+          customerFiles: {
+            select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
+            orderBy: { uploadedAt: "desc" },
+          } as any,
+
+          // ✅ นับจำนวน closedDeals เพื่อให้ frontend รู้ว่าลูกค้าเคยซื้อกี่รอบ (purchaseCount)
+          _count: {
+            select: { closedDeals: true } as any,
           } as any,
         },
       }),
@@ -122,12 +140,20 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
       CLOSED: [],
     };
 
-    for (const c of customers) {
+    for (const _c of customers) {
+      const c = _c as any;
       const isCurrentlyClosed = c.mainStatus === "CLOSED";
       const key = toPipelineKey(String(c.mainStatus));
 
       // 1. นำเข้าสเตจปัจจุบัน (ถ้าไม่ใช่ CLOSED)
       if (key && !isCurrentlyClosed) {
+        const latestClosed = c.closedDeals?.[0];
+        if (latestClosed) {
+          c.quotations = (c.quotations ?? []).filter((q: any) => new Date(q.createdAt) > new Date(latestClosed.createdAt));
+          c.negotiations = (c.negotiations ?? []).filter((n: any) => new Date(n.createdAt) > new Date(latestClosed.createdAt));
+          c.contactedLogs = (c.contactedLogs ?? []).filter((l: any) => new Date(l.createdAt) > new Date(latestClosed.createdAt));
+          c.customerFiles = (c.customerFiles ?? []).filter((f: any) => new Date(f.uploadedAt) > new Date(latestClosed.createdAt));
+        }
         columns[key].push(c);
       }
 
@@ -140,11 +166,15 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
           const isHistorical = !(isCurrentlyClosed && index === 0);
           
+          // ✅ สำหรับการ์ดประวัติศาสตร์ ให้ฟิลเตอร์ใบเสนอราคาที่ถูกสร้างขึ้นก่อนดีลปิดรอบนั้นๆ
+          const quotationsForCard = (c.quotations ?? []).filter((q: any) => new Date(q.createdAt) <= new Date(cd.createdAt));
+          
           columns.CLOSED.push({
             ...c,
             // ID ปลอมเพื่อให้หน้าบ้านมองเห็นเป็นคนละการ์ด
             dummyId: isHistorical ? `history_${c.id}_${cd.id}` : c.id,
             closedDeals: [cd], // ส่งไปแค่อันเดียวให้ Frontend รู้ว่าการ์ดนี้คือดีลนี้
+            quotations: quotationsForCard, // ✅ ส่ง quotations ทั้งหมดเพื่อแสดงข้อมูลสินค้า
             isHistorical, // flag แจ้ง Frontend
             roundNumber: c.closedDeals.length - index, // ลำดับครั้งที่ซื้อ
           });
@@ -206,7 +236,7 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
     // SALE ทำได้เฉพาะลูกค้าของตัวเอง
     const currentCustomer = await prisma.customer.findUnique({
       where: { id },
-      select: { saleId: true, mainStatus: true },
+      select: { saleId: true, mainStatus: true, interestedPropertyId: true },
     });
 
     if (!currentCustomer) {
@@ -234,57 +264,149 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
         data: { mainStatus: toStatus },
       });
 
+      // หาดีลล่าสุดที่ปิดไปแล้ว (เพื่อระบุขอบเขตเวลาของรอบปัจจุบัน)
+      const latestClosed = await tx.closedDeal.findFirst({
+        where: { customerId: id },
+        orderBy: { createdAt: "desc" },
+      });
+
       // เขียนรายละเอียด stage แบบ “เสริม” (ใช้โชว์ badge/history)
       const isSameStage = currentCustomer.mainStatus === toStatus;
 
       if (toStatus === "CONTACTED") {
-        const existing = isSameStage ? await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
+        const validContactedStatuses = ["FOLLOWING_UP", "WAITING_REPLY", "APPOINTED", "NOT_INTERESTED"];
+        const safeContactedStatus = validContactedStatuses.includes(contactedStatus) ? contactedStatus : "FOLLOWING_UP";
+        const existing = isSameStage ? await (tx as any).contacted.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: 'desc' }
+        }) : null;
         if (existing) {
           await (tx as any).contacted.update({
             where: { id: existing.id },
-            data: { status: contactedStatus || existing.status, note: note !== undefined ? note : existing.note },
+            data: {
+              status: validContactedStatuses.includes(contactedStatus) ? contactedStatus : existing.status,
+              note: note !== undefined ? note : existing.note,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : existing.endDate,
+            },
           });
         } else {
           await (tx as any).contacted.create({
-            data: { customerId: id, status: contactedStatus || "FOLLOWING_UP", note: note || null },
+            data: {
+              customerId: id,
+              status: safeContactedStatus,
+              note: note || null,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+            },
           });
         }
       }
 
       if (toStatus === "NEGOTIATING") {
-        const existing = isSameStage ? await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
+        const validNegotiationStatuses = ["NEGOTIATING", "WAITING_CONFIRM", "COUNTER_OFFER", "PAUSED"];
+        const safeNegotiationStatus = validNegotiationStatuses.includes(negotiationStatus) ? negotiationStatus : "NEGOTIATING";
+        const existing = isSameStage ? await (tx as any).negotiation.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: 'desc' }
+        }) : null;
         if (existing) {
           await (tx as any).negotiation.update({
             where: { id: existing.id },
-            data: { status: negotiationStatus || existing.status, note: note !== undefined ? note : existing.note },
+            data: {
+              status: validNegotiationStatuses.includes(negotiationStatus) ? negotiationStatus : existing.status,
+              note: note !== undefined ? note : existing.note,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : existing.endDate,
+            },
           });
         } else {
           await (tx as any).negotiation.create({
-            data: { customerId: id, status: negotiationStatus || "NEGOTIATING", note: note || null },
+            data: {
+              customerId: id,
+              status: safeNegotiationStatus,
+              note: note || null,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+            },
+          });
+        }
+      }
+
+      if (toStatus === "QUOTATION") {
+        const { quotationPrice, terms, endDate } = req.body;
+
+        const existing = await (tx as any).quotation.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: "desc" },
+        });
+
+        if (existing) {
+          await (tx as any).quotation.update({
+            where: { id: existing.id },
+            data: {
+              totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : existing.totalAmount,
+              terms: terms !== undefined ? terms : existing.terms,
+              endDate: endDate ? new Date(endDate) : existing.endDate,
+              note: note !== undefined ? note : existing.note,
+            },
           });
         }
       }
 
       if (toStatus === "CLOSED") {
+        const validDealResults = ["WON", "LOST"];
+        const safeResult = validDealResults.includes(closedResult) ? closedResult : "WON";
+        // ป้องกัน numeric overflow — Decimal(12,2) รับสูงสุด 9,999,999,999.99
+        const MAX_VALUE = 9999999999.99;
+        const rawFinalValue = req.body.finalValue !== undefined ? Number(req.body.finalValue) : null;
+        const safeFinalValue = rawFinalValue !== null && rawFinalValue <= MAX_VALUE ? rawFinalValue : null;
         const existing = isSameStage ? await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
         if (existing) {
           await (tx as any).closedDeal.update({
             where: { id: existing.id },
             data: {
-              result: closedResult || existing.result,
+              result: validDealResults.includes(closedResult) ? closedResult : existing.result,
               note: note !== undefined ? note : existing.note,
-              finalValue: req.body.finalValue !== undefined ? req.body.finalValue : existing.finalValue
+              finalValue: safeFinalValue !== null ? safeFinalValue : existing.finalValue,
+              closingDate: req.body.closingDate ? new Date(req.body.closingDate) : existing.closingDate,
+              endDate: req.body.endDate ? new Date(req.body.endDate) : existing.endDate,
             },
           });
         } else {
           await (tx as any).closedDeal.create({
             data: {
               customerId: id,
-              result: closedResult || "LOST",
+              result: safeResult,
               note: note || null,
-              finalValue: req.body.finalValue || null,
+              finalValue: safeFinalValue,
               userId: me.role === "SALE" ? me.id : null,
-              closingDate: new Date(),
+              closingDate: req.body.closingDate ? new Date(req.body.closingDate) : new Date(),
+              endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+            },
+          });
+        }
+
+        // ✅ อัปเดต quotation ล่าสุดด้วย (ราคาที่เสนอ + terms) เพื่อให้ค่าคงอยู่เมื่อเปิด dialog อีกครั้ง
+        const { quotationPrice, terms } = req.body;
+        const latestQuotation = await (tx as any).quotation.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: "desc" },
+        });
+        if (latestQuotation) {
+          await (tx as any).quotation.update({
+            where: { id: latestQuotation.id },
+            data: {
+              totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : latestQuotation.totalAmount,
+              terms: terms !== undefined ? terms : latestQuotation.terms,
             },
           });
         }
@@ -340,13 +462,22 @@ export const repeatPurchase = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Reset กลับไปเป็น NEW + ปลดเซลล์เก่า (saleId: null) เพื่อให้รอแอดมินหรือระบบจัดสรรใหม่
-    await prisma.customer.update({
-      where: { id },
-      data: {
-        mainStatus: "NEW",
-        saleId: null,
-      },
+    // ✅ Reset กลับไป NEW + ล้างข้อมูลรอบเก่าออกทั้งหมด
+    await prisma.$transaction(async (tx) => {
+      // ลบไฟล์แนบทั่วไปของรอบเก่าออก
+      await (tx as any).customerFile.deleteMany({ where: { customerId: id } });
+
+        // Reset status + ล้างประเภท/งบ/อสังหาเดิม + ล้างพนักงานขายเพื่อให้ต้องมอบหมายใหม่
+        await tx.customer.update({
+          where: { id },
+          data: {
+            mainStatus: "NEW",
+            productType: null,
+            priceBudget: null,
+            interestedPropertyId: null,
+            saleId: null,
+          } as any,
+        });
     });
 
     return res.json({ ok: true, message: "เตรียมการซื้อซ้ำเรียบร้อย สินค้ารอการจัดสรรเซลล์ใหม่ที่เมนูลูกค้า" });

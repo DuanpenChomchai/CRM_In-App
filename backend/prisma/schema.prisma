@@ -241,6 +241,8 @@ model Customer {
 
   pushTokens PushToken[]
 
+   customerFiles CustomerFile[] 
+
   mainStatus CustomerStatus @default(NEW)
 
   createdAt DateTime @default(now())
@@ -325,6 +327,7 @@ model Quotation {
   customer   Customer @relation(fields: [customerId], references: [id])
 
   items QuotationItem[]
+  files QuotationFile[]
 
   // ✅ ใครเป็นคนสร้าง
   createdById Int
@@ -516,7 +519,47 @@ model PushToken {
 
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  
 
   @@index([userId])
+  @@index([customerId])
+}
+
+// ===========================================================
+// APP SETTING (เก็บ config ของระบบ เช่น ข้อมูลทีมพัฒนา)
+// ===========================================================
+model AppSetting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique  // เช่น "about_team"
+  value     String   @db.Text // JSON string
+  updatedAt DateTime @updatedAt
+}
+
+model QuotationFile {
+  id          Int       @id @default(autoincrement())
+  quotationId Int
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileKey     String
+  fileMime    String?
+  fileSize    Int?
+  uploadedAt  DateTime  @default(now())
+
+  @@index([quotationId])
+}
+
+// ===========================================================
+// CUSTOMER FILE (ไฟล์แนบทั่วไปของลูกค้า ไม่เกี่ยวกับใบเสนอราคา)
+// ===========================================================
+model CustomerFile {
+  id         Int      @id @default(autoincrement())
+  customerId Int
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  fileName   String
+  fileKey    String
+  fileMime   String?
+  fileSize   Int?
+  uploadedAt DateTime @default(now())
+
   @@index([customerId])
 }

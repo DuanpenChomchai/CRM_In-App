@@ -1,6 +1,15 @@
 import { Response } from "express";
 import prisma from "../config/prismaclient";
 import { AuthRequest } from "../middlewares/authMiddleware";
+import { randomUUID } from "crypto";
+import s3Client, { BUCKET_NAME } from "../config/minioclient";
+import { PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import multer from "multer";
+
+export const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+});
 
 // กันพังเวลามี decimal/string
 const toNumber = (v: any) => {
@@ -155,11 +164,23 @@ export const createQuotation = async (req: AuthRequest, res: Response) => {
     const d = String(now.getDate()).padStart(2, "0");
     const prefix = `QUE-${y}${m}${d}`;
 
-    const countToday = await prisma.quotation.count({
+    // หาลำดับใบเสนอราคาล่าสุดของวันนี้ โดยดึงตัวที่มีเลขท้ายสุดมาบวกหนึ่ง
+    const latestQuotationToday = await prisma.quotation.findFirst({
       where: { quotationNumber: { startsWith: prefix } },
+      orderBy: { quotationNumber: 'desc' },
     });
 
-    const quotationNumber = `${prefix}-${String(countToday + 1).padStart(3, "0")}`;
+    let nextSeq = 1;
+    if (latestQuotationToday) {
+      const parts = latestQuotationToday.quotationNumber.split("-");
+      const lastPart = parts[parts.length - 1];
+      const currentSeq = parseInt(lastPart, 10);
+      if (!isNaN(currentSeq)) {
+        nextSeq = currentSeq + 1;
+      }
+    }
+
+    const quotationNumber = `${prefix}-${String(nextSeq).padStart(3, "0")}`;
 
     const created = await prisma.quotation.create({
       data: {
@@ -335,15 +356,30 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const PDFDocument = require("pdfkit");
     const path = require("path");
+    const fs = require("fs");
 
-    const fontRegular = path.join(__dirname, "../assets/fonts/Sarabun-Regular.ttf");
-    const fontBold = path.join(__dirname, "../assets/fonts/Sarabun-Bold.ttf");
+    // หา font path รองรับทั้ง dev (src/) และ production (dist/ + src/assets copy)
+    const possibleRoots = [
+      path.join(__dirname, "../assets/fonts"),          // dev: src/controller → src/assets/fonts
+      path.join(__dirname, "../../src/assets/fonts"),   // production: dist/controller → src/assets/fonts
+      path.join(process.cwd(), "src/assets/fonts"),     // fallback จาก working dir
+    ];
+
+    let fontsDir = possibleRoots.find((p) => fs.existsSync(path.join(p, "Sarabun-Regular.ttf")));
+    const fontRegular = fontsDir ? path.join(fontsDir, "Sarabun-Regular.ttf") : null;
+    const fontBold    = fontsDir ? path.join(fontsDir, "Sarabun-Bold.ttf")    : null;
 
     const doc = new PDFDocument({ size: "A4", margin: 50 });
 
-    // Register Thai fonts
-    doc.registerFont("Regular", fontRegular);
-    doc.registerFont("Bold", fontBold);
+    // Register Thai fonts (ถ้ามี) หรือใช้ default
+    if (fontRegular && fontBold) {
+      doc.registerFont("Regular", fontRegular);
+      doc.registerFont("Bold", fontBold);
+    } else {
+      console.warn("[PDF] Thai fonts not found, falling back to Helvetica");
+      doc.registerFont("Regular", "Helvetica");
+      doc.registerFont("Bold", "Helvetica-Bold");
+    }
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
@@ -534,5 +570,107 @@ export const deleteQuotation = async (req: AuthRequest, res: Response) => {
   } catch (err) {
     console.error("deleteQuotation error:", err);
     return res.status(500).json({ message: "ลบใบเสนอราคาล้มเหลว" });
+  }
+};
+
+/** POST /api/quotations/:id/files */
+export const uploadQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) return res.status(400).json({ message: "ไม่พบไฟล์" });
+
+    const ext = (file.originalname.split(".").pop() || "bin").toLowerCase();
+    const key = `quotations/${id}/${randomUUID()}.${ext}`;
+
+    // ✅ decode originalname เผื่อ multer encode มาแล้ว แล้ว normalize เป็น UTF-8
+    let safeOriginalName = file.originalname;
+    try {
+      // multer บางครั้ง encode ชื่อมาเป็น latin1 ต้อง decode กลับ
+      safeOriginalName = Buffer.from(file.originalname, "latin1").toString("utf8");
+    } catch {
+      safeOriginalName = file.originalname;
+    }
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: BUCKET_NAME as string,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+      }),
+    );
+
+    const saved = await (prisma as any).quotationFile.create({
+      data: {
+        quotationId: id,
+        fileName: safeOriginalName, // ✅ ชื่อภาษาไทยถูกต้อง
+        fileKey: key,
+        fileMime: file.mimetype,
+        fileSize: file.size,
+      },
+    });
+
+    return res.status(201).json(saved);
+  } catch (err) {
+    console.error("uploadQuotationFile error:", err);
+    return res.status(500).json({ message: "อัปโหลดไฟล์ไม่สำเร็จ" });
+  }
+};
+
+/** DELETE /api/quotations/:id/files/:fileId */
+export const deleteQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const fileId = Number(req.params.fileId);
+
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = await (prisma as any).quotationFile.findUnique({ where: { id: fileId } });
+    if (!file) return res.status(404).json({ message: "ไม่พบไฟล์" });
+
+    await s3Client.send(
+      new DeleteObjectCommand({ Bucket: BUCKET_NAME as string, Key: file.fileKey }),
+    );
+    await (prisma as any).quotationFile.delete({ where: { id: fileId } });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("deleteQuotationFile error:", err);
+    return res.status(500).json({ message: "ลบไฟล์ไม่สำเร็จ" });
+  }
+};
+
+/** GET /api/quotations/:id/files/:fileId/download */
+export const downloadQuotationFile = async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const fileId = Number(req.params.fileId);
+
+    const access = await assertCanAccessQuotation(req, id);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+
+    const file = await (prisma as any).quotationFile.findUnique({ where: { id: fileId } });
+    if (!file) return res.status(404).json({ message: "ไม่พบไฟล์" });
+
+    const obj = await s3Client.send(
+      new GetObjectCommand({ Bucket: BUCKET_NAME as string, Key: file.fileKey }),
+    );
+
+    res.setHeader("Content-Type", file.fileMime || "application/octet-stream");
+    // ✅ RFC 5987 — รองรับชื่อไฟล์ภาษาไทย/ภาษาอังกฤษ/อักขระพิเศษทุกชนิด
+    const encodedName = encodeURIComponent(file.fileName).replace(/'/g, "%27");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${file.fileName.replace(/[^\x20-\x7E]/g, "_")}"; filename*=UTF-8''${encodedName}`,
+    );
+    (obj.Body as any).pipe(res);
+  } catch (err) {
+    console.error("downloadQuotationFile error:", err);
+    return res.status(500).json({ message: "ดาวน์โหลดไฟล์ไม่สำเร็จ" });
   }
 };

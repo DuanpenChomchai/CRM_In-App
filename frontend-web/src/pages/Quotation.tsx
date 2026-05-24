@@ -10,7 +10,7 @@ import { Plus, Trash2, FileText, List, Save, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 type QuotationStatus = "DRAFT" | "SENT" | "APPROVED" | "REJECTED";
 
@@ -105,6 +105,9 @@ const Quotation = () => {
   const editQuotationId = editIdRaw ? valToInt(editIdRaw) : 0;
   const isEditMode = !!editQuotationId;
 
+  // ✅ รับ customerId จาก URL เพื่อ pre-fill ลูกค้าอัตโนมัติ (มาจากหน้า Stage)
+  const customerIdParam = searchParams.get("customerId") ? valToInt(searchParams.get("customerId")!) : 0;
+
   const [loading, setLoading] = useState(false);
   const [loadingPage, setLoadingPage] = useState(true);
 
@@ -197,8 +200,21 @@ const Quotation = () => {
           setQuotationNumber("กำลังสร้าง...");
           setStatus("DRAFT");
           setItems([]);
-          setCustomerId(null);
-          setCustomerForm({ name: "", email: "", phone: "", address: "" });
+
+          // ✅ ถ้ามี customerId จาก URL → pre-fill ลูกค้าอัตโนมัติ
+          if (customerIdParam) {
+            const c = cRes.find((x) => x.id === customerIdParam);
+            if (c) {
+              setCustomerId(c.id);
+              setCustomerForm({ name: c.name || "", email: c.email || "", phone: c.tol || "", address: "" });
+            } else {
+              setCustomerId(null);
+              setCustomerForm({ name: "", email: "", phone: "", address: "" });
+            }
+          } else {
+            setCustomerId(null);
+            setCustomerForm({ name: "", email: "", phone: "", address: "" });
+          }
         }
       } catch (err: any) {
         toast.error(err?.message || "โหลดข้อมูลไม่สำเร็จ");

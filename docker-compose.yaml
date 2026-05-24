@@ -12,7 +12,7 @@ services:
     ports:
       - "${POSTGRES_PORT}:5432"
     volumes:
-      - CRM_in-app_postgres_data:/var/lib/postgresql/data
+      - crm_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -42,7 +42,7 @@ services:
       - "${MINIO_CONSOLE_PORT}:9001"
     command: server /data --console-address ":9001"
     volumes:
-      - CRM_in-app_minio_data:/data
+      - crm_minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
@@ -76,10 +76,13 @@ services:
       minio:
         condition: service_healthy
     volumes:
-      - CRM_in-app_uploads:/app/uploads
+      - crm_uploads:/app/uploads
 
 
 volumes:
-  CRM_in-app_postgres_data:
-  CRM_in-app_minio_data:
-  CRM_in-app_uploads:
+  crm_postgres_data:
+    driver: local
+  crm_minio_data:
+    driver: local
+  crm_uploads:
+    driver: local

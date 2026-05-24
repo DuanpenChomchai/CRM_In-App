@@ -1,4 +1,4 @@
-import { Building2, LogOut, User, Menu, Info, PhoneCall } from "lucide-react";
+import { Building2, LogOut, User, Menu, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -20,7 +20,7 @@ const Navbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   const userEmail = user?.email || "ไม่พบอีเมล";
   const userId = user?.id;
 
-  const API_HOST = (import.meta as any)?.env?.VITE_API_BASE || "http://localhost:3000";
+  const API_HOST = (import.meta as any)?.env?.VITE_API_BASE 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -96,10 +96,6 @@ const Navbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
             <DropdownMenuItem onClick={() => navigate("/about", { replace: true })}>
               <Info className="mr-2 h-4 w-4" />
               เกี่ยวกับเรา
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/contact", { replace: true })}>
-              <PhoneCall className="mr-2 h-4 w-4" />
-              ติดต่อเรา
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Shield,
   Users,
@@ -27,6 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+const API_BASE = import.meta.env.VITE_API_BASE;
+
 // ─── ข้อมูลระบบ ───────────────────────────────────────
 const APP_NAME = "Stage-based CRM & In-app communication";
 const APP_TAGLINE = "ระบบบริหารความสัมพันธ์ลูกค้าเชิงขั้นตอนและการสื่อสารบนแอปพลิเคชันมือถือ";
@@ -38,19 +40,19 @@ const DEFAULT_TEAM = {
   dev1: {
     name: "นฤมล สีละมุด",
     studentId: "65112125",
-    role: "Full-Stack Developer (Me)",
-    avatar: "/avatar_narimon.png",
+    role: "Web Application",
+    avatar: "",
   },
   dev2: {
     name: "นางสาวเดือนเพ็ญ โฉมฉาย",
     studentId: "65111987",
-    role: "Full-Stack Developer (Friend)",
-    avatar: "/avatar_somchai.png",
+    role: "Mobile Application",
+    avatar: "",
   },
   advisor: {
     name: "ดร. ณิชาภัทร ณ นคร",
     role: "อาจารย์ที่ปรึกษาโครงงาน (Project Advisor)",
-    avatar: "", // ค่าเริ่มต้นเป็นแบบไม่มีรูป (แสดง fallback GraduationCap)
+    avatar: "", 
   }
 };
 
@@ -119,14 +121,14 @@ const FEATURES = [
     desc: "ระบบจัดการขั้นตอนการขายที่ชัดเจน ตั้งแต่การเริ่มต้นติดต่อ การเสนอราคา การเจรจา ไปจนถึงการปิดการขาย ช่วยให้ทีมงานติดตามสถานะลูกค้าได้อย่างแม่นยำ" 
   },
   { 
-    icon: Building2, 
-    title: "Comprehensive Sales & Catalog Management", 
-    desc: "ระบบศูนย์กลางบนเว็บแอปพลิเคชันที่เน้นการลงรายละเอียดข้อมูล โครงการอสังหาริมทรัพย์ และข้อมูลลูกค้าอย่างครบถ้วน ช่วยให้ทีมงานจัดการดีล บันทึกความสนใจ และติดตามประวัติการขายในเชิงลึกได้อย่างเป็นระบบและโปร่งใส" 
+    icon: LayoutDashboard, 
+    title: "แดชบอร์ดและการวิเคราะห์ยอดขาย", 
+    desc: "แดชบอร์ดแสดงสถิติยอดขายและภาพรวมการทำงานของทีมแบบเรียลไทม์ ผู้จัดการและแอดมินสามารถติดตามประสิทธิภาพ วิเคราะห์แนวโน้ม และตัดสินใจได้อย่างรวดเร็วจากข้อมูลจริง" 
   },
   { 
-    icon: LayoutDashboard, 
-    title: "Managerial Insights & Document Control", 
-    desc: "แดชบอร์ดวิเคราะห์ยอดขายเชิงลึกสำหรับผู้จัดการและผู้บริหารบนเว็บแอปพลิเคชัน ช่วยควบคุมระบบใบเสนอราคา (Quotation) อนุมัติเอกสารและโครงการได้อย่างรวดเร็ว พร้อมติดตามและประเมินผลการทำงานของพนักงานขายได้เรียลไทม์" 
+    icon: FileText, 
+    title: "ใบเสนอราคาและการอนุมัติเอกสาร", 
+    desc: "พนักงานขายสร้างและส่งใบเสนอราคาให้ลูกค้าได้ทันที ผู้จัดการและแอดมินสามารถตรวจสอบและอนุมัติเอกสารได้บนระบบเว็บ พร้อมดาวน์โหลดเป็น PDF ได้โดยตรง" 
   },
 ];
 
@@ -143,17 +145,22 @@ export default function About() {
   );
 
   // ─── การจัดการข้อมูลทีมผู้พัฒนาและที่ปรึกษาโครงงาน ──────────────────────
-  const [team, setTeam] = useState(() => {
-    const stored = localStorage.getItem("crm_inapp_team_about");
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return DEFAULT_TEAM;
-  });
+  const [team, setTeam] = useState(DEFAULT_TEAM);
+  const [teamLoading, setTeamLoading] = useState(true);
+
+  // ดึงข้อมูลทีมจาก API
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    fetch(`${API_BASE}/api/settings/about-team`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res?.data) setTeam(res.data);
+      })
+      .catch(() => { /* ใช้ DEFAULT_TEAM ต่อ */ })
+      .finally(() => setTeamLoading(false));
+  }, []);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [tempTeam, setTempTeam] = useState(team);
@@ -180,18 +187,48 @@ export default function About() {
     }
   };
 
-  const handleSaveTeam = () => {
-    setTeam(tempTeam);
-    localStorage.setItem("crm_inapp_team_about", JSON.stringify(tempTeam));
-    setIsEditModalOpen(false);
-    toast.success("บันทึกข้อมูลคณะผู้พัฒนาและที่ปรึกษาสำเร็จ! 🎉");
+  const handleSaveTeam = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/about-team`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(tempTeam),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        throw new Error(d?.message || `บันทึกไม่สำเร็จ (${res.status})`);
+      }
+      const data = await res.json();
+      setTeam(data.data ?? tempTeam);
+      setIsEditModalOpen(false);
+      toast.success("บันทึกข้อมูลคณะผู้พัฒนาและที่ปรึกษาสำเร็จ! 🎉");
+    } catch (err: any) {
+      toast.error(err?.message || "บันทึกไม่สำเร็จ");
+    }
   };
 
-  const handleResetAll = () => {
-    setTempTeam(DEFAULT_TEAM);
-    setTeam(DEFAULT_TEAM);
-    localStorage.removeItem("crm_inapp_team_about");
-    toast.success("คืนค่าข้อมูลเป็นค่าเริ่มต้นทั้งหมดสำเร็จ! 🔄");
+  const handleResetAll = async () => {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/about-team`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(DEFAULT_TEAM),
+      });
+      if (!res.ok) throw new Error();
+      setTempTeam(DEFAULT_TEAM);
+      setTeam(DEFAULT_TEAM);
+      toast.success("คืนค่าข้อมูลเป็นค่าเริ่มต้นทั้งหมดสำเร็จ! 🔄");
+    } catch {
+      toast.error("คืนค่าไม่สำเร็จ");
+    }
   };
 
   return (
@@ -345,11 +382,11 @@ export default function About() {
                   <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center flex-shrink-0 group-hover:bg-gradient-to-br group-hover:from-pink-400 group-hover:to-green-400 transition-all duration-300">
                     <f.icon className="w-5 h-5 text-pink-500 group-hover:text-white transition-colors duration-300" />
                   </div>
-                  <h3 className="font-black text-[15px] sm:text-base group-hover:text-pink-600 transition-colors duration-300 leading-tight">
+                  <h3 className="font-black text-base sm:text-lg group-hover:text-pink-600 transition-colors duration-300 leading-tight">
                     {f.title}
                   </h3>
                 </div>
-                <p className="text-xs text-muted-foreground leading-relaxed font-semibold">{f.desc}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed font-medium">{f.desc}</p>
               </div>
             </div>
           ))}
@@ -618,7 +655,7 @@ export default function About() {
                   </div>
                   <h4 className="text-sm font-bold text-pink-700">ผู้พัฒนาคนแรก (ตัวฉัน)</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-600">ชื่อ-นามสกุล</label>
                     <input 
@@ -640,6 +677,18 @@ export default function About() {
                       onChange={(e) => setTempTeam({
                         ...tempTeam,
                         dev1: { ...tempTeam.dev1, studentId: e.target.value }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600">ตำแหน่ง / บทบาทหน้าที่</label>
+                    <input 
+                      type="text"
+                      className="w-full text-sm px-3.5 py-2 rounded-xl border bg-background focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition-all"
+                      value={tempTeam.dev1.role}
+                      onChange={(e) => setTempTeam({
+                        ...tempTeam,
+                        dev1: { ...tempTeam.dev1, role: e.target.value }
                       })}
                     />
                   </div>
@@ -691,7 +740,7 @@ export default function About() {
                   </div>
                   <h4 className="text-sm font-bold text-emerald-700">ผู้พัฒนาคนที่สอง (เพื่อน)</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-600">ชื่อ-นามสกุล</label>
                     <input 
@@ -713,6 +762,18 @@ export default function About() {
                       onChange={(e) => setTempTeam({
                         ...tempTeam,
                         dev2: { ...tempTeam.dev2, studentId: e.target.value }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600">ตำแหน่ง / บทบาทหน้าที่</label>
+                    <input 
+                      type="text"
+                      className="w-full text-sm px-3.5 py-2 rounded-xl border bg-background focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                      value={tempTeam.dev2.role}
+                      onChange={(e) => setTempTeam({
+                        ...tempTeam,
+                        dev2: { ...tempTeam.dev2, role: e.target.value }
                       })}
                     />
                   </div>

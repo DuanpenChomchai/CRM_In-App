@@ -54,7 +54,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 interface Customer {
   id: number;
@@ -66,6 +66,7 @@ interface Customer {
   saleId?: number | null;
   saleName?: string | null;
   mainStatus?: string | null;
+  interestedPropertyId?: number | null;
 }
 
 interface SaleUser {
@@ -104,6 +105,7 @@ const mapApiCustomerToUi = (c: any): Customer => {
     saleId: c.saleId ?? null,
     saleName: c.sale?.name ?? c.saleName ?? null,
     mainStatus: c.mainStatus ?? "CONTACTED",
+    interestedPropertyId: c.interestedPropertyId ?? null,
   };
 };
 
@@ -340,6 +342,7 @@ const Customer = () => {
         email: editCustomer.email,
         productType: editCustomer.productType,
         budget: editCustomer.priceBudget,
+        interestedPropertyId: editCustomer.interestedPropertyId ?? null,
       };
       if (isAdmin) {
         payload.saleId = editCustomer.saleId ?? null;
@@ -358,8 +361,7 @@ const Customer = () => {
         return;
       }
       const updated = await res.json();
-      const mapped = mapApiCustomerToUi(updated);
-      setCustomers((prev) => prev.map((c) => (c.id === mapped.id ? mapped : c)));
+      await fetchCustomers(); // fetch ใหม่ทันทีหลังบันทึก
       toast.success("อัปเดทข้อมูลลูกค้าสำเร็จ");
       setIsEditDialogOpen(false);
       setEditCustomer(null);
@@ -1017,9 +1019,9 @@ const Customer = () => {
             <div className="space-y-2">
               <Label className="text-sm font-semibold">อสังหาริมทรัพย์ที่สนใจ</Label>
               <Select
-                value={editCustomer?.productType || ""}
+                value={editCustomer?.interestedPropertyId ? String(editCustomer.interestedPropertyId) : ""}
                 onValueChange={(v) =>
-                  setEditCustomer((prev) => prev ? { ...prev, productType: v } : prev)
+                  setEditCustomer((prev) => prev ? { ...prev, interestedPropertyId: Number(v) } : prev)
                 }
               >
                 <SelectTrigger className="h-10 md:h-11">
@@ -1027,7 +1029,7 @@ const Customer = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {properties.map((p) => (
-                    <SelectItem key={p.id} value={p.name}>
+                    <SelectItem key={p.id} value={String(p.id)}>
                       {p.name}
                     </SelectItem>
                   ))}

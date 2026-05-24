@@ -21,11 +21,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { FileText, Search, Edit, Download, Plus, CheckCircle } from "lucide-react";
+import { FileText, Search, Edit, Download, Plus, CheckCircle, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+const API_BASE = import.meta.env.VITE_API_BASE 
 
 type QuotationStatus = "DRAFT" | "WAIT_APPROVAL" | "SENT" | "APPROVED" | "REJECTED";
 
@@ -104,6 +104,25 @@ const QuotationList = () => {
   // approve confirm dialog
   const [approveTarget, setApproveTarget] = useState<QuotationRow | null>(null);
   const [approving, setApproving] = useState(false);
+
+  // delete confirm dialog
+  const [deleteTarget, setDeleteTarget] = useState<QuotationRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/quotations/${deleteTarget.id}`, { method: "DELETE" });
+      toast.success(`ลบใบเสนอราคา ${deleteTarget.quotationNumber} สำเร็จ`);
+      setDeleteTarget(null);
+      await fetchList();
+    } catch (err: any) {
+      toast.error(err?.message || "ลบไม่สำเร็จ");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const fetchList = async () => {
     setLoading(true);
@@ -315,6 +334,19 @@ const QuotationList = () => {
                               <CheckCircle className="w-4 h-4" />
                             </Button>
                           )}
+
+                          {/* Delete — เฉพาะ DRAFT/SENT เท่านั้น */}
+                          {(r.status === "DRAFT" || r.status === "SENT") && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => setDeleteTarget(r)}
+                              title="ลบใบเสนอราคา"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -357,6 +389,34 @@ const QuotationList = () => {
               disabled={approving}
             >
               {approving ? "กำลังอนุมัติ..." : "อนุมัติ"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Delete Confirm Dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="w-5 h-5" />
+              ยืนยันการลบ
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบใบเสนอราคา{" "}
+              <span className="font-semibold text-foreground">{deleteTarget?.quotationNumber}</span>{" "}
+              ของลูกค้า <span className="font-semibold text-foreground">{deleteTarget?.customerName}</span> ใช่หรือไม่?
+              <br />
+              <span className="text-sm text-red-500">การลบไม่สามารถย้อนกลับได้</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+            >
+              {deleting ? "กำลังลบ..." : "ลบ"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
