@@ -275,14 +275,101 @@ export const updateUser = async (req: Request, res: Response) => {
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    await prisma.user.delete({ where: { id } });
-    return res.json({ message: "ลบผู้ใช้สำเร็จ" });
+
+    // ตรวจสอบว่าผู้ใช้มีตัวตนจริงไหม
+    const userExists = await prisma.user.findUnique({ where: { id } });
+    if (!userExists) {
+      return res.status(404).json({ message: "ไม่พบผู้ใช้" });
+    }
+
+    // ห้ามแอดมินลบตัวเอง
+    if ((req as any).user?.id === id) {
+      return res.status(400).json({ message: "ไม่สามารถลบบัญชีตัวเองที่กำลังใช้งานอยู่ได้" });
+    }
+
+    // 🔍 ค้นหา Admin คนอื่นเพื่อใช้โอนย้ายข้อมูลอสังหาริมทรัพย์และใบเสนอราคาที่จำเป็นต้องมีผู้สร้าง (Required Relations)
+    const activeAdmin = await prisma.user.findFirst({
+      where: {
+        role: "ADMIN",
+        id: { not: id } // ต้องไม่ไช่คนที่จะลบ
+      },
+      select: { id: true }
+    });
+
+    const backupAdminId = activeAdmin?.id;
+
+    // ทำธุรกรรมโอนย้าย/เคลียร์ความสัมพันธ์เพื่อป้องกัน Foreign Key Constraint Error
+    await prisma.$transaction(async (tx) => {
+      // 1. เคลียร์ความดูแลลูกค้า (Customer)
+      await tx.customer.updateMany({
+        where: { saleId: id },
+        data: { saleId: null }
+      });
+      await tx.customer.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+
+      // 2. เคลียร์พนักงานในทีม (สำหรับกรณีผู้ใช้เป็น MANAGER)
+      await tx.user.updateMany({
+        where: { managerId: id },
+        data: { managerId: null }
+      });
+
+      // 3. เคลียร์ข้อมูลการโทร (Call)
+      await tx.call.updateMany({
+        where: { saleUserId: id },
+        data: { saleUserId: null }
+      });
+      await tx.call.updateMany({
+        where: { customerUserId: id },
+        data: { customerUserId: null }
+      });
+
+      // 4. เคลียร์ข้อมูล ClosedDeal และ Communications
+      await tx.closedDeal.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+      await tx.communications.updateMany({
+        where: { userId: id },
+        data: { userId: null }
+      });
+
+      // 5. เคลียร์การอนุมัติใบเสนอราคา (Quotation Approved)
+      await tx.quotation.updateMany({
+        where: { approvedById: id },
+        data: { approvedById: null }
+      });
+
+      // 6. โอนย้ายอสังหาริมทรัพย์ (Property) และการสร้างใบเสนอราคา (Quotation) ไปยัง Admin ที่มีอยู่คนอื่น (ถ้ามี)
+      if (backupAdminId) {
+        await tx.property.updateMany({
+          where: { createdById: id },
+          data: { createdById: backupAdminId }
+        });
+        await tx.quotation.updateMany({
+          where: { createdById: id },
+          data: { createdById: backupAdminId }
+        });
+      } else {
+        // หากไม่มีแอดมินคนอื่นสำรอง จำเป็นต้องลบใบเสนอราคาและอสังหาริมทรัพย์ของผู้ใช้คนนี้ออกเพื่อหลีกเลี่ยงข้อจำกัดของ DB
+        await tx.quotation.deleteMany({ where: { createdById: id } });
+        await tx.property.deleteMany({ where: { createdById: id } });
+      }
+
+      // 7. ลบ Tokens
+      await tx.refreshToken.deleteMany({ where: { userId: id } });
+      await tx.pushToken.deleteMany({ where: { userId: id } });
+
+      // 8. ลบผู้ใช้ออกอย่างปลอดภัย
+      await tx.user.delete({ where: { id } });
+    });
+
+    return res.json({ message: "ลบผู้ใช้และจัดการข้อมูลเชื่อมโยงสำเร็จ" });
   } catch (err: any) {
     console.error("deleteUser error:", err);
-
-    if (err?.code === "P2025")
-      return res.status(404).json({ message: "ไม่พบผู้ใช้" });
-    return res.status(500).json({ message: "ลบผู้ใช้ล้มเหลว" });
+    return res.status(500).json({ message: "ลบผู้ใช้ล้มเหลว (เกิดข้อผิดพลาดในการจัดการความสัมพันธ์ข้อมูล)" });
   }
 };
 
