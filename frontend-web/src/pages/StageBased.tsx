@@ -513,24 +513,12 @@ const StageBased = () => {
 
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
 
-      // 3. อัปโหลดไฟล์จริงเข้า MinIO (ทุก stage)
+      // 3. อัปโหลดไฟล์จริงเข้า MinIO
       if (pendingFiles.length > 0) {
-        const boardRes = await fetch(`${API_BASE}/api/pipeline/board`, {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        const boardData = await boardRes.json();
-        const allColumns = [
-          ...(boardData.columns?.CONTACTED || []),
-          ...(boardData.columns?.NEGOTIATING || []),
-          ...(boardData.columns?.QUOTATION || []),
-          ...(boardData.columns?.CLOSED || []),
-        ];
-        const custInBoard = allColumns.find(
-          (c: any) => c.id === selectedDeal.customerId,
-        );
-        let quotationId = custInBoard?.quotations?.[0]?.id;
+        // ✅ ใช้ quotationId จาก selectedDeal ที่มีอยู่แล้ว ไม่ต้อง fetch board ซ้ำ
+        let quotationId = selectedDeal.quotations?.[0]?.id;
 
-        // ถ้ายังไม่มี quotation ให้สร้างใหม่อัตโนมัติ
+        // ถ้ายังไม่มี quotation ให้สร้างใหม่ผ่าน move endpoint
         if (!quotationId) {
           const createRes = await fetch(`${API_BASE}/api/pipeline/move`, {
             method: "PATCH",
@@ -545,6 +533,7 @@ const StageBased = () => {
             }),
           });
           if (createRes.ok) {
+            // fetch เฉพาะ customer นี้เพื่อหา quotationId ใหม่
             const boardRes2 = await fetch(`${API_BASE}/api/pipeline/board`, {
               headers: { Authorization: `Bearer ${getToken()}` },
             });
@@ -572,7 +561,6 @@ const StageBased = () => {
           }
         }
         setPendingFiles([]);
-        // clear pending files UI
         setSelectedDeal((prev) => prev ? { ...prev, files: [] } : prev);
       }
 
