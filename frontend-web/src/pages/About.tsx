@@ -655,7 +655,7 @@ export default function About() {
                   </div>
                   <h4 className="text-sm font-bold text-pink-700">ผู้พัฒนาคนแรก (ตัวฉัน)</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-600">ชื่อ-นามสกุล</label>
                     <input 
@@ -677,6 +677,18 @@ export default function About() {
                       onChange={(e) => setTempTeam({
                         ...tempTeam,
                         dev1: { ...tempTeam.dev1, studentId: e.target.value }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600">ตำแหน่ง / บทบาทหน้าที่</label>
+                    <input 
+                      type="text"
+                      className="w-full text-sm px-3.5 py-2 rounded-xl border bg-background focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition-all"
+                      value={tempTeam.dev1.role}
+                      onChange={(e) => setTempTeam({
+                        ...tempTeam,
+                        dev1: { ...tempTeam.dev1, role: e.target.value }
                       })}
                     />
                   </div>
@@ -728,7 +740,7 @@ export default function About() {
                   </div>
                   <h4 className="text-sm font-bold text-emerald-700">ผู้พัฒนาคนที่สอง (เพื่อน)</h4>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-600">ชื่อ-นามสกุล</label>
                     <input 
@@ -750,6 +762,18 @@ export default function About() {
                       onChange={(e) => setTempTeam({
                         ...tempTeam,
                         dev2: { ...tempTeam.dev2, studentId: e.target.value }
+                      })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-600">ตำแหน่ง / บทบาทหน้าที่</label>
+                    <input 
+                      type="text"
+                      className="w-full text-sm px-3.5 py-2 rounded-xl border bg-background focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all"
+                      value={tempTeam.dev2.role}
+                      onChange={(e) => setTempTeam({
+                        ...tempTeam,
+                        dev2: { ...tempTeam.dev2, role: e.target.value }
                       })}
                     />
                   </div>
