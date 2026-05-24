@@ -249,8 +249,13 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      // โหลด files จาก DB (quotations[0].files) แทน localStorage
+      // โหลด files จาก DB และล้างข้อมูลรอบเก่าออกสำหรับ contacted ซื้อซ้ำ
       const withFiles = mapped.map((d) => {
+        // ✅ contacted รอบซื้อซ้ำ (purchaseCount > 0) → ล้าง quotations/ไฟล์/ราคาของรอบเก่าออก
+        const isRepeatContacted = d.stage === "contacted" && (d.purchaseCount ?? 0) > 0;
+        if (isRepeatContacted) {
+          return { ...d, quotations: [], quotationFiles: [], _dbFiles: [], priceOffered: undefined, terms: undefined };
+        }
         const allFiles = (d.quotations || []).flatMap((q: any) => q.files || []);
         return allFiles.length > 0
           ? { ...d, quotationFiles: allFiles.map((f: any) => f.fileName), _dbFiles: allFiles }
@@ -329,8 +334,7 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    // ✅ ล้างข้อมูลเฉพาะกรณีที่ยังไม่ได้กรอกรอบใหม่จริงๆ
-    // = contacted + เคยซื้อมาแล้ว + ยังไม่มีประเภทอสังหาของรอบใหม่ (ว่าง หรือ "-")
+    // ✅ contacted รอบซื้อซ้ำ — ข้อมูลถูกล้างมาแล้วตั้งแต่ fetchBoard ไม่ต้องล้างซ้ำ
     const isRepeatRound = stage === "contacted"
       && (deal.purchaseCount ?? 0) > 0
       && (!deal.propertyType || deal.propertyType === "-" || deal.propertyType.trim() === "");
