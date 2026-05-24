@@ -85,6 +85,24 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
             take: 50,
           },
 
+          // ✅ ดึง quotations ของรอบก่อนหน้าด้วย (ใช้แสดงข้อมูลสินค้าตอนซื้อซ้ำ)
+          allQuotations: {
+            select: {
+              id: true,
+              quotationNumber: true,
+              totalAmount: true,
+              terms: true,
+              endDate: true,
+              status: true,
+              createdAt: true,
+              files: {
+                select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
+                orderBy: { uploadedAt: "desc" },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          } as any,
+
           // ✅ schema ใหม่: ใช้ contactedLogs เท่านั้น (เป็น array)
           contactedLogs: {
             select: { id: true, status: true, stateDate: true, endDate: true, note: true, createdAt: true } as any,
@@ -145,11 +163,15 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
           const isHistorical = !(isCurrentlyClosed && index === 0);
           
+          // ✅ แนบ quotations ของรอบนั้นๆ ด้วย (ใช้ allQuotations ถ้ามี ไม่งั้น fallback quotations)
+          const quotationsForCard = (c as any).allQuotations ?? c.quotations ?? [];
+          
           columns.CLOSED.push({
             ...c,
             // ID ปลอมเพื่อให้หน้าบ้านมองเห็นเป็นคนละการ์ด
             dummyId: isHistorical ? `history_${c.id}_${cd.id}` : c.id,
             closedDeals: [cd], // ส่งไปแค่อันเดียวให้ Frontend รู้ว่าการ์ดนี้คือดีลนี้
+            quotations: quotationsForCard, // ✅ ส่ง quotations ทั้งหมดเพื่อแสดงข้อมูลสินค้า
             isHistorical, // flag แจ้ง Frontend
             roundNumber: c.closedDeals.length - index, // ลำดับครั้งที่ซื้อ
           });
@@ -453,12 +475,13 @@ export const repeatPurchase = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Reset กลับไปเป็น NEW + ปลดเซลล์เก่า (saleId: null) เพื่อให้รอแอดมินหรือระบบจัดสรรใหม่
+    // Reset กลับไปเป็น NEW เพื่อเริ่มรอบใหม่
+    // ✅ คงไว้ซึ่ง saleId เดิม เพื่อให้ข้อมูลการดูแลยังอยู่ และข้อมูล quotations/products ของรอบก่อนยังเข้าถึงได้
     await prisma.customer.update({
       where: { id },
       data: {
         mainStatus: "NEW",
-        saleId: null,
+        // ไม่ล้าง saleId — ให้ admin reassign เองจากหน้าลูกค้าถ้าต้องการ
       },
     });
 

@@ -203,14 +203,19 @@ const StageBased = () => {
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
             startDate: c.updatedAt ? new Date(c.updatedAt) : undefined,
-            // endDate — ดึงจาก contactedLogs, negotiation หรือ quotation
-            endDate: latestLog?.endDate
-              ? new Date(latestLog.endDate)
-              : latestNego?.endDate
-                ? new Date(latestNego.endDate)
-                : latestQ?.endDate
-                  ? new Date(latestQ.endDate)
-                  : undefined,
+            // endDate — ดึงตาม stage ของ card นั้นๆ ไม่ cascade ข้าม stage
+            endDate: (() => {
+              if (apiStage === "CONTACTED") {
+                return latestLog?.endDate ? new Date(latestLog.endDate) : undefined;
+              }
+              if (apiStage === "NEGOTIATING") {
+                return latestNego?.endDate ? new Date(latestNego.endDate) : undefined;
+              }
+              if (apiStage === "QUOTATION" || apiStage === "CLOSED") {
+                return latestQ?.endDate ? new Date(latestQ.endDate) : undefined;
+              }
+              return undefined;
+            })(),
             quotationNumbers: (c.quotations || [])
               .map((q: any) => q.quotationNumber)
               .filter(Boolean),
