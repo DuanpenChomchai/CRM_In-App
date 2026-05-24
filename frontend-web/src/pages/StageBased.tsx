@@ -197,7 +197,7 @@ const StageBased = () => {
             customerId: c.id,
             customerName: c.name || "-",
             phone: c.tel ?? c.tol ?? "-",
-            propertyType: c.interestedProperty?.type ?? c.productType ?? "-",
+            propertyType: c.productType ?? c.interestedProperty?.type ?? "-",
             budget: Number(c.priceBudget || 0),
             stage: apiToUi(apiStage),
             assignedSales: c.sale?.name,
@@ -329,8 +329,11 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    // ✅ ถ้าเป็น contacted รอบซื้อซ้ำ (purchaseCount > 0) → ล้างข้อมูลสินค้า/ราคา/ไฟล์ เพราะเริ่มใหม่
-    const isRepeatRound = stage === "contacted" && (deal.purchaseCount ?? 0) > 0;
+    // ✅ ล้างข้อมูลเฉพาะกรณีที่ยังไม่ได้กรอกรอบใหม่จริงๆ
+    // = contacted + เคยซื้อมาแล้ว + ยังไม่มีประเภทอสังหาของรอบใหม่ (ว่าง หรือ "-")
+    const isRepeatRound = stage === "contacted"
+      && (deal.purchaseCount ?? 0) > 0
+      && (!deal.propertyType || deal.propertyType === "-" || deal.propertyType.trim() === "");
     setSelectedDeal({
       ...deal,
       propertyType: isRepeatRound ? "" : deal.propertyType,
@@ -797,8 +800,8 @@ const StageBased = () => {
               <Phone className="w-3.5 h-3.5" />
               <span>{deal.phone}</span>
             </div>
-            {/* ✅ ซื้อซ้ำ (contacted + purchaseCount > 0) → ไม่แสดงประเภท/งบ เพราะยังไม่ได้กรอกรอบใหม่ */}
-            {!(deal.stage === "contacted" && (deal.purchaseCount ?? 0) > 0) && (
+            {/* ✅ ซ่อนประเภท/งบเฉพาะตอนเป็นรอบซื้อซ้ำที่ยังไม่ได้กรอกข้อมูลใหม่ */}
+            {!(deal.stage === "contacted" && (deal.purchaseCount ?? 0) > 0 && (!deal.propertyType || deal.propertyType === "-")) && (
               <>
                 <div className="flex items-center gap-2">
                   <Home className="w-3.5 h-3.5 text-primary" />
