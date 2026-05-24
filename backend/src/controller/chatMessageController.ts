@@ -304,6 +304,18 @@ export const markRoomAsRead = async (req: AuthRequest, res: Response) => {
         },
         data: { readBySaleAt: now },
       });
+    } else if (authUser.role === "ADMIN") {
+      await prisma.chatMessage.updateMany({
+        where: {
+          customerId,
+          roomId,
+          readBySaleAt: null,
+        },
+        data: { readBySaleAt: now },
+      });
+    } else if (authUser.role === "MANAGER") {
+      // Manager เข้ามาอ่านแชทของ Sale ไม่ควรทำให้ badge แจ้งเตือนของ Sale หายไป
+      // จึงไม่ทำการอัปเดต readBySaleAt
     } else {
       return res
         .status(403)
