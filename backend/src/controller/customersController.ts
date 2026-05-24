@@ -717,10 +717,11 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
     });
 
     const admins = await prisma.user.findMany({
-      where: { role: "ADMIN" },
-      select: { name: true },
+      where: { role: { in: ["ADMIN", "MANAGER"] } },
+      select: { id: true, name: true },
     });
     const adminNames = admins.length > 0 ? admins.map((a) => a.name).join(", ") : "แอดมินส่วนกลาง";
+    const adminId = admins.length > 0 ? admins[0].id : null;
 
     return res.json({
       customerId: customer.id,
@@ -733,6 +734,7 @@ export const getMyAssignedSale = async (req: AuthRequest, res: Response) => {
       adminUnreadCount,
       adminLastMessageAt: adminLastMsg?.createdAt ?? null,
       adminNames,
+      adminId,
     });
   } catch (error) {
     console.error("getMyAssignedSale error:", error);

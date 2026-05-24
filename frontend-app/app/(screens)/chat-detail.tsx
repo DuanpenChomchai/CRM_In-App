@@ -490,7 +490,7 @@ export default function ChatDetailScreen() {
             setPartner({
               name: "Admin",
               avatarUrl: null,
-              userId: null,
+              userId: 1, // กำหนด userId เป็น 1 เพื่อให้ลูกค้าสามารถกดโทรออกได้
             });
           } else {
             if (data.sale) {
@@ -1430,6 +1430,7 @@ export default function ChatDetailScreen() {
                   customerId: effectiveCustomerId ? String(effectiveCustomerId) : "",
                   targetUserId: targetUserId,
                   roomId: effectiveRoomId,
+                  isIncoming: "false",
                 },
               });
             }}

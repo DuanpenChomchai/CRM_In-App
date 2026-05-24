@@ -81,6 +81,14 @@ export default function RootLayout() {
 
     const onIncomingCall = (payload: any) => {
       console.log("🔔 Global Incoming Call:", payload);
+
+      // ถ้าเป็น caller เอง (Sale/Customer ที่กดโทรออก) → ข้ามไป ไม่ต้อง navigate เป็น incoming
+      const myUserId = useAuthStore.getState().user?.id;
+      if (payload.callerId && myUserId && Number(payload.callerId) === Number(myUserId)) {
+        console.log("⏭️ Skipping call:incoming — I am the caller, not the receiver");
+        return;
+      }
+
       routerRef.current.push({
         pathname: "/(screens)/call-screen",
         params: {
