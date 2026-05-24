@@ -64,7 +64,7 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
               },
             },
             orderBy: { createdAt: "desc" },
-            take: 5,
+            // ✅ ไม่จำกัด take เพื่อให้ card ซื้อซ้ำเห็นประวัติ quotation ครบทุกรอบ
           },
 
           negotiations: {
@@ -85,23 +85,7 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
             take: 50,
           },
 
-          // ✅ ดึง quotations ของรอบก่อนหน้าด้วย (ใช้แสดงข้อมูลสินค้าตอนซื้อซ้ำ)
-          allQuotations: {
-            select: {
-              id: true,
-              quotationNumber: true,
-              totalAmount: true,
-              terms: true,
-              endDate: true,
-              status: true,
-              createdAt: true,
-              files: {
-                select: { id: true, fileName: true, fileKey: true, fileMime: true, fileSize: true, uploadedAt: true },
-                orderBy: { uploadedAt: "desc" },
-              },
-            },
-            orderBy: { createdAt: "desc" },
-          } as any,
+
 
           // ✅ schema ใหม่: ใช้ contactedLogs เท่านั้น (เป็น array)
           contactedLogs: {
@@ -145,7 +129,8 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
       CLOSED: [],
     };
 
-    for (const c of customers) {
+    for (const _c of customers) {
+      const c = _c as any;
       const isCurrentlyClosed = c.mainStatus === "CLOSED";
       const key = toPipelineKey(String(c.mainStatus));
 
@@ -163,8 +148,8 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
           const isHistorical = !(isCurrentlyClosed && index === 0);
           
-          // ✅ แนบ quotations ของรอบนั้นๆ ด้วย (ใช้ allQuotations ถ้ามี ไม่งั้น fallback quotations)
-          const quotationsForCard = (c as any).allQuotations ?? c.quotations ?? [];
+          // ✅ ส่ง quotations ทั้งหมดเพื่อให้ historical card เห็นข้อมูลสินค้าของรอบก่อน
+          const quotationsForCard = c.quotations ?? [];
           
           columns.CLOSED.push({
             ...c,
