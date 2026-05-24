@@ -490,7 +490,7 @@ export default function ChatDetailScreen() {
             setPartner({
               name: "Admin",
               avatarUrl: null,
-              userId: 1, // กำหนด userId เป็น 1 เพื่อให้ลูกค้าสามารถกดโทรออกได้
+              userId: data.adminId || 1, // ใช้ adminId จาก backend หรือ fallback เป็น 1
             });
           } else {
             if (data.sale) {
