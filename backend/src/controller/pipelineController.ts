@@ -487,14 +487,20 @@ export const repeatPurchase = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // ✅ Reset กลับไป NEW + ล้างข้อมูลสินค้าของรอบเก่าออก เพื่อให้รอบใหม่เริ่มสะอาด
-    await prisma.customer.update({
-      where: { id },
-      data: {
-        mainStatus: "NEW",
-        productType: null,   // ล้างประเภทอสังหาของรอบเก่า
-        priceBudget: null,   // ล้างงบประมาณของรอบเก่า
-      } as any,
+    // ✅ Reset กลับไป NEW + ล้างข้อมูลรอบเก่าออกทั้งหมด
+    await prisma.$transaction(async (tx) => {
+      // ลบไฟล์แนบทั่วไปของรอบเก่าออก
+      await (tx as any).customerFile.deleteMany({ where: { customerId: id } });
+
+      // Reset status + ล้างประเภท/งบ
+      await tx.customer.update({
+        where: { id },
+        data: {
+          mainStatus: "NEW",
+          productType: null,
+          priceBudget: null,
+        } as any,
+      });
     });
 
     return res.json({ ok: true, message: "เตรียมการซื้อซ้ำเรียบร้อย สินค้ารอการจัดสรรเซลล์ใหม่ที่เมนูลูกค้า" });
