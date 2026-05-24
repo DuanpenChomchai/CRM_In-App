@@ -40,19 +40,19 @@ const DEFAULT_TEAM = {
   dev1: {
     name: "นฤมล สีละมุด",
     studentId: "65112125",
-    role: "Full-Stack Developer (Me)",
-    avatar: "/avatar_narimon.png",
+    role: "Web Application",
+    avatar: "",
   },
   dev2: {
     name: "นางสาวเดือนเพ็ญ โฉมฉาย",
     studentId: "65111987",
-    role: "Full-Stack Developer (Friend)",
-    avatar: "/avatar_somchai.png",
+    role: "Mobile Application",
+    avatar: "",
   },
   advisor: {
     name: "ดร. ณิชาภัทร ณ นคร",
     role: "อาจารย์ที่ปรึกษาโครงงาน (Project Advisor)",
-    avatar: "", // ค่าเริ่มต้นเป็นแบบไม่มีรูป (แสดง fallback GraduationCap)
+    avatar: "", 
   }
 };
 
