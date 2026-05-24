@@ -236,7 +236,8 @@ const StageBased = () => {
                 : rawResult === "LOST"
                   ? "lost"
                   : undefined,
-            purchaseCount: c._count?.closedDeals ?? 0,
+            // ✅ purchaseCount — ใช้ _count.closedDeals ถ้ามี ไม่งั้น fallback นับจาก closedDeals array
+            purchaseCount: c._count?.closedDeals ?? (c.closedDeals?.length ?? 0),
             isHistorical: c.isHistorical,
             roundNumber: c.roundNumber,
           });
@@ -497,9 +498,13 @@ const StageBased = () => {
           ? (negotiationStatusMap[selectedDeal.status || ""] || "NEGOTIATING")
           : undefined,
         note: selectedDeal.terms || undefined,
-        // QUOTATION
-        quotationPrice: currentStage === "quotation" ? selectedDeal.priceOffered : undefined,
-        terms: currentStage === "quotation" ? selectedDeal.terms : undefined,
+        // QUOTATION — ส่งทั้ง quotation และ closed เพราะ closed ยังมี quotation ประกอบ
+        quotationPrice: (currentStage === "quotation" || currentStage === "closed")
+          ? selectedDeal.priceOffered
+          : undefined,
+        terms: (currentStage === "quotation" || currentStage === "closed")
+          ? selectedDeal.terms
+          : undefined,
         // CLOSED
         closedResult:
           currentStage === "closed" && selectedDeal.dealStatus

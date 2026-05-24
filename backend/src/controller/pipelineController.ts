@@ -93,6 +93,11 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
             orderBy: { createdAt: "desc" },
             take: 1,
           } as any,
+
+          // ✅ นับจำนวน closedDeals เพื่อให้ frontend รู้ว่าลูกค้าเคยซื้อกี่รอบ (purchaseCount)
+          _count: {
+            select: { closedDeals: true } as any,
+          } as any,
         },
       }),
 
@@ -405,6 +410,22 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
               userId: me.role === "SALE" ? me.id : null,
               closingDate: req.body.closingDate ? new Date(req.body.closingDate) : new Date(),
               endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+            },
+          });
+        }
+
+        // ✅ อัปเดต quotation ล่าสุดด้วย (ราคาที่เสนอ + terms) เพื่อให้ค่าคงอยู่เมื่อเปิด dialog อีกครั้ง
+        const { quotationPrice, terms } = req.body;
+        const latestQuotation = await (tx as any).quotation.findFirst({
+          where: { customerId: id },
+          orderBy: { createdAt: "desc" },
+        });
+        if (latestQuotation) {
+          await (tx as any).quotation.update({
+            where: { id: latestQuotation.id },
+            data: {
+              totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : latestQuotation.totalAmount,
+              terms: terms !== undefined ? terms : latestQuotation.terms,
             },
           });
         }
