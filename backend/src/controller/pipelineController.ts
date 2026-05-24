@@ -147,6 +147,13 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
 
       // 1. นำเข้าสเตจปัจจุบัน (ถ้าไม่ใช่ CLOSED)
       if (key && !isCurrentlyClosed) {
+        const latestClosed = c.closedDeals?.[0];
+        if (latestClosed) {
+          c.quotations = (c.quotations ?? []).filter((q: any) => new Date(q.createdAt) > new Date(latestClosed.createdAt));
+          c.negotiations = (c.negotiations ?? []).filter((n: any) => new Date(n.createdAt) > new Date(latestClosed.createdAt));
+          c.contactedLogs = (c.contactedLogs ?? []).filter((l: any) => new Date(l.createdAt) > new Date(latestClosed.createdAt));
+          c.customerFiles = (c.customerFiles ?? []).filter((f: any) => new Date(f.uploadedAt) > new Date(latestClosed.createdAt));
+        }
         columns[key].push(c);
       }
 
@@ -159,8 +166,8 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
           // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
           const isHistorical = !(isCurrentlyClosed && index === 0);
           
-          // ✅ ส่ง quotations ทั้งหมดเพื่อให้ historical card เห็นข้อมูลสินค้าของรอบก่อน
-          const quotationsForCard = c.quotations ?? [];
+          // ✅ สำหรับการ์ดประวัติศาสตร์ ให้ฟิลเตอร์ใบเสนอราคาที่ถูกสร้างขึ้นก่อนดีลปิดรอบนั้นๆ
+          const quotationsForCard = (c.quotations ?? []).filter((q: any) => new Date(q.createdAt) <= new Date(cd.createdAt));
           
           columns.CLOSED.push({
             ...c,
@@ -229,7 +236,7 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
     // SALE ทำได้เฉพาะลูกค้าของตัวเอง
     const currentCustomer = await prisma.customer.findUnique({
       where: { id },
-      select: { saleId: true, mainStatus: true },
+      select: { saleId: true, mainStatus: true, interestedPropertyId: true },
     });
 
     if (!currentCustomer) {
@@ -257,13 +264,25 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
         data: { mainStatus: toStatus },
       });
 
+      // หาดีลล่าสุดที่ปิดไปแล้ว (เพื่อระบุขอบเขตเวลาของรอบปัจจุบัน)
+      const latestClosed = await tx.closedDeal.findFirst({
+        where: { customerId: id },
+        orderBy: { createdAt: "desc" },
+      });
+
       // เขียนรายละเอียด stage แบบ “เสริม” (ใช้โชว์ badge/history)
       const isSameStage = currentCustomer.mainStatus === toStatus;
 
       if (toStatus === "CONTACTED") {
         const validContactedStatuses = ["FOLLOWING_UP", "WAITING_REPLY", "APPOINTED", "NOT_INTERESTED"];
         const safeContactedStatus = validContactedStatuses.includes(contactedStatus) ? contactedStatus : "FOLLOWING_UP";
-        const existing = isSameStage ? await (tx as any).contacted.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
+        const existing = isSameStage ? await (tx as any).contacted.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: 'desc' }
+        }) : null;
         if (existing) {
           await (tx as any).contacted.update({
             where: { id: existing.id },
@@ -288,7 +307,13 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       if (toStatus === "NEGOTIATING") {
         const validNegotiationStatuses = ["NEGOTIATING", "WAITING_CONFIRM", "COUNTER_OFFER", "PAUSED"];
         const safeNegotiationStatus = validNegotiationStatuses.includes(negotiationStatus) ? negotiationStatus : "NEGOTIATING";
-        const existing = isSameStage ? await (tx as any).negotiation.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
+        const existing = isSameStage ? await (tx as any).negotiation.findFirst({
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
+          orderBy: { createdAt: 'desc' }
+        }) : null;
         if (existing) {
           await (tx as any).negotiation.update({
             where: { id: existing.id },
@@ -313,10 +338,11 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       if (toStatus === "QUOTATION") {
         const { quotationPrice, terms, endDate } = req.body;
 
-        // ✅ อัปเดต quotation ที่มีอยู่แล้วเท่านั้น ไม่สร้างอัตโนมัติ
-        // การสร้างใบเสนอราคาให้ทำผ่านหน้า "รายการใบเสนอราคา" เอง
         const existing = await (tx as any).quotation.findFirst({
-          where: { customerId: id },
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
           orderBy: { createdAt: "desc" },
         });
 
@@ -330,6 +356,44 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
               note: note !== undefined ? note : existing.note,
             },
           });
+        } else {
+          // 🆕 หากยังไม่มีใบเสนอราคาในระบบเลย → ทำการสร้างใบเสนอราคาฉบับ Draft ใหม่ให้อัตโนมัติ!
+          let propertyId = currentCustomer.interestedPropertyId;
+          if (!propertyId) {
+            // ค้นหาอสังหาริมทรัพย์ชิ้นแรกในระบบเพื่อใช้เป็นค่าเริ่มต้นกรณีไม่ได้เลือก
+            const firstProp = await tx.property.findFirst({ select: { id: true } });
+            if (firstProp) {
+              propertyId = firstProp.id;
+            }
+          }
+
+          if (propertyId) {
+            // คำนวณเลขที่ใบเสนอราคา (เช่น QUE-YYYYMMDD-XXX)
+            const now = new Date();
+            const y = now.getFullYear();
+            const m = String(now.getMonth() + 1).padStart(2, "0");
+            const d = String(now.getDate()).padStart(2, "0");
+            const prefix = `QUE-${y}${m}${d}`;
+
+            const countToday = await tx.quotation.count({
+              where: { quotationNumber: { startsWith: prefix } },
+            });
+            const quotationNumber = `${prefix}-${String(countToday + 1).padStart(3, "0")}`;
+
+            // สร้างใบเสนอราคาฉบับร่าง
+            await tx.quotation.create({
+              data: {
+                quotationNumber,
+                status: "DRAFT",
+                terms: terms || null,
+                totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : 0,
+                endDate: endDate ? new Date(endDate) : null,
+                customerId: id,
+                propertyId: propertyId,
+                createdById: me.id,
+              }
+            });
+          }
         }
       }
 
@@ -369,7 +433,10 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
         // ✅ อัปเดต quotation ล่าสุดด้วย (ราคาที่เสนอ + terms) เพื่อให้ค่าคงอยู่เมื่อเปิด dialog อีกครั้ง
         const { quotationPrice, terms } = req.body;
         const latestQuotation = await (tx as any).quotation.findFirst({
-          where: { customerId: id },
+          where: {
+            customerId: id,
+            ...(latestClosed ? { createdAt: { gt: latestClosed.createdAt } } : {})
+          },
           orderBy: { createdAt: "desc" },
         });
         if (latestQuotation) {
