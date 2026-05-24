@@ -356,44 +356,6 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
               note: note !== undefined ? note : existing.note,
             },
           });
-        } else {
-          // 🆕 หากยังไม่มีใบเสนอราคาในระบบเลย → ทำการสร้างใบเสนอราคาฉบับ Draft ใหม่ให้อัตโนมัติ!
-          let propertyId = currentCustomer.interestedPropertyId;
-          if (!propertyId) {
-            // ค้นหาอสังหาริมทรัพย์ชิ้นแรกในระบบเพื่อใช้เป็นค่าเริ่มต้นกรณีไม่ได้เลือก
-            const firstProp = await tx.property.findFirst({ select: { id: true } });
-            if (firstProp) {
-              propertyId = firstProp.id;
-            }
-          }
-
-          if (propertyId) {
-            // คำนวณเลขที่ใบเสนอราคา (เช่น QUE-YYYYMMDD-XXX)
-            const now = new Date();
-            const y = now.getFullYear();
-            const m = String(now.getMonth() + 1).padStart(2, "0");
-            const d = String(now.getDate()).padStart(2, "0");
-            const prefix = `QUE-${y}${m}${d}`;
-
-            const countToday = await tx.quotation.count({
-              where: { quotationNumber: { startsWith: prefix } },
-            });
-            const quotationNumber = `${prefix}-${String(countToday + 1).padStart(3, "0")}`;
-
-            // สร้างใบเสนอราคาฉบับร่าง
-            await tx.quotation.create({
-              data: {
-                quotationNumber,
-                status: "DRAFT",
-                terms: terms || null,
-                totalAmount: quotationPrice !== undefined ? Number(quotationPrice) : 0,
-                endDate: endDate ? new Date(endDate) : null,
-                customerId: id,
-                propertyId: propertyId,
-                createdById: me.id,
-              }
-            });
-          }
         }
       }
 
