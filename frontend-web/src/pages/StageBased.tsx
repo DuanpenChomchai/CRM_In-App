@@ -249,22 +249,8 @@ const StageBased = () => {
       pushCol("QUOTATION", data.columns.QUOTATION || []);
       pushCol("CLOSED", data.columns.CLOSED || []);
 
-      // โหลด files จาก DB และกรองเฉพาะ quotations ของรอบปัจจุบัน
+      // โหลด files จาก DB (quotations[x].files)
       const withFiles = mapped.map((d) => {
-        // ✅ contacted รอบซื้อซ้ำ → เช็คว่า quotation ล่าสุดเป็นของรอบใหม่หรือเก่า
-        // ถ้า quotation ถูกสร้างก่อน closedDeal ล่าสุด = ของรอบเก่า → ล้างออก
-        if (d.stage === "contacted" && (d.purchaseCount ?? 0) > 0) {
-          const raw = (data.columns.CONTACTED || []).find((c: any) => c.id === d.customerId);
-          const latestQDate = raw?.quotations?.[0]?.createdAt ? new Date(raw.quotations[0].createdAt) : null;
-          const latestClosedDate = raw?.closedDeals?.[0]?.createdAt ? new Date(raw.closedDeals[0].createdAt) : null;
-
-          // ถ้าไม่มี quotation เลย หรือ quotation เก่ากว่า closedDeal → ล้าง (รอบใหม่ยังไม่มีข้อมูล)
-          const isOldRoundData = !latestQDate || (latestClosedDate && latestQDate <= latestClosedDate);
-          if (isOldRoundData) {
-            return { ...d, quotations: [], quotationFiles: [], _dbFiles: [], priceOffered: undefined, terms: undefined };
-          }
-        }
-        // ปกติ — ดึงไฟล์จาก quotations ของรอบปัจจุบัน
         const allFiles = (d.quotations || []).flatMap((q: any) => q.files || []);
         return allFiles.length > 0
           ? { ...d, quotationFiles: allFiles.map((f: any) => f.fileName), _dbFiles: allFiles }
@@ -343,22 +329,7 @@ const StageBased = () => {
   };
 
   const handleOpenDialog = (deal: Deal, stage: Deal["stage"]) => {
-    // ✅ ล้างข้อมูลรอบเก่าเฉพาะตอนที่ยังไม่มี quotations ของรอบใหม่
-    // (ถ้า deal.quotations ว่าง แปลว่าถูกล้างมาจาก fetchBoard แล้ว = รอบเก่า)
-    const isRepeatRound = stage === "contacted"
-      && (deal.purchaseCount ?? 0) > 0
-      && (!deal.quotations || deal.quotations.length === 0);
-    setSelectedDeal({
-      ...deal,
-      propertyType: isRepeatRound ? "" : deal.propertyType,
-      budget: isRepeatRound ? 0 : deal.budget,
-      priceOffered: isRepeatRound ? undefined : deal.priceOffered,
-      terms: isRepeatRound ? undefined : deal.terms,
-      endDate: isRepeatRound ? undefined : deal.endDate,
-      _dbFiles: isRepeatRound ? [] : deal._dbFiles,
-      files: isRepeatRound ? [] : deal.files,
-      quotations: isRepeatRound ? [] : deal.quotations,
-    });
+    setSelectedDeal({ ...deal });
     setCurrentStage(stage);
     setIsDialogOpen(true);
   };
@@ -814,23 +785,18 @@ const StageBased = () => {
               <Phone className="w-3.5 h-3.5" />
               <span>{deal.phone}</span>
             </div>
-            {/* ✅ ซ่อนประเภท/งบเฉพาะตอนเป็นรอบซื้อซ้ำที่ยังไม่ได้กรอกข้อมูลใหม่ */}
-            {!(deal.stage === "contacted" && (deal.purchaseCount ?? 0) > 0 && (!deal.propertyType || deal.propertyType === "-")) && (
-              <>
-                <div className="flex items-center gap-2">
-                  <Home className="w-3.5 h-3.5 text-primary" />
-                  <span className="text-muted-foreground">ประเภทอสังหา:</span>
-                  <span className="font-medium">{deal.propertyType}</span>
-                </div>
-                <div className="flex items-center gap-2 font-semibold text-primary">
-                  <DollarSign className="w-3.5 h-3.5" />
-                  <span className="text-muted-foreground font-normal">
-                    งบประมาณ:
-                  </span>
-                  <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
-                </div>
-              </>
-            )}
+            <div className="flex items-center gap-2">
+              <Home className="w-3.5 h-3.5 text-primary" />
+              <span className="text-muted-foreground">ประเภทอสังหา:</span>
+              <span className="font-medium">{deal.propertyType || "-"}</span>
+            </div>
+            <div className="flex items-center gap-2 font-semibold text-primary">
+              <DollarSign className="w-3.5 h-3.5" />
+              <span className="text-muted-foreground font-normal">
+                งบประมาณ:
+              </span>
+              <span>{deal.budget > 0 ? formatCurrency(deal.budget) : "-"}</span>
+            </div>
           </div>
 
           {/* Start Date - Common to Dialog */}

@@ -481,14 +481,14 @@ export const repeatPurchase = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Reset กลับไปเป็น NEW เพื่อเริ่มรอบใหม่
-    // ✅ คงไว้ซึ่ง saleId เดิม เพื่อให้ข้อมูลการดูแลยังอยู่ และข้อมูล quotations/products ของรอบก่อนยังเข้าถึงได้
+    // ✅ Reset กลับไป NEW + ล้างข้อมูลสินค้าของรอบเก่าออก เพื่อให้รอบใหม่เริ่มสะอาด
     await prisma.customer.update({
       where: { id },
       data: {
         mainStatus: "NEW",
-        // ไม่ล้าง saleId — ให้ admin reassign เองจากหน้าลูกค้าถ้าต้องการ
-      },
+        productType: null,   // ล้างประเภทอสังหาของรอบเก่า
+        priceBudget: null,   // ล้างงบประมาณของรอบเก่า
+      } as any,
     });
 
     return res.json({ ok: true, message: "เตรียมการซื้อซ้ำเรียบร้อย สินค้ารอการจัดสรรเซลล์ใหม่ที่เมนูลูกค้า" });
