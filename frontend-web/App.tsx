@@ -20,6 +20,7 @@ import StageBased from "@/pages/StageBased";
 import Profile from "@/pages/Profile";
 import About from "@/pages/About";
 import Contact from "@/pages/Contact";
+import TeamDiscount from "@/pages/TeamDiscount";
 
 const queryClient = new QueryClient();
 
@@ -211,6 +212,18 @@ const App = () => (
               <ProtectedRoute>
                 <AppLayout>
                   <Contact />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Team Discount */}
+          <Route
+            path="/team-discount"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <TeamDiscount />
                 </AppLayout>
               </ProtectedRoute>
             }

@@ -13,6 +13,7 @@ import {
   getProfile,
   getManagersWithTeams,
   assignManager,
+  setMaxDiscount,
 } from "../controller/userController";
 
 import { authMiddleware, verifyAdmin, requireRoles, AuthRequest } from "../middlewares/authMiddleware";
@@ -121,6 +122,8 @@ router.get("/sales-list", authMiddleware, listSales);
 // จัดการทีม manager
 router.get("/managers-with-teams", authMiddleware, requireRoles("ADMIN", "MANAGER"), getManagersWithTeams);
 router.patch("/sales/:saleId/assign-manager", authMiddleware, verifyAdmin, assignManager);
+// ✅ Manager/Admin กำหนดเพดานส่วนลดให้ Sale
+router.patch("/:saleId/max-discount", authMiddleware, requireRoles("MANAGER", "ADMIN"), setMaxDiscount);
 router.get("/", authMiddleware, verifyAdmin, listUsers);
 router.get("/:id", authMiddleware, verifyAdmin, getUserById);
 router.post("/", authMiddleware, verifyAdmin, createUser);

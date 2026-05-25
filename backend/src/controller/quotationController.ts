@@ -533,36 +533,43 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
     let grandNet      = 0;  // ยอดสุทธิรวม
 
     q.items.forEach((it: any, idx: number) => {
-      const bg = idx % 2 === 0 ? "#FFFFFF" : "#FAFAFA";
-      doc.rect(L, rowY, W, 22).fill(bg);
-
       const unitPrice = Number(it.unitPrice ?? 0);
       const qty       = Number(it.quantity ?? 1);
       const discPct   = Number(it.discount ?? 0);
-      const subtotal  = unitPrice * qty;                        // ราคาเต็ม
-      const discAmt   = subtotal * discPct / 100;               // มูลค่าส่วนลด
-      const net       = Number(it.lineTotal ?? subtotal - discAmt); // ยอดสุทธิ
+      const subtotal  = unitPrice * qty;
+      const discAmt   = subtotal * discPct / 100;
+      const net       = Number(it.lineTotal ?? subtotal - discAmt);
 
       grandSubtotal += subtotal;
       grandDiscount += discAmt;
       grandNet      += net;
 
+      // ✅ คำนวณความสูง row ตามความยาวชื่อสินค้า
+      const nameHeight = doc.font("Regular").fontSize(8).heightOfString(it.name ?? "-", { width: col.desc - 6 });
+      const rowH = Math.max(22, nameHeight + 12);
+
+      const bg = idx % 2 === 0 ? "#FFFFFF" : "#FAFAFA";
+      doc.rect(L, rowY, W, rowH).fill(bg);
+
       let rx = L;
       const td = (text: string, width: number, align: "left" | "right" | "center" = "left", bold = false, color = BLACK) => {
+        // จัดให้อยู่กลาง row แนวตั้ง
+        const textH = doc.font(bold ? "Bold" : "Regular").fontSize(8).heightOfString(text, { width: width - 6 });
+        const offsetY = (rowH - textH) / 2;
         doc.font(bold ? "Bold" : "Regular").fontSize(8).fillColor(color)
-          .text(text, rx + 3, rowY + 6, { width: width - 6, align });
+          .text(text, rx + 3, rowY + offsetY, { width: width - 6, align });
         rx += width;
       };
 
-      td(String(idx + 1),                   col.no,      "center");
-      td(it.name ?? "-",                    col.desc,    "left");
-      td(String(qty),                       col.qty,     "center");
-      td(fmt(unitPrice),                    col.unit,    "right");
-      td(discPct > 0 ? `${discPct}%` : "-",col.discPct, "right");
-      td(discAmt > 0 ? fmt(discAmt) : "-",  col.discAmt, "right", false, "#CC3333");
-      td(fmt(net),                          col.net,     "right", true);
+      td(String(idx + 1),                    col.no,      "center");
+      td(it.name ?? "-",                     col.desc,    "left");
+      td(String(qty),                        col.qty,     "center");
+      td(fmt(unitPrice),                     col.unit,    "right");
+      td(discPct > 0 ? `${discPct}%` : "-", col.discPct, "right");
+      td(discAmt > 0 ? fmt(discAmt) : "-",   col.discAmt, "right", false, "#CC3333");
+      td(fmt(net),                           col.net,     "right", true);
 
-      rowY += 22;
+      rowY += rowH;
     });
 
     // Bottom border of table
