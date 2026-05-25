@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import {
   listUsers,
   getUserById,
@@ -76,15 +77,25 @@ router.get("/profile", authMiddleware, async (req: AuthRequest, res) => {
 // อัปเดตโปรไฟล์บนเว็บ (ข้อมูล text ปกติ)
 router.put("/profile", authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const { name, email, tol } = req.body;
+    const { name, email, tol, password } = req.body;
+
+    const updateData: any = {
+      ...(name !== undefined ? { name } : {}),
+      ...(email !== undefined ? { email } : {}),
+      ...(tol !== undefined ? { tol } : {}),
+    };
+
+    if (password && password.trim().length > 0) {
+      if (req.user!.role === "MANAGER" || req.user!.role === "SALE") {
+        updateData.password = await bcrypt.hash(password, 10);
+      } else {
+        return res.status(403).json({ message: "ไม่มีสิทธิ์เปลี่ยนรหัสผ่าน" });
+      }
+    }
 
     const updated = await prisma.user.update({
       where: { id: req.user!.id },
-      data: {
-        ...(name !== undefined ? { name } : {}),
-        ...(email !== undefined ? { email } : {}),
-        ...(tol !== undefined ? { tol } : {}),
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,

@@ -22,6 +22,7 @@ interface UserProfile {
   phone: string;
   role: string;
   avatar?: string | null; // URL สำหรับโชว์รูป
+  password?: string;
 }
 
 export default function Profile() {
@@ -86,6 +87,7 @@ export default function Profile() {
           phone: u.tol || "",
           role: String(u.role || "").toUpperCase(),
           avatar: null,
+          password: "",
         };
 
         // ✅ ให้ใช้ URL รูปผ่าน backend proxy เสมอ
@@ -111,7 +113,7 @@ export default function Profile() {
   const handleEdit = () => setIsEditing(true);
 
   const handleCancel = () => {
-    setEditedProfile(profile);
+    setEditedProfile(profile ? { ...profile, password: "" } : null);
     setAvatarUrl(profile?.avatar ?? null);
     setPreviewImg(profile?.avatar ?? null);
     setIsEditing(false);
@@ -131,6 +133,7 @@ export default function Profile() {
       name: editedProfile.name,
       email: editedProfile.email,
       tol: editedProfile.phone,
+      ...(editedProfile.password ? { password: editedProfile.password } : {}),
     };
 
     try {
@@ -153,6 +156,7 @@ export default function Profile() {
       const updated: UserProfile = {
         ...editedProfile,
         avatar: avatarUrl ?? editedProfile.avatar ?? null,
+        password: "", // เคลียร์รหัสผ่านหลังจากบันทึกสำเร็จ
       };
 
       setProfile(updated);
@@ -344,6 +348,19 @@ export default function Profile() {
                   <div className="px-4 py-3 bg-muted/30 rounded-lg">{profile.phone}</div>
                 )}
               </div>
+
+              {isEditing && (profile.role === "MANAGER" || profile.role === "SALE") && (
+                <div className="space-y-2">
+                  <Label>เปลี่ยนรหัสผ่าน (ปล่อยว่างหากไม่ต้องการเปลี่ยน)</Label>
+                  <Input 
+                    type="password" 
+                    name="password" 
+                    value={editedProfile.password || ""} 
+                    onChange={handleChange} 
+                    placeholder="รหัสผ่านใหม่"
+                  />
+                </div>
+              )}
             </div>
 
             {isEditing && (
