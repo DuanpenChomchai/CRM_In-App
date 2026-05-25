@@ -41,36 +41,26 @@ const TeamDiscount = () => {
       let sales: any[] = [];
 
       if (role === "MANAGER") {
-        // หา manager ที่เป็นตัวเอง
         const myTeam = (data.managers || []).find((m: any) => m.id === userObj?.id);
         sales = myTeam?.team || [];
       } else if (role === "ADMIN") {
-        // Admin เห็นทุกคน
         for (const m of data.managers || []) {
           sales = [...sales, ...m.team];
         }
         sales = [...sales, ...(data.unassignedSales || [])];
       }
 
-      // ดึง maxDiscount ของแต่ละ sale จาก API users list
-      const detailRes = await fetch(`${API_BASE}/api/users?role=SALE&pageSize=100`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-      });
-      const detailData = detailRes.ok ? await detailRes.json() : { data: [] };
-      const detailMap: Record<number, any> = {};
-      for (const u of detailData.data || []) detailMap[u.id] = u;
-
+      // ✅ maxDiscount อยู่ใน team data แล้ว ไม่ต้องเรียก API เพิ่ม
       const mapped: SaleMember[] = sales.map((s: any) => {
-        const detail = detailMap[s.id];
-        const md = detail?.maxDiscount !== undefined ? detail.maxDiscount : null;
+        const md = s.maxDiscount !== undefined && s.maxDiscount !== null ? Number(s.maxDiscount) : null;
         return {
           id: s.id,
           name: s.name,
           email: s.email,
           tol: s.tol,
           img: s.img,
-          maxDiscount: md !== null ? Number(md) : null,
-          editValue: md !== null ? String(Number(md)) : "",
+          maxDiscount: md,
+          editValue: md !== null ? String(md) : "",
           dirty: false,
         };
       });
