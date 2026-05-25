@@ -199,13 +199,14 @@ const StageBased = () => {
             customerId: c.id,
             customerName: c.name || "-",
             phone: c.tel ?? c.tol ?? "-",
-            // ✅ CLOSED historical card ใช้ snapshot ของรอบนั้น ไม่ใช้ customer ปัจจุบัน
-            propertyType: (apiStage === "CLOSED" && c.isHistorical && latestClosed?.snapshotProductType)
-              ? latestClosed.snapshotProductType
-              : (c.productType ?? c.interestedProperty?.type ?? "-"),
-            budget: (apiStage === "CLOSED" && c.isHistorical && latestClosed?.snapshotPriceBudget)
-              ? Number(latestClosed.snapshotPriceBudget)
-              : Number(c.priceBudget || 0),
+            propertyType:
+              apiStage === "CLOSED" && latestClosed?.snapshotProductType
+                ? latestClosed.snapshotProductType
+                : (c.productType ?? c.interestedProperty?.type ?? "-"),
+            budget:
+              apiStage === "CLOSED" && latestClosed?.snapshotPriceBudget
+                ? Number(latestClosed.snapshotPriceBudget)
+                : Number(c.priceBudget || 0),
             stage: apiToUi(apiStage),
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
@@ -213,10 +214,14 @@ const StageBased = () => {
             // endDate — ดึงตาม stage ของ card นั้นๆ ไม่ cascade ข้าม stage
             endDate: (() => {
               if (apiStage === "CONTACTED") {
-                return latestLog?.endDate ? new Date(latestLog.endDate) : undefined;
+                return latestLog?.endDate
+                  ? new Date(latestLog.endDate)
+                  : undefined;
               }
               if (apiStage === "NEGOTIATING") {
-                return latestNego?.endDate ? new Date(latestNego.endDate) : undefined;
+                return latestNego?.endDate
+                  ? new Date(latestNego.endDate)
+                  : undefined;
               }
               if (apiStage === "QUOTATION" || apiStage === "CLOSED") {
                 return latestQ?.endDate ? new Date(latestQ.endDate) : undefined;
@@ -244,7 +249,7 @@ const StageBased = () => {
                   ? "lost"
                   : undefined,
             // ✅ purchaseCount — ใช้ _count.closedDeals ถ้ามี ไม่งั้น fallback นับจาก closedDeals array
-            purchaseCount: c._count?.closedDeals ?? (c.closedDeals?.length ?? 0),
+            purchaseCount: c._count?.closedDeals ?? c.closedDeals?.length ?? 0,
             isHistorical: c.isHistorical,
             roundNumber: c.roundNumber,
           });
@@ -263,11 +268,11 @@ const StageBased = () => {
           ...(data.columns.NEGOTIATING || []),
           ...(data.columns.QUOTATION || []),
           ...(data.columns.CLOSED || []),
-        ].find((c: any) => (c.dummyId || c.id) === d.id || c.id === d.customerId);
+        ].find(
+          (c: any) => (c.dummyId || c.id) === d.id || c.id === d.customerId,
+        );
         const customerFiles = (raw as any)?.customerFiles || [];
-        return customerFiles.length > 0
-          ? { ...d, _dbFiles: customerFiles }
-          : d;
+        return customerFiles.length > 0 ? { ...d, _dbFiles: customerFiles } : d;
       });
       setDeals(withFiles);
     } catch (e: any) {
@@ -440,24 +445,24 @@ const StageBased = () => {
 
     // แปลง status ภาษาไทย → enum ภาษาอังกฤษ
     const contactedStatusMap: Record<string, string> = {
-      "กำลังติดตาม": "FOLLOWING_UP",
-      "รอลูกค้าตอบกลับ": "WAITING_REPLY",
-      "นัดพบแล้ว": "APPOINTED",
-      "ลูกค้าไม่สนใจ": "NOT_INTERESTED",
-      "FOLLOWING_UP": "FOLLOWING_UP",
-      "WAITING_REPLY": "WAITING_REPLY",
-      "APPOINTED": "APPOINTED",
-      "NOT_INTERESTED": "NOT_INTERESTED",
+      กำลังติดตาม: "FOLLOWING_UP",
+      รอลูกค้าตอบกลับ: "WAITING_REPLY",
+      นัดพบแล้ว: "APPOINTED",
+      ลูกค้าไม่สนใจ: "NOT_INTERESTED",
+      FOLLOWING_UP: "FOLLOWING_UP",
+      WAITING_REPLY: "WAITING_REPLY",
+      APPOINTED: "APPOINTED",
+      NOT_INTERESTED: "NOT_INTERESTED",
     };
     const negotiationStatusMap: Record<string, string> = {
-      "อยู่ระหว่างเจรจา": "NEGOTIATING",
-      "รอลูกค้ายืนยัน": "WAITING_CONFIRM",
-      "ลูกค้าต่อราคา": "COUNTER_OFFER",
-      "ชะลอการเจรจา": "PAUSED",
-      "NEGOTIATING": "NEGOTIATING",
-      "WAITING_CONFIRM": "WAITING_CONFIRM",
-      "COUNTER_OFFER": "COUNTER_OFFER",
-      "PAUSED": "PAUSED",
+      อยู่ระหว่างเจรจา: "NEGOTIATING",
+      รอลูกค้ายืนยัน: "WAITING_CONFIRM",
+      ลูกค้าต่อราคา: "COUNTER_OFFER",
+      ชะลอการเจรจา: "PAUSED",
+      NEGOTIATING: "NEGOTIATING",
+      WAITING_CONFIRM: "WAITING_CONFIRM",
+      COUNTER_OFFER: "COUNTER_OFFER",
+      PAUSED: "PAUSED",
     };
 
     // อัปเดต local state ทันที
@@ -491,25 +496,31 @@ const StageBased = () => {
         toStatus: uiToApi(currentStage),
         endDate: selectedDeal.endDate?.toISOString(),
         // CONTACTED — แปลงเป็น enum
-        contactedStatus: currentStage === "contacted"
-          ? (contactedStatusMap[selectedDeal.status || ""] || "FOLLOWING_UP")
-          : undefined,
+        contactedStatus:
+          currentStage === "contacted"
+            ? contactedStatusMap[selectedDeal.status || ""] || "FOLLOWING_UP"
+            : undefined,
         // NEGOTIATING — แปลงเป็น enum
-        negotiationStatus: currentStage === "negotiation"
-          ? (negotiationStatusMap[selectedDeal.status || ""] || "NEGOTIATING")
-          : undefined,
+        negotiationStatus:
+          currentStage === "negotiation"
+            ? negotiationStatusMap[selectedDeal.status || ""] || "NEGOTIATING"
+            : undefined,
         note: selectedDeal.terms || undefined,
         // QUOTATION — ส่งทั้ง quotation และ closed เพราะ closed ยังมี quotation ประกอบ
-        quotationPrice: (currentStage === "quotation" || currentStage === "closed")
-          ? selectedDeal.priceOffered
-          : undefined,
-        terms: (currentStage === "quotation" || currentStage === "closed")
-          ? selectedDeal.terms
-          : undefined,
+        quotationPrice:
+          currentStage === "quotation" || currentStage === "closed"
+            ? selectedDeal.priceOffered
+            : undefined,
+        terms:
+          currentStage === "quotation" || currentStage === "closed"
+            ? selectedDeal.terms
+            : undefined,
         // CLOSED
         closedResult:
           currentStage === "closed" && selectedDeal.dealStatus
-            ? selectedDeal.dealStatus === "won" ? "WON" : "LOST"
+            ? selectedDeal.dealStatus === "won"
+              ? "WON"
+              : "LOST"
             : undefined,
         finalValue: selectedDeal.finalValue,
         closingDate: selectedDeal.closingDate?.toISOString(),
@@ -531,14 +542,17 @@ const StageBased = () => {
         for (const file of pendingFiles) {
           const fd = new FormData();
           fd.append("file", file);
-          await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}/files`, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${getToken()}` },
-            body: fd,
-          });
+          await fetch(
+            `${API_BASE}/api/customers/${selectedDeal.customerId}/files`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${getToken()}` },
+              body: fd,
+            },
+          );
         }
         setPendingFiles([]);
-        setSelectedDeal((prev) => prev ? { ...prev, files: [] } : prev);
+        setSelectedDeal((prev) => (prev ? { ...prev, files: [] } : prev));
       }
 
       toast.success("บันทึกข้อมูลสำเร็จ");
@@ -563,7 +577,10 @@ const StageBased = () => {
         `${API_BASE}/api/customers/${customerId}/files/${fileId}/download`,
         { headers: { Authorization: `Bearer ${getToken()}` } },
       );
-      if (!res.ok) { toast.error("ดาวน์โหลดไม่สำเร็จ"); return; }
+      if (!res.ok) {
+        toast.error("ดาวน์โหลดไม่สำเร็จ");
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -772,26 +789,35 @@ const StageBased = () => {
 
           {/* ✅ แสดงไฟล์แนบสำหรับ contacted และ negotiation */}
           {(deal.stage === "contacted" || deal.stage === "negotiation") &&
-            deal._dbFiles && deal._dbFiles.length > 0 && (
-            <div className="pt-2 border-t border-border/50 space-y-1">
-              {deal._dbFiles.slice(0, 3).map((f: any) => {
-                const ext = f.fileName?.split(".").pop()?.toLowerCase() || "";
-                const icon = ["jpg","jpeg","png","gif"].includes(ext) ? "🖼️"
-                  : ["pdf"].includes(ext) ? "📄"
-                  : ["doc","docx"].includes(ext) ? "📝"
-                  : "📁";
-                return (
-                  <div key={f.id} className="flex items-center gap-1.5 text-xs text-muted-foreground truncate">
-                    <span>{icon}</span>
-                    <span className="truncate">{f.fileName}</span>
+            deal._dbFiles &&
+            deal._dbFiles.length > 0 && (
+              <div className="pt-2 border-t border-border/50 space-y-1">
+                {deal._dbFiles.slice(0, 3).map((f: any) => {
+                  const ext = f.fileName?.split(".").pop()?.toLowerCase() || "";
+                  const icon = ["jpg", "jpeg", "png", "gif"].includes(ext)
+                    ? "🖼️"
+                    : ["pdf"].includes(ext)
+                      ? "📄"
+                      : ["doc", "docx"].includes(ext)
+                        ? "📝"
+                        : "📁";
+                  return (
+                    <div
+                      key={f.id}
+                      className="flex items-center gap-1.5 text-xs text-muted-foreground truncate"
+                    >
+                      <span>{icon}</span>
+                      <span className="truncate">{f.fileName}</span>
+                    </div>
+                  );
+                })}
+                {deal._dbFiles.length > 3 && (
+                  <div className="text-xs text-muted-foreground">
+                    +{deal._dbFiles.length - 3} ไฟล์
                   </div>
-                );
-              })}
-              {deal._dbFiles.length > 3 && (
-                <div className="text-xs text-muted-foreground">+{deal._dbFiles.length - 3} ไฟล์</div>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            )}
 
           {/* Assigned Sales - Only Negotiation+ (Match Dialog visibility) */}
           {(deal.stage === "negotiation" ||
@@ -1343,7 +1369,9 @@ const StageBased = () => {
                       className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
                       onClick={() => {
                         setIsDialogOpen(false);
-                        navigate(`/quotation?customerId=${selectedDeal?.customerId}`);
+                        navigate(
+                          `/quotation?customerId=${selectedDeal?.customerId}`,
+                        );
                       }}
                     >
                       <FileText className="w-4 h-4 mr-2" />
@@ -1466,70 +1494,124 @@ const StageBased = () => {
                 <Label>แนบไฟล์</Label>
                 <div className="space-y-2">
                   {/* ไฟล์จาก DB */}
-                  {selectedDeal?._dbFiles && selectedDeal._dbFiles.length > 0 && (
-                    <div className="space-y-1">
-                      {selectedDeal._dbFiles.map((f: any) => {
-                        const ext = f.fileName?.split(".").pop()?.toLowerCase() || "";
-                        const icon = ["mp3","wav","m4a","aac","ogg"].includes(ext) ? "🎧"
-                          : ["mp4","mov","avi","mkv"].includes(ext) ? "🎥"
-                          : ["jpg","jpeg","png","gif"].includes(ext) ? "🖼️"
-                          : ["pdf"].includes(ext) ? "📄"
-                          : ["doc","docx"].includes(ext) ? "📝"
-                          : ["xls","xlsx"].includes(ext) ? "📊"
-                          : ["zip","rar"].includes(ext) ? "🗂️" : "📁";
-                        return (
-                          <div key={f.id} className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm">
-                            <span className="flex items-center gap-2 truncate">
-                              <span>{icon}</span>
-                              <span className="truncate text-foreground">{f.fileName}</span>
-                            </span>
-                            <div className="flex gap-1 ml-2 flex-shrink-0">
-                              <button
-                                onClick={(e) => handleDownloadFile(selectedDeal.customerId, f.id, f.fileName, e)}
-                                className="text-blue-500 hover:text-blue-700 text-xs px-1"
-                                title="ดาวน์โหลด"
-                              >⬇</button>
-                              <button
-                                onClick={async () => {
-                                  await fetch(`${API_BASE}/api/customers/${selectedDeal.customerId}/files/${f.id}`, {
-                                    method: "DELETE",
-                                    headers: { Authorization: `Bearer ${getToken()}` },
-                                  });
-                                  setSelectedDeal({
-                                    ...selectedDeal,
-                                    _dbFiles: selectedDeal._dbFiles?.filter((x: any) => x.id !== f.id),
-                                  });
-                                }}
-                                className="text-muted-foreground hover:text-destructive"
-                              >×</button>
+                  {selectedDeal?._dbFiles &&
+                    selectedDeal._dbFiles.length > 0 && (
+                      <div className="space-y-1">
+                        {selectedDeal._dbFiles.map((f: any) => {
+                          const ext =
+                            f.fileName?.split(".").pop()?.toLowerCase() || "";
+                          const icon = [
+                            "mp3",
+                            "wav",
+                            "m4a",
+                            "aac",
+                            "ogg",
+                          ].includes(ext)
+                            ? "🎧"
+                            : ["mp4", "mov", "avi", "mkv"].includes(ext)
+                              ? "🎥"
+                              : ["jpg", "jpeg", "png", "gif"].includes(ext)
+                                ? "🖼️"
+                                : ["pdf"].includes(ext)
+                                  ? "📄"
+                                  : ["doc", "docx"].includes(ext)
+                                    ? "📝"
+                                    : ["xls", "xlsx"].includes(ext)
+                                      ? "📊"
+                                      : ["zip", "rar"].includes(ext)
+                                        ? "🗂️"
+                                        : "📁";
+                          return (
+                            <div
+                              key={f.id}
+                              className="flex items-center justify-between px-3 py-2 bg-muted rounded-md text-sm"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <span>{icon}</span>
+                                <span className="truncate text-foreground">
+                                  {f.fileName}
+                                </span>
+                              </span>
+                              <div className="flex gap-1 ml-2 flex-shrink-0">
+                                <button
+                                  onClick={(e) =>
+                                    handleDownloadFile(
+                                      selectedDeal.customerId,
+                                      f.id,
+                                      f.fileName,
+                                      e,
+                                    )
+                                  }
+                                  className="text-blue-500 hover:text-blue-700 text-xs px-1"
+                                  title="ดาวน์โหลด"
+                                >
+                                  ⬇
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    await fetch(
+                                      `${API_BASE}/api/customers/${selectedDeal.customerId}/files/${f.id}`,
+                                      {
+                                        method: "DELETE",
+                                        headers: {
+                                          Authorization: `Bearer ${getToken()}`,
+                                        },
+                                      },
+                                    );
+                                    setSelectedDeal({
+                                      ...selectedDeal,
+                                      _dbFiles: selectedDeal._dbFiles?.filter(
+                                        (x: any) => x.id !== f.id,
+                                      ),
+                                    });
+                                  }}
+                                  className="text-muted-foreground hover:text-destructive"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    )}
                   {/* ไฟล์ที่เพิ่งเลือก (pending) */}
                   {selectedDeal?.files && selectedDeal.files.length > 0 && (
                     <div className="space-y-1">
                       {selectedDeal.files.map((f, idx) => (
-                        <div key={idx} className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-md text-sm border border-blue-200">
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between px-3 py-2 bg-blue-50 rounded-md text-sm border border-blue-200"
+                        >
                           <span className="flex items-center gap-2 truncate">
                             <span>📎</span>
-                            <span className="truncate text-foreground">{f} <span className="text-blue-500 text-xs">(รอบันทึก)</span></span>
+                            <span className="truncate text-foreground">
+                              {f}{" "}
+                              <span className="text-blue-500 text-xs">
+                                (รอบันทึก)
+                              </span>
+                            </span>
                           </span>
                           <button
                             onClick={() => {
                               if (selectedDeal) {
-                                const idx2 = selectedDeal.files?.indexOf(f) ?? -1;
-                                setPendingFiles((prev) => prev.filter((_, i) => i !== idx2));
+                                const idx2 =
+                                  selectedDeal.files?.indexOf(f) ?? -1;
+                                setPendingFiles((prev) =>
+                                  prev.filter((_, i) => i !== idx2),
+                                );
                                 setSelectedDeal({
                                   ...selectedDeal,
-                                  files: selectedDeal.files?.filter((_, i) => i !== idx),
+                                  files: selectedDeal.files?.filter(
+                                    (_, i) => i !== idx,
+                                  ),
                                 });
                               }
                             }}
                             className="ml-2 text-muted-foreground hover:text-destructive flex-shrink-0"
-                          >×</button>
+                          >
+                            ×
+                          </button>
                         </div>
                       ))}
                     </div>
