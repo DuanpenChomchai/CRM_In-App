@@ -395,6 +395,7 @@ export default function ChatDetailScreen() {
       : localUri;
 
     const formData = new FormData();
+    formData.append("originalname", encodeURIComponent(fileName));
     formData.append("file", {
       uri: safeUri,
       name: fileName,

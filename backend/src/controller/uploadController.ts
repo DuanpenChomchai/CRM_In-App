@@ -19,8 +19,23 @@ export const uploadChatFile = async (req: Request, res: Response) => {
       return res.status(500).json({ message: "MINIO_BUCKET is not set" });
     }
 
-    // ป้องกันชื่อไฟล์แปลก ๆ (optional)
-    const originalName = file.originalname || "file";
+    // ป้องกันชื่อไฟล์แปลก ๆ (optional) และแก้ปัญหาภาษาไทยจาก multer (latin1 -> utf8)
+    let originalName = file.originalname || "file";
+    try {
+      originalName = Buffer.from(originalName, "latin1").toString("utf8");
+    } catch (e) {
+      // ignore
+    }
+    
+    // หาก frontend ส่ง `originalname` ผ่าน body มาให้ใช้แทน (กันเหนียว)
+    if (req.body.originalname) {
+      try {
+        originalName = decodeURIComponent(req.body.originalname);
+      } catch (e) {
+        originalName = req.body.originalname;
+      }
+    }
+
     const ext = path.extname(originalName);
     const random = crypto.randomBytes(16).toString("hex");
 
