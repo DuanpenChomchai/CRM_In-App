@@ -496,58 +496,71 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
     // Table header background
     doc.rect(L, tableTop, W, 22).fill("#F5F5F5");
 
-    // Column widths
+    // Column widths — เพิ่มคอลัมน์ ยอดรวม / ส่วนลด(บาท) / ยอดสุทธิ
     const col = {
-      no: 30,
-      desc: W - 30 - 70 - 80 - 80 - 80,
-      qty: 70,
-      unit: 80,
-      disc: 80,
-      total: 80,
+      no:       28,
+      desc:     W - 28 - 55 - 90 - 70 - 90 - 90,
+      qty:      55,
+      unit:     90,
+      discPct:  70,  // ส่วนลด %
+      discAmt:  90,  // มูลค่าส่วนลด (บาท)
+      net:      90,  // ยอดสุทธิ
     };
 
     let cx = L;
     const thY = tableTop + 6;
 
     const th = (text: string, width: number, align: "left" | "right" | "center" = "left") => {
-      doc.font("Bold").fontSize(9).fillColor(GRAY).text(text, cx + 4, thY, { width: width - 8, align });
+      doc.font("Bold").fontSize(8).fillColor(GRAY).text(text, cx + 3, thY, { width: width - 6, align });
       cx += width;
     };
 
-    th("#", col.no, "center");
-    th("รายการ", col.desc, "left");
-    th("จำนวน", col.qty, "center");
-    th("ราคา/หน่วย", col.unit, "right");
-    th("ส่วนลด", col.disc, "right");
-    th("ยอดรวม", col.total, "right");
+    th("#",           col.no,      "center");
+    th("รายการ",      col.desc,    "left");
+    th("จำนวน",       col.qty,     "center");
+    th("ราคา/หน่วย",  col.unit,    "right");
+    th("ส่วนลด %",    col.discPct, "right");
+    th("มูลค่าส่วนลด",col.discAmt, "right");
+    th("ยอดสุทธิ",    col.net,     "right");
 
     // Table rows
     let rowY = tableTop + 22;
     const fmt = (n: number) =>
       new Intl.NumberFormat("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 
+    let grandSubtotal = 0;  // ราคาเต็มรวม
+    let grandDiscount = 0;  // ส่วนลดรวม
+    let grandNet      = 0;  // ยอดสุทธิรวม
+
     q.items.forEach((it: any, idx: number) => {
       const bg = idx % 2 === 0 ? "#FFFFFF" : "#FAFAFA";
       doc.rect(L, rowY, W, 22).fill(bg);
 
       const unitPrice = Number(it.unitPrice ?? 0);
-      const qty = Number(it.quantity ?? 1);
-      const disc = Number(it.discount ?? 0);
-      const lineTotal = Number(it.lineTotal ?? unitPrice * qty * (1 - disc / 100));
+      const qty       = Number(it.quantity ?? 1);
+      const discPct   = Number(it.discount ?? 0);
+      const subtotal  = unitPrice * qty;                        // ราคาเต็ม
+      const discAmt   = subtotal * discPct / 100;               // มูลค่าส่วนลด
+      const net       = Number(it.lineTotal ?? subtotal - discAmt); // ยอดสุทธิ
+
+      grandSubtotal += subtotal;
+      grandDiscount += discAmt;
+      grandNet      += net;
 
       let rx = L;
-      const td = (text: string, width: number, align: "left" | "right" | "center" = "left", bold = false) => {
-        doc.font(bold ? "Bold" : "Regular").fontSize(9).fillColor(BLACK)
-          .text(text, rx + 4, rowY + 6, { width: width - 8, align });
+      const td = (text: string, width: number, align: "left" | "right" | "center" = "left", bold = false, color = BLACK) => {
+        doc.font(bold ? "Bold" : "Regular").fontSize(8).fillColor(color)
+          .text(text, rx + 3, rowY + 6, { width: width - 6, align });
         rx += width;
       };
 
-      td(String(idx + 1), col.no, "center");
-      td(it.name ?? "-", col.desc, "left");
-      td(String(qty), col.qty, "center");
-      td(fmt(unitPrice), col.unit, "right");
-      td(disc > 0 ? `${disc}%` : "-", col.disc, "right");
-      td(fmt(lineTotal), col.total, "right", true);
+      td(String(idx + 1),                   col.no,      "center");
+      td(it.name ?? "-",                    col.desc,    "left");
+      td(String(qty),                       col.qty,     "center");
+      td(fmt(unitPrice),                    col.unit,    "right");
+      td(discPct > 0 ? `${discPct}%` : "-",col.discPct, "right");
+      td(discAmt > 0 ? fmt(discAmt) : "-",  col.discAmt, "right", false, "#CC3333");
+      td(fmt(net),                          col.net,     "right", true);
 
       rowY += 22;
     });
@@ -557,18 +570,19 @@ export const generateQuotationPDF = async (req: AuthRequest, res: Response) => {
 
     // ─── TOTALS ─────────────────────────────────────────────────────────────────
     rowY += 10;
-    const totalAmount = Number(q.totalAmount ?? 0);
+    const totalAmount = Number(q.totalAmount ?? grandNet);
 
     const totalRow = (label: string, value: string, bold = false, color = BLACK) => {
       doc.font(bold ? "Bold" : "Regular").fontSize(10).fillColor(ORANGE)
-        .text(label, L + W - 200, rowY, { width: 110, align: "right" });
+        .text(label, L + W - 210, rowY, { width: 120, align: "right" });
       doc.font(bold ? "Bold" : "Regular").fontSize(10).fillColor(color)
         .text(value, L + W - 85, rowY, { width: 85, align: "right" });
       rowY += 18;
     };
 
-    totalRow("ยอดรวม", `${fmt(totalAmount)} บาท`);
-    totalRow("ยอดสุทธิ", `${fmt(totalAmount)} บาท`, true, ORANGE);
+    totalRow("ยอดรวม",      `${fmt(grandSubtotal)} บาท`);
+    totalRow("ส่วนลด",      `- ${fmt(grandDiscount)} บาท`, false, "#CC3333");
+    totalRow("ยอดสุทธิ",    `${fmt(totalAmount)} บาท`, true, ORANGE);
 
     // ─── TERMS / NOTE ───────────────────────────────────────────────────────────
     if (q.terms || q.note) {
