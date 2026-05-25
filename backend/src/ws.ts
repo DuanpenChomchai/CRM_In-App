@@ -14,6 +14,7 @@ type ChatMessage = {
   fileName?: string | null;
   fileMime?: string | null;
   fileSize?: number | null;
+  isDeleted?: boolean;
 };
 
 type JoinPayload = { roomId: string; user: string };
@@ -346,6 +347,45 @@ export const initWs = (server: HttpServer) => {
         socket.to(roomId).emit("typing", { user, typing: !!typing });
       } catch (err) {
         console.error("typing error:", err);
+      }
+    });
+
+    // ================== UNSEND MESSAGE ==================
+    socket.on("unsend_message", async (payload: { roomId: string; cid: string | number; user: string }) => {
+      try {
+        const { roomId, cid, user } = payload;
+        if (!roomId || cid == null || !user) return;
+
+        // Update in memory if it exists
+        if (rooms.has(roomId)) {
+          const arr = rooms.get(roomId)!;
+          const msgIndex = arr.findIndex(m => m.cid == cid && m.user === user);
+          if (msgIndex !== -1) {
+            arr[msgIndex].isDeleted = true;
+          }
+        }
+
+        // Emit to room
+        io!.to(roomId).emit("message_unsent", { cid, roomId, user });
+
+        // Update in DB
+        const customerId = parseCustomerId(roomId);
+        if (customerId) {
+          await prisma.chatMessage.updateMany({
+            where: {
+              roomId,
+              cid: String(cid),
+              senderName: user,
+            },
+            data: {
+              isDeleted: true
+            }
+          });
+          console.log(`🗑️ message unsent in DB: roomId=${roomId}, cid=${cid}`);
+        }
+
+      } catch (err) {
+        console.error("unsend_message error:", err);
       }
     });
 

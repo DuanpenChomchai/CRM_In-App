@@ -11,6 +11,7 @@ import {
   Modal,
   Linking,
   Keyboard,
+  Alert,
 } from "react-native";
 import Toast from "react-native-toast-message";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -73,6 +74,7 @@ type BaseMsg = {
   ts: number;
   cid?: string | number;
   readByOther?: boolean; // ฝั่งตรงข้ามอ่านแล้วหรือยัง
+  isDeleted?: boolean;
 };
 
 type Msg =
@@ -364,6 +366,7 @@ export default function ChatDetailScreen() {
     messages: socketMessages,
     sendText: sendSocketText,
     sendMessage,
+    unsendMessage,
     startTyping,
     othersTyping,
   } = useSocketRoom(effectiveRoomId, myEmail || "user");
@@ -630,6 +633,7 @@ export default function ChatDetailScreen() {
             ts,
             cid: m.cid ?? undefined,
             readByOther,
+            isDeleted: !!m.isDeleted,
           };
 
           if (t === "IMAGE") {
@@ -762,6 +766,7 @@ export default function ChatDetailScreen() {
           ts,
           cid: m.cid,
           readByOther,
+          isDeleted: !!m.isDeleted,
         };
 
         const fKey = m.fileKey || m.filekey || m.imgMessage || m.fileMessage;
@@ -829,6 +834,7 @@ export default function ChatDetailScreen() {
   }, [token, effectiveCustomerId, effectiveRoomId, isFocused, mergedMessages.length]);
 
   const [input, setInput] = useState("");
+  const [unsendTarget, setUnsendTarget] = useState<string | null>(null);
 
   const listRef = useRef<FlatList<Msg>>(null);
   const reversedMessages = useMemo(() => [...mergedMessages].reverse(), [mergedMessages]);
@@ -1188,16 +1194,28 @@ export default function ChatDetailScreen() {
     return (
       <>
         <View className={`mb-2 ${align}`}>
-          <View
-            className={`rounded-2xl px-3 py-2 ${bg}`}
-            style={{
-              maxWidth: "78%",
-              minWidth: item.type === "file" ? 220 : undefined,
+          <Pressable
+            onLongPress={() => {
+              if (isMe && !item.isDeleted && item.cid) {
+                setUnsendTarget(String(item.cid));
+              }
             }}
           >
-            {item.type === "text" ? (
-              item.text === "[CALL_CANCELED]" ? (
-                <View className="flex-row items-center">
+            <View
+              className={`rounded-2xl px-3 py-2 ${bg}`}
+              style={{
+                maxWidth: "78%",
+                minWidth: item.type === "file" ? 220 : undefined,
+                opacity: item.isDeleted ? 0.6 : 1,
+              }}
+            >
+              {item.isDeleted ? (
+                <Text className={`${textColor} text-[15px] italic opacity-80`}>
+                  ข้อความถูกยกเลิกแล้ว
+                </Text>
+              ) : item.type === "text" ? (
+                item.text === "[CALL_CANCELED]" ? (
+                  <View className="flex-row items-center">
                   <View
                     style={{
                       width: 36,
@@ -1334,6 +1352,7 @@ export default function ChatDetailScreen() {
               </>
             )}
           </View>
+          </Pressable>
 
           {/* ✅ เวลา + Read */}
           <View className="flex-row items-center mt-1" style={{ gap: 4 }}>
@@ -1558,6 +1577,43 @@ export default function ChatDetailScreen() {
               </Pressable>
             </Pressable>
           </View>
+        </Pressable>
+      </Modal>
+
+      {/* ✅ Custom Unsend Message Modal */}
+      <Modal transparent visible={!!unsendTarget} animationType="fade" onRequestClose={() => setUnsendTarget(null)}>
+        <Pressable className="flex-1 bg-black/40 justify-center items-center" onPress={() => setUnsendTarget(null)}>
+          <Pressable onPress={(e) => e.stopPropagation()} className="bg-white rounded-3xl p-6 w-[85%] max-w-[340px] shadow-2xl">
+            <View className="items-center mb-5">
+              <View className="w-14 h-14 bg-red-50 rounded-full items-center justify-center mb-4">
+                <Ionicons name="trash-outline" size={28} color="#EF4444" />
+              </View>
+              <Text className="text-xl font-bold text-gray-900 text-center mb-2">ยกเลิกข้อความ</Text>
+              <Text className="text-[15px] text-gray-500 text-center px-2 leading-relaxed">
+                คุณแน่ใจหรือไม่ว่าต้องการยกเลิกข้อความนี้? ฝั่งตรงข้ามจะไม่สามารถเห็นข้อความนี้ได้อีก
+              </Text>
+            </View>
+            
+            <View className="flex-row justify-between mt-2" style={{ gap: 12 }}>
+              <Pressable 
+                className="flex-1 py-3.5 bg-gray-100 rounded-xl items-center"
+                onPress={() => setUnsendTarget(null)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+              >
+                <Text className="text-gray-700 font-semibold text-[16px]">ปิด</Text>
+              </Pressable>
+              <Pressable 
+                className="flex-1 py-3.5 bg-red-500 rounded-xl items-center"
+                onPress={() => {
+                  if (unsendTarget) unsendMessage(unsendTarget);
+                  setUnsendTarget(null);
+                }}
+                style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
+              >
+                <Text className="text-white font-semibold text-[16px]">ยกเลิกข้อความ</Text>
+              </Pressable>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </KeyboardAvoidingView>

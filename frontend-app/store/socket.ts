@@ -14,6 +14,7 @@ export type ChatMsg = {
   fileName?: string;
   fileMime?: string;
   fileSize?: number;
+  isDeleted?: boolean;
 };
 
 type SocketAuth = {
@@ -94,11 +95,20 @@ export const useSocketRoom = (roomId: string, username: string) => {
     const onTyping = ({ user, typing }: { user: string; typing: boolean }) =>
       setTypingUsers((prev) => ({ ...prev, [user]: typing }));
 
+    const onMessageUnsent = ({ cid, user }: { cid: string; roomId: string; user: string }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.cid === cid && m.user === user ? { ...m, isDeleted: true } : m
+        )
+      );
+    };
+
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("history", onHistory);
     socket.on("message", onMessage);
     socket.on("typing", onTyping);
+    socket.on("message_unsent", onMessageUnsent);
 
     return () => {
       socket.off("connect", onConnect);
@@ -106,6 +116,7 @@ export const useSocketRoom = (roomId: string, username: string) => {
       socket.off("history", onHistory);
       socket.off("message", onMessage);
       socket.off("typing", onTyping);
+      socket.off("message_unsent", onMessageUnsent);
 
       if (typingTimer.current) {
         clearTimeout(typingTimer.current);
@@ -136,9 +147,13 @@ export const useSocketRoom = (roomId: string, username: string) => {
     stopTyping();
   };
 
+  const unsendMessage = (cid: string) => {
+    socket.emit("unsend_message", { roomId, user: username, cid });
+  };
+
   const othersTyping = Object.entries(typingUsers)
     .filter(([u, t]) => t && u !== username)
     .map(([u]) => u);
 
-  return { connected, messages, sendText, sendMessage, startTyping, stopTyping, othersTyping };
+  return { connected, messages, sendText, sendMessage, unsendMessage, startTyping, stopTyping, othersTyping };
 };
