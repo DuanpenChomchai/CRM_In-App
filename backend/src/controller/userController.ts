@@ -100,6 +100,7 @@ export const listUsers = async (req: Request, res: Response) => {
           tol: true,
           img: true, // DB เก็บ filename
           role: true,
+          maxDiscount: true, // ✅
           createdAt: true,
           updatedAt: true,
         },
@@ -437,6 +438,7 @@ export const listSales = async (req: Request, res: Response) => {
           tol: true,
           img: true, // filename
           role: true,
+          maxDiscount: true, // ✅
           createdAt: true,
           updatedAt: true,
         },
