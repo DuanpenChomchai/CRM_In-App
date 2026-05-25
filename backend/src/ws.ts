@@ -2,6 +2,8 @@ import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import prisma from "./config/prismaclient";
 import { sendPushNotification } from "./services/notificationService";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+import s3Client, { BUCKET_NAME } from "./config/minioclient";
 
 type ChatMessage = {
   id: string;
@@ -371,17 +373,37 @@ export const initWs = (server: HttpServer) => {
         // Update in DB
         const customerId = parseCustomerId(roomId);
         if (customerId) {
-          await prisma.chatMessage.updateMany({
+          // Find the message first to check for fileKey
+          const existingMsg = await prisma.chatMessage.findFirst({
             where: {
               roomId,
               cid: String(cid),
               senderName: user,
-            },
-            data: {
-              isDeleted: true
             }
           });
-          console.log(`🗑️ message unsent in DB: roomId=${roomId}, cid=${cid}`);
+
+          if (existingMsg) {
+            // If message has a file, delete it from Minio to save space
+            if (existingMsg.fileKey && BUCKET_NAME) {
+              try {
+                await s3Client.send(
+                  new DeleteObjectCommand({
+                    Bucket: BUCKET_NAME,
+                    Key: existingMsg.fileKey,
+                  })
+                );
+                console.log(`🗑️ Deleted file from Minio: ${existingMsg.fileKey}`);
+              } catch (e) {
+                console.error(`❌ Failed to delete file from Minio: ${existingMsg.fileKey}`, e);
+              }
+            }
+
+            await prisma.chatMessage.update({
+              where: { id: existingMsg.id },
+              data: { isDeleted: true }
+            });
+            console.log(`🗑️ message unsent in DB: roomId=${roomId}, cid=${cid}`);
+          }
         }
 
       } catch (err) {

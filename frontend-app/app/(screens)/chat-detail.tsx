@@ -398,8 +398,8 @@ export default function ChatDetailScreen() {
     formData.append("originalname", encodeURIComponent(fileName));
     formData.append("file", {
       uri: safeUri,
-      name: fileName,
-      type: mimeType,
+      name: "upload_file_" + Date.now(), // ใช้ชื่อไฟล์ชั่วคราวที่เป็นภาษาอังกฤษ เพื่อป้องกัน fetch error จากภาษาไทย
+      type: mimeType || "application/octet-stream",
     } as any);
 
     console.log(`[uploadDirectToMinio] POST to ${API_BASE_URL}/chat/upload`);
