@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Info,
+  Percent,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,15 @@ const Sidebar = ({
       title: "จัดการผู้ใช้งาน",
       url: "/userManagement",
       icon: UserCog,
+    });
+  }
+
+  // MANAGER และ ADMIN เห็นเมนูกำหนดส่วนลด
+  if (role === "MANAGER" || role === "ADMIN") {
+    menuItems.push({
+      title: "กำหนดส่วนลดทีมขาย",
+      url: "/team-discount",
+      icon: Percent,
     });
   }
 
