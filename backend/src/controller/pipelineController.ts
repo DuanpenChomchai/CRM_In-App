@@ -80,6 +80,8 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
               finalValue: true,
               closingDate: true,
               createdAt: true,
+              snapshotProductType: true,
+              snapshotPriceBudget: true,
             } as any,
             orderBy: { createdAt: "desc" },
             take: 50,
@@ -362,11 +364,11 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
       if (toStatus === "CLOSED") {
         const validDealResults = ["WON", "LOST"];
         const safeResult = validDealResults.includes(closedResult) ? closedResult : "WON";
-        // ป้องกัน numeric overflow — Decimal(12,2) รับสูงสุด 9,999,999,999.99
         const MAX_VALUE = 9999999999.99;
         const rawFinalValue = req.body.finalValue !== undefined ? Number(req.body.finalValue) : null;
         const safeFinalValue = rawFinalValue !== null && rawFinalValue <= MAX_VALUE ? rawFinalValue : null;
         const existing = isSameStage ? await (tx as any).closedDeal.findFirst({ where: { customerId: id }, orderBy: { createdAt: 'desc' } }) : null;
+
         if (existing) {
           await (tx as any).closedDeal.update({
             where: { id: existing.id },
@@ -379,6 +381,12 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
             },
           });
         } else {
+          // ✅ Snapshot productType และ priceBudget ของรอบนี้ ไม่ให้เปลี่ยนตาม customer ในอนาคต
+          const customerSnap = await tx.customer.findUnique({
+            where: { id },
+            select: { productType: true, priceBudget: true },
+          });
+
           await (tx as any).closedDeal.create({
             data: {
               customerId: id,
@@ -388,6 +396,8 @@ export const moveCustomerStage = async (req: AuthRequest, res: Response) => {
               userId: me.role === "SALE" ? me.id : null,
               closingDate: req.body.closingDate ? new Date(req.body.closingDate) : new Date(),
               endDate: req.body.endDate ? new Date(req.body.endDate) : null,
+              snapshotProductType: customerSnap?.productType || null,
+              snapshotPriceBudget: customerSnap?.priceBudget || null,
             },
           });
         }

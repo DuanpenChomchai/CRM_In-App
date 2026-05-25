@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +115,7 @@ const apiToUi = (s: ApiStage): Deal["stage"] => {
 };
 
 const StageBased = () => {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
 
   const handleViewQuotation = (qId: number, e: React.MouseEvent) => {
@@ -126,51 +128,26 @@ const StageBased = () => {
     );
   };
 
-  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [deleteTargetQuotation, setDeleteTargetQuotation] = useState<{ id: number; num: string } | null>(null);
-
-  const handleDeleteQuotation = (
+  const handleDeleteQuotation = async (
     qId: number,
     quotationNumber: string,
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
-    setDeleteTargetQuotation({ id: qId, num: quotationNumber });
-    setIsDeleteConfirmOpen(true);
-  };
+    if (!window.confirm(`ยืนยันการลบใบเสนอราคา ${quotationNumber}?`)) return;
 
-  const confirmDeleteQuotation = async () => {
-    if (!deleteTargetQuotation) return;
     try {
-      const res = await fetch(`${API_BASE}/api/quotations/${deleteTargetQuotation.id}`, {
+      const res = await fetch(`${API_BASE}/api/quotations/${qId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) throw new Error("Delete failed");
       toast.success("ลบใบเสนอราคาเรียบร้อยแล้ว");
-
-      if (selectedDeal) {
-        const updatedQuotations = (selectedDeal.quotations || []).filter(
-          (q: any) => q.id !== deleteTargetQuotation.id
-        );
-        const newLatestQ = updatedQuotations[0];
-        setSelectedDeal({
-          ...selectedDeal,
-          quotations: updatedQuotations,
-          priceOffered: newLatestQ ? Number(newLatestQ.totalAmount || 0) : undefined,
-          terms: newLatestQ ? newLatestQ.terms : undefined,
-        });
-      }
-
       fetchBoard();
     } catch {
       toast.error("ลบใบเสนอราคาล้มเหลว");
-    } finally {
-      setIsDeleteConfirmOpen(false);
-      setDeleteTargetQuotation(null);
     }
   };
-
   const [selectedDeal, setSelectedDeal] = useState<Deal | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [currentStage, setCurrentStage] = useState<Deal["stage"]>("contacted");
@@ -222,8 +199,13 @@ const StageBased = () => {
             customerId: c.id,
             customerName: c.name || "-",
             phone: c.tel ?? c.tol ?? "-",
-            propertyType: c.productType ?? c.interestedProperty?.type ?? "",
-            budget: Number(c.priceBudget || 0),
+            // ✅ CLOSED historical card ใช้ snapshot ของรอบนั้น ไม่ใช้ customer ปัจจุบัน
+            propertyType: (apiStage === "CLOSED" && c.isHistorical && latestClosed?.snapshotProductType)
+              ? latestClosed.snapshotProductType
+              : (c.productType ?? c.interestedProperty?.type ?? "-"),
+            budget: (apiStage === "CLOSED" && c.isHistorical && latestClosed?.snapshotPriceBudget)
+              ? Number(latestClosed.snapshotPriceBudget)
+              : Number(c.priceBudget || 0),
             stage: apiToUi(apiStage),
             assignedSales: c.sale?.name,
             status: latestLog?.status ?? latestNego?.status ?? undefined,
@@ -1354,6 +1336,21 @@ const StageBased = () => {
                       </div>
                     )}
 
+                  {/* ✅ ปุ่มสร้างใบเสนอราคาใหม่ — เฉพาะ stage quotation */}
+                  {currentStage === "quotation" && (
+                    <Button
+                      variant="outline"
+                      className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+                      onClick={() => {
+                        setIsDialogOpen(false);
+                        navigate(`/quotation?customerId=${selectedDeal?.customerId}`);
+                      }}
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      สร้างใบเสนอราคาใหม่
+                    </Button>
+                  )}
+
                   <div>
                     <Label>ราคาที่เสนอ (บาท)</Label>
                     <Input
@@ -1622,52 +1619,6 @@ const StageBased = () => {
                 className="rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-lg shadow-emerald-500/20"
               >
                 ยืนยันเริ่มรอบใหม่
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* ✅ Confirmation Dialog for Deleting Quotation - Premium Style */}
-        <AlertDialog
-          open={isDeleteConfirmOpen}
-          onOpenChange={setIsDeleteConfirmOpen}
-        >
-          <AlertDialogContent className="rounded-2xl border-stone-200 dark:border-stone-800 shadow-2xl">
-            <AlertDialogHeader>
-              <AlertDialogTitle className="text-xl font-bold flex items-center gap-2 text-red-600">
-                <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-full">
-                  <Trash2 className="w-5 h-5" />
-                </div>
-                ยืนยันการลบใบเสนอราคา
-              </AlertDialogTitle>
-              <AlertDialogDescription className="text-base pt-2">
-                คุณแน่ใจหรือไม่ว่าต้องการลบใบเสนอราคาหมายเลข{" "}
-                <span className="font-bold text-foreground">
-                  "{deleteTargetQuotation?.num}"
-                </span>
-                ?
-                <br />
-                <span className="text-sm text-red-500 mt-2 block bg-red-50 dark:bg-red-950/10 p-3 rounded-lg border border-red-100 dark:border-red-900/10">
-                  ⚠️ การดำเนินการนี้ไม่สามารถเรียกคืนได้
-                  และไฟล์แนบที่ผูกอยู่ทั้งหมดจะถูกลบออกจากระบบอย่างถาวร
-                </span>
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter className="mt-4">
-              <AlertDialogCancel 
-                onClick={() => {
-                  setIsDeleteConfirmOpen(false);
-                  setDeleteTargetQuotation(null);
-                }}
-                className="rounded-xl border-stone-200 hover:bg-stone-100"
-              >
-                ยกเลิก
-              </AlertDialogCancel>
-              <AlertDialogAction
-                onClick={confirmDeleteQuotation}
-                className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white shadow-lg shadow-red-500/20 border-none"
-              >
-                ยืนยันการลบ
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
