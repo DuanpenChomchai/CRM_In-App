@@ -38,6 +38,7 @@ type QuotationRow = {
   totalAmount: number;
   status: QuotationStatus;
   itemsCount: number;
+  customerStatus?: string; // ✅ เพื่อเช็คว่าปิดดีลแล้วหรือยัง
 };
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ const QuotationList = () => {
         totalAmount: Number(q.totalAmount || 0),
         status: q.status as QuotationStatus,
         itemsCount: q._count?.items ?? q.items?.length ?? 0,
+        customerStatus: q.customer?.mainStatus ?? undefined, // ✅
       }));
       setRows(mapped);
     } catch (err: any) {
@@ -312,10 +314,12 @@ const QuotationList = () => {
                       <TableCell className="text-center">{getStatusBadge(r.status)}</TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
-                          {/* Edit */}
+                          {/* Edit — ซ่อนถ้าลูกค้าปิดดีลแล้ว */}
+                          {r.customerStatus !== "CLOSED" && (
                           <Button variant="ghost" size="sm" onClick={() => handleEdit(r.id)} title="แก้ไข" className="h-8 w-8 p-0">
                             <Edit className="w-4 h-4" />
                           </Button>
+                          )}
 
                           {/* Download PDF */}
                           <Button variant="ghost" size="sm" onClick={() => handleDownload(r)} title="ดาวน์โหลด PDF" className="h-8 w-8 p-0">

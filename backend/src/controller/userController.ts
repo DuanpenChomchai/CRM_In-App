@@ -823,6 +823,55 @@ export const getManagersWithTeams = async (req: Request, res: Response) => {
 };
 
 /* =======================
+   PATCH: setMaxDiscount
+   Manager กำหนดเพดานส่วนลด (%) ให้ Sale คนนี้
+   ======================= */
+export const setMaxDiscount = async (req: AuthRequest, res: Response) => {
+  try {
+    const me = req.user!;
+    const roleUpper = (me.role || "").toUpperCase();
+
+    // เฉพาะ MANAGER และ ADMIN เท่านั้น
+    if (!["MANAGER", "ADMIN"].includes(roleUpper)) {
+      return res.status(403).json({ message: "มีสิทธิ์เฉพาะ Manager/Admin" });
+    }
+
+    const saleId = Number(req.params.saleId);
+    if (Number.isNaN(saleId)) {
+      return res.status(400).json({ message: "saleId ไม่ถูกต้อง" });
+    }
+
+    const { maxDiscount } = req.body;
+    const val = maxDiscount === null || maxDiscount === "" ? null : Number(maxDiscount);
+
+    if (val !== null && (val < 0 || val > 100)) {
+      return res.status(400).json({ message: "maxDiscount ต้องอยู่ระหว่าง 0-100" });
+    }
+
+    // Manager ตรวจว่า Sale อยู่ในทีมตัวเองก่อน
+    if (roleUpper === "MANAGER") {
+      const sale = await prisma.user.findFirst({
+        where: { id: saleId, role: "SALE", managerId: me.id },
+      });
+      if (!sale) {
+        return res.status(403).json({ message: "Sale คนนี้ไม่ได้อยู่ในทีมของคุณ" });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: saleId },
+      data: { maxDiscount: val } as any,
+      select: { id: true, name: true, maxDiscount: true },
+    });
+
+    return res.json({ ok: true, user: updated });
+  } catch (err) {
+    console.error("setMaxDiscount error:", err);
+    return res.status(500).json({ message: "กำหนดส่วนลดไม่สำเร็จ" });
+  }
+};
+
+/* =======================
    PATCH: assignManager
    กำหนด managerId ให้ SALE user
    ======================= */

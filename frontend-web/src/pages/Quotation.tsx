@@ -126,6 +126,28 @@ const Quotation = () => {
   // ล็อกฟอร์มถ้าใบเสนอราคาถูก Manager อนุมัติ/ปฏิเสธแล้ว
   const isLocked = status === "APPROVED" || status === "REJECTED";
 
+  // ✅ maxDiscount ของ Sale คนนี้ (ดึงจาก user ที่ login)
+  const [maxDiscount, setMaxDiscount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    const userObj = storedUser ? JSON.parse(storedUser) : null;
+    if (userObj?.maxDiscount !== undefined && userObj?.maxDiscount !== null) {
+      setMaxDiscount(Number(userObj.maxDiscount));
+    }
+    // ดึงจาก API เพื่อให้ค่าอัปเดตเสมอ
+    const token = localStorage.getItem("token");
+    if (token && userObj?.role === "SALE") {
+      fetch(`${API_BASE}/api/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((data) => {
+          const md = data?.user?.maxDiscount ?? data?.maxDiscount ?? null;
+          if (md !== null) setMaxDiscount(Number(md));
+        })
+        .catch(() => {});
+    }
+  }, []);
+
   const [newItem, setNewItem] = useState({
     propertyId: "",
     quantity: "1",
@@ -252,6 +274,12 @@ const Quotation = () => {
 
     const qty = clamp(valToInt(newItem.quantity), 1, 999999);
     const discount = clamp(toNumber(newItem.discount), 0, 100);
+
+    // ✅ เช็ค maxDiscount
+    if (maxDiscount !== null && discount > maxDiscount) {
+      toast.error(`ส่วนลดเกินที่ได้รับอนุญาต สูงสุดที่ใช้ได้คือ ${maxDiscount}%`);
+      return;
+    }
 
     const unitPrice = toNumber(p.price);
     if (unitPrice <= 0) {
@@ -470,13 +498,16 @@ const Quotation = () => {
 
             {/* Discount — wider */}
             <div className="flex-1 w-full sm:w-auto">
-              <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">ส่วนลด %</Label>
+              <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">
+                ส่วนลด %{maxDiscount !== null && <span className="text-orange-500 ml-1">(สูงสุด {maxDiscount}%)</span>}
+              </Label>
               <Input
-                type="number" min="0"
+                type="number" min="0" max={maxDiscount !== null ? maxDiscount : 100}
                 value={newItem.discount}
                 onChange={(e) => setNewItem((p) => ({ ...p, discount: e.target.value }))}
                 onBlur={(e) => {
-                  const n = Math.max(0, toNumber(e.target.value));
+                  let n = Math.max(0, toNumber(e.target.value));
+                  if (maxDiscount !== null) n = Math.min(n, maxDiscount);
                   setNewItem((p) => ({ ...p, discount: String(n) }));
                 }}
                 className="h-9 text-center font-bold bg-muted/30"

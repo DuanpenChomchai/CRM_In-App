@@ -88,7 +88,7 @@ export const listQuotations = async (req: AuthRequest, res: Response) => {
       where,
       orderBy: { createdAt: "desc" },
       include: {
-        customer: true,
+        customer: { select: { id: true, name: true, email: true, tol: true, mainStatus: true } },
         property: true,
         items: true,
         createdBy: { select: { id: true, name: true, role: true } },
@@ -136,6 +136,22 @@ export const createQuotation = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: "กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ" });
     }
 
+    // ✅ ล็อค: ถ้าลูกค้าปิดดีลไปแล้ว ห้ามสร้างใบเสนอราคาใหม่ในรอบที่ยังไม่ได้ repeat
+    const customerCheck = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { mainStatus: true },
+    });
+    if (customerCheck?.mainStatus === "CLOSED") {
+      return res.status(403).json({ message: "ลูกค้านี้ปิดดีลแล้ว ไม่สามารถสร้างใบเสนอราคาได้ กรุณากดซื้อซ้ำก่อน" });
+    }
+
+    // ✅ เช็ค maxDiscount ของ Sale คนนี้
+    const creator = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { maxDiscount: true, role: true },
+    });
+    const maxDiscount = creator?.maxDiscount ? Number(creator.maxDiscount) : null;
+
     // คำนวณ lineTotal + total
     const computed = items.map((it: any) => {
       const qty = Math.max(1, Number(it.quantity ?? 1));
@@ -154,6 +170,15 @@ export const createQuotation = async (req: AuthRequest, res: Response) => {
     if (computed.some((x: { name: any; }) => !x.name)) {
       return res.status(400).json({ message: "ชื่อสินค้าในรายการห้ามว่าง" });
     }
+
+    // u2705 เช็ค maxDiscount u2014 ถ้า Sale มีการกำหนดเพดานส่วนลด
+    if (maxDiscount !== null) {
+      const overLimit = computed.find((x: any) => x.discount > maxDiscount);
+      if (overLimit) {
+        return res.status(403).json({ message: `ส่วนลดเกินที่ได้รับอนุญาต สูงสุดที่ใช้ได้คือ ${maxDiscount}%` });
+      }
+    }
+
 
     const totalAmount = computed.reduce((sum: any, x: { lineTotal: any; }) => sum + x.lineTotal, 0);
 
@@ -221,6 +246,16 @@ export const updateQuotation = async (req: AuthRequest, res: Response) => {
     if (!access.ok) return res.status(access.status).json({ message: access.message });
 
     const quotation = access.quotation!;
+
+    // ✅ ล็อค: ถ้าลูกค้าปิดดีลแล้ว ห้ามแก้ใบเสนอราคา
+    const customerCheck = await prisma.customer.findUnique({
+      where: { id: quotation.customerId },
+      select: { mainStatus: true },
+    });
+    if (customerCheck?.mainStatus === "CLOSED") {
+      return res.status(403).json({ message: "ลูกค้านี้ปิดดีลแล้ว ไม่สามารถแก้ไขใบเสนอราคาได้" });
+    }
+
     // Rule การแก้ตาม role
     if (role === "SALE") {
       if (quotation.createdById !== userId) {
@@ -266,6 +301,21 @@ export const updateQuotation = async (req: AuthRequest, res: Response) => {
 
       if (computedItems.some((x) => !x.name)) {
         return res.status(400).json({ message: "ชื่อสินค้าในรายการห้ามว่าง" });
+      }
+
+      // ✅ เช็ค maxDiscount ของ Sale
+      if (role === "SALE") {
+        const creator = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { maxDiscount: true },
+        });
+        const maxDiscount = creator?.maxDiscount ? Number(creator.maxDiscount) : null;
+        if (maxDiscount !== null) {
+          const overLimit = computedItems.find((x) => x.discount > maxDiscount);
+          if (overLimit) {
+            return res.status(403).json({ message: `ส่วนลดเกินที่ได้รับอนุญาต สูงสุดที่ใช้ได้คือ ${maxDiscount}%` });
+          }
+        }
       }
 
       const totalAmount = computedItems.reduce((sum, x) => sum + x.lineTotal, 0);
