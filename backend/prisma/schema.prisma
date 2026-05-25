@@ -413,6 +413,10 @@ model ClosedDeal {
   note        String?
   endDate     DateTime?
 
+  // ✅ Snapshot ข้อมูลรอบนั้นๆ ไว้ ไม่ให้เปลี่ยนตาม customer
+  snapshotProductType String?
+  snapshotPriceBudget Decimal? @db.Decimal(12, 2)
+
   customerId Int
   customer   Customer @relation(fields: [customerId], references: [id])
 
