@@ -165,22 +165,28 @@ export const getPipelineBoard = async (req: AuthRequest, res: Response) => {
       if (hasClosedDeals) {
         // เอาประวัติแต่ละรอบไปสร้างการ์ดใน CLOSED แยกกัน
         c.closedDeals.forEach((cd: any, index: number) => {
-          // ถ้าปัจจุบันลูกค้าอยู่สเตจ CLOSED ดีลล่าสุด (index=0) คือดีลรอบปัจจุบันนี้เอง
           const isHistorical = !(isCurrentlyClosed && index === 0);
-          
-          // ✅ สำหรับการ์ดประวัติศาสตร์ ให้ฟิลเตอร์ใบเสนอราคาที่ถูกสร้างขึ้นก่อนดีลปิดรอบนั้นๆ
-          const quotationsForCard = (c.quotations ?? []).filter((q: any) => new Date(q.createdAt) <= new Date(cd.createdAt));
-          
+
+          // ✅ หา closedDeal รอบก่อนหน้า (index+1 เพราะเรียง desc)
+          const prevClosed = c.closedDeals[index + 1] ?? null;
+
+          // ✅ filter quotations เฉพาะของรอบนี้ (ระหว่าง prevClosed ถึง cd)
+          const quotationsForCard = (c.quotations ?? []).filter((q: any) => {
+            const qDate = new Date(q.createdAt);
+            const before = new Date(cd.createdAt);
+            const after = prevClosed ? new Date(prevClosed.createdAt) : new Date(0);
+            return qDate <= before && qDate > after;
+          });
+
           columns.CLOSED.push({
             ...c,
-            // ID ปลอมเพื่อให้หน้าบ้านมองเห็นเป็นคนละการ์ด
             dummyId: isHistorical ? `history_${c.id}_${cd.id}` : c.id,
-            closedDeals: [cd], // ส่งไปแค่อันเดียวให้ Frontend รู้ว่าการ์ดนี้คือดีลนี้
-            quotations: quotationsForCard, // ✅ ส่ง quotations ทั้งหมดเพื่อแสดงข้อมูลสินค้า
-            isHistorical, // flag แจ้ง Frontend
-            roundNumber: c.closedDeals.length - index, // ลำดับครั้งที่ซื้อ
+            closedDeals: [cd],
+            quotations: quotationsForCard,
+            isHistorical,
+            roundNumber: c.closedDeals.length - index,
           });
-          
+
           if (cd.result === "WON" || cd.result === "LOST") {
             totalClosedCount++;
           }

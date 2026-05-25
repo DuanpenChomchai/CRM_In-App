@@ -99,9 +99,12 @@ model User {
   img      String?
   role     Role    @default(CUSTOMER)
 
-  managerId Int?
-  manager   User?  @relation("UserManager", fields: [managerId], references: [id])
-  team      User[] @relation("UserManager")
+  managerId   Int?
+  manager     User?  @relation("UserManager", fields: [managerId], references: [id])
+  team        User[] @relation("UserManager")
+
+  // ✅ ส่วนลดสูงสุดที่ Manager กำหนดให้ Sale คนนี้ใช้ได้ (%)
+  maxDiscount Decimal? @db.Decimal(5, 2)
 
   customers      Customer[]       @relation("CustomerOwner")
   salesCustomers Customer[]       @relation("SaleCustomers")
