@@ -789,6 +789,7 @@ export const getManagersWithTeams = async (req: Request, res: Response) => {
             tol: true,
             img: true,
             role: true,
+            maxDiscount: true, // ✅
           },
           orderBy: { name: "asc" },
         },
