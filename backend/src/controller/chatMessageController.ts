@@ -45,6 +45,7 @@ const baseSelect = {
   createdAt: true,
   readByCustomerAt: true,
   readBySaleAt: true,
+  isDeleted: true,
 
   // ✅ เพิ่ม: รองรับรูป/ไฟล์
   type: true,

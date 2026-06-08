@@ -135,6 +135,11 @@ const pickBetter = (a: Msg, b: Msg): Msg => {
     if (au !== bu) return au ? a : b;
   }
 
+  // ✅ ให้ความสำคัญกับ isDeleted (ถ้ามีอันใดอันหนึ่งถูกลบ ให้ถือว่าลบแล้ว)
+  if (a.isDeleted !== b.isDeleted) {
+    return a.isDeleted ? a : b;
+  }
+
   // ✅ ให้ความสำคัญกับอันที่มีการระบุว่า "อ่านแล้ว" (readByOther)
   if (a.readByOther !== b.readByOther) {
     return (a as any).readByOther ? a : b;
@@ -1606,7 +1611,15 @@ export default function ChatDetailScreen() {
               <Pressable 
                 className="flex-1 py-3.5 bg-red-500 rounded-xl items-center"
                 onPress={() => {
-                  if (unsendTarget) unsendMessage(unsendTarget);
+                  if (unsendTarget) {
+                    unsendMessage(unsendTarget);
+                    // ✅ อัปเดต historyMessages ในเครื่องทันทีเพื่อให้ UI เปลี่ยนแปลงไม่เด้งกลับ
+                    setHistoryMessages((prev) => 
+                      prev.map((m) => 
+                        m.cid === unsendTarget ? { ...m, isDeleted: true } : m
+                      )
+                    );
+                  }
                   setUnsendTarget(null);
                 }}
                 style={({ pressed }) => [{ opacity: pressed ? 0.8 : 1 }]}
